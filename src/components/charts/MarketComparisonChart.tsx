@@ -28,8 +28,8 @@ export function MarketComparisonChart({ data }: { data: MarketComparisonRow[] })
         />
         <Tooltip formatter={(value) => Number(value).toLocaleString("ko-KR")} />
         <Legend verticalAlign="bottom" height={32} />
-        <Bar dataKey="mentions" name="언급 수" stackId="m" fill="#3b82f6" />
-        <Bar dataKey="citations" name="인용 수" stackId="m" fill="#fa7317" />
+        <Bar dataKey="mentions" name="언급 수" stackId="m" fill="#3b82f6" isAnimationActive={false} />
+        <Bar dataKey="citations" name="인용 수" stackId="m" fill="#fa7317" isAnimationActive={false} />
       </BarChart>
     </ResponsiveContainer>
   );

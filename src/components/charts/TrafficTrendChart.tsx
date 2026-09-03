@@ -32,6 +32,7 @@ export function TrafficTrendChart({ data }: { data: TrafficWeek[] }) {
           stroke="#3b82f6"
           strokeWidth={2.5}
           dot={{ r: 4.5 }}
+          isAnimationActive={false}
         />
         <Line
           type="monotone"
@@ -40,6 +41,7 @@ export function TrafficTrendChart({ data }: { data: TrafficWeek[] }) {
           stroke="#8c5cf5"
           strokeWidth={2.5}
           dot={{ r: 4.5 }}
+          isAnimationActive={false}
         />
       </LineChart>
     </ResponsiveContainer>

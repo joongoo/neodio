@@ -8,6 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "collect:naver-ai": "node scripts/collect-naver-ai.mjs",
+    "open:naver-ai-chrome": "node scripts/open-naver-ai-chrome.mjs",
+    "collect:google-ai": "node scripts/collect-google-ai.mjs",
+    "open:google-ai-chrome": "node scripts/open-google-ai-chrome.mjs",
+    "parse:naver-ai-html": "python3 scripts/parse_naver_ai_html.py",
     "process:raw": "tsx scripts/process-raw.ts"
   },
   "dependencies": {

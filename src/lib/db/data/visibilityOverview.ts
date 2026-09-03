@@ -1,4 +1,4 @@
-import { RankedRow, TopicCategory, TopicRow } from "../types";
+import { BrandRankRow, CitedPageRow, CitedSourceRow, RankedRow, TopicCategory, VisibilityTableRow } from "../types";
 
 // Confirmed labels/counts from Figma "Table Section" tabs (node 646:11691).
 export const topicCategoriesByOrg: Record<string, TopicCategory[]> = {
@@ -72,16 +72,48 @@ export const mentionsByMarketByOrg: Record<string, Record<string, RankedRow[]>> 
 // out with real dummy content — the others reuse the same shape so the
 // table/tab pattern is demonstrated end to end; extend per category as
 // those screens get built.
-export const topicsByOrgAndCategory: Record<string, Record<string, TopicRow[]>> = {
+const latestTopBrands: BrandRankRow[] = [
+  { id: "brand-hubspot", brand: "HubSpot", mentions: 214 },
+  { id: "brand-salesforce", brand: "Salesforce", mentions: 187 },
+  { id: "brand-neodigm", brand: "Neodigm", mentions: 96 },
+  { id: "brand-rinda", brand: "Rinda AI", mentions: 74 },
+  { id: "brand-marketo", brand: "Adobe Marketo Engage", mentions: 61 },
+];
+
+const citedPages: CitedPageRow[] = [
+  { id: "page-1", pageUrl: "blog.neodigm.com/b2b-marketing-automation-comparison", responses: 41, market: "KR", myBrand: "12" },
+  { id: "page-2", pageUrl: "blog.neodigm.com/hubspot-onboarding-guide", responses: 28, market: "KR", myBrand: "9" },
+  { id: "page-3", pageUrl: "neodigm.com/solutions/martech-architecture", responses: 15, market: "GLOBAL", myBrand: "5" },
+  { id: "page-4", pageUrl: "blog.neodigm.com/naver-ai-search-visibility", responses: 11, market: "KR", myBrand: "4" },
+];
+
+const citedSources: CitedSourceRow[] = [
+  { id: "src-1", domain: "cafe.naver.com", market: "KR", myBrandMentions: 3, citedPages: 41, prompts: 58 },
+  { id: "src-2", domain: "blog.naver.com", market: "KR", myBrandMentions: 5, citedPages: 37, prompts: 49 },
+  { id: "src-3", domain: "www.i-boss.co.kr", market: "KR", myBrandMentions: 2, citedPages: 12, prompts: 19 },
+  { id: "src-4", domain: "www.rinda.ai", market: "GLOBAL", myBrandMentions: 0, citedPages: 9, prompts: 15 },
+  { id: "src-5", domain: "disquiet.io", market: "KR", myBrandMentions: 1, citedPages: 6, prompts: 8 },
+  { id: "src-6", domain: "salesmap.kr", market: "KR", myBrandMentions: 0, citedPages: 5, prompts: 7 },
+];
+
+const sourceOpportunities: CitedSourceRow[] = [
+  { id: "opp-src-1", domain: "www.folk.app", market: "GLOBAL", myBrandMentions: 0, citedPages: 4, prompts: 6 },
+  { id: "opp-src-2", domain: "www.salesforce.com", market: "GLOBAL", myBrandMentions: 0, citedPages: 22, prompts: 34 },
+  { id: "opp-src-3", domain: "disquiet.io", market: "KR", myBrandMentions: 0, citedPages: 6, prompts: 8 },
+];
+
+export const topicsByOrgAndCategory: Record<string, Record<string, VisibilityTableRow[]>> = {
   neodigm: {
+    "latest-top-brands": latestTopBrands,
+    "cited-pages": citedPages,
+    "cited-sources": citedSources,
+    "source-opportunities": sourceOpportunities,
     "top-prompts": [
       {
         id: "b2b-integrated-marketing",
         topic: "B2B 통합 마케팅 솔루션",
-        searchVolume: 18_200,
         mentions: 171,
         visibility: 66,
-        difficulty: 58,
         market: "KR",
         prompts: [
           {
@@ -98,10 +130,8 @@ export const topicsByOrgAndCategory: Record<string, Record<string, TopicRow[]>> 
       {
         id: "marketing-automation",
         topic: "마케팅 자동화 구축",
-        searchVolume: 22_400,
         mentions: 158,
         visibility: 63,
-        difficulty: 54,
         market: "KR",
         prompts: [
           {
@@ -118,10 +148,8 @@ export const topicsByOrgAndCategory: Record<string, Record<string, TopicRow[]>> 
       {
         id: "hubspot-onboarding",
         topic: "HubSpot 온보딩 파트너",
-        searchVolume: 9_700,
         mentions: 132,
         visibility: 59,
-        difficulty: 42,
         market: "KR",
         prompts: [
           {
@@ -138,10 +166,8 @@ export const topicsByOrgAndCategory: Record<string, Record<string, TopicRow[]>> 
       {
         id: "martech-architecture",
         topic: "MarTech 아키텍처 설계",
-        searchVolume: 7_600,
         mentions: 97,
         visibility: 54,
-        difficulty: 39,
         market: "GLOBAL",
         prompts: [
           {
@@ -160,10 +186,8 @@ export const topicsByOrgAndCategory: Record<string, Record<string, TopicRow[]>> 
       {
         id: "ai-search-optimization",
         topic: "AI 검색 최적화",
-        searchVolume: 27_300,
         mentions: 64,
         visibility: 31,
-        difficulty: 64,
         market: "KR",
         prompts: [
           {
@@ -180,10 +204,8 @@ export const topicsByOrgAndCategory: Record<string, Record<string, TopicRow[]>> 
       {
         id: "crm-erp-integration",
         topic: "CRM ERP API 연동",
-        searchVolume: 12_900,
         mentions: 71,
         visibility: 36,
-        difficulty: 58,
         market: "US",
         prompts: [
           {

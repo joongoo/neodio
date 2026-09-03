@@ -11,6 +11,7 @@
 3. [소스별 상세 설계](#3-소스별-상세-설계)
    - 3.1 [글로벌 LLM 답변 수집](#31-글로벌-llm-답변-수집-chatgpt-gemini-perplexity-copilot-claude)
    - 3.2 [네이버 AI 답변 수집](#32-네이버-ai-답변-수집-신규-p0)
+   - 3.2b [구글 AI Overview 답변 수집](#32b-구글-ai-overview-답변-수집-신규-p0)
    - 3.3 [네이버 통합검색 블록 수집](#33-네이버-통합검색-블록-수집-신규-p0)(제외)
    - 3.4 [CDN 로그 / 에이전틱 트래픽](#34-cdn-로그--에이전틱-트래픽)
    - 3.5 [레퍼럴 트래픽 (애널리틱스)](#35-레퍼럴-트래픽-애널리틱스)
@@ -44,6 +45,7 @@
 | --- | ----------------------------------------------------- | ---------------------- | -------------------------- | ------------------------------------------------------ |
 | 1   | 글로벌 LLM (ChatGPT/Gemini/Perplexity/Copilot/Claude) | 자연어 답변            | API 호출 배치              | Overview, Visibility Overview, Prompt Research 등 전역 |
 | 2   | 네이버 AI 답변 (`ait` 채팅형)                         | 자연어 답변            | API/헤드리스 브라우저 배치 | 상동 (신규 P0)                                         |
+| 2b  | 구글 AI Overview 답변                                 | 자연어 답변            | 헤드리스 브라우저 배치     | 상동 (신규 P0)                                         |
 | 3   | 네이버 통합검색 블록(제외)                            | 구조화 랭킹            | API/스크래핑 배치          | Market Comparison 등 (신규 P0)                         |
 | 4   | CDN 로그                                              | 이벤트 스트림          | 웹훅/로그 포워딩           | Agentic Traffic                                        |
 | 5   | 레퍼럴 트래픽 (애널리틱스)                            | 이벤트 스트림          | 웹훅/애널리틱스 연동       | Traffic Insights, Business Impact                      |
@@ -104,6 +106,26 @@
 
 - 네이버 AI 답변 API/약관상 자동화 수집이 허용되는지(스크래핑 정책) 법무 검토 필요.
 - `ait_chat_id` 세션이 재현 가능한 요청(동일 쿼리 재실행 시 동일 답변 보장 여부)인지 확인 — 배치 재시도 시 결과 일관성에 영향.
+
+---
+
+### 3.2b 구글 AI Overview 답변 수집 (신규, P0)
+
+**무엇을 수집하나**: 구글 일반 검색 결과 상단에 뜨는 AI Overview(AI 개요)의 자연어 응답 + 출처 링크.
+
+**수집 방법**
+
+- 로그인 불필요. 일반 검색 URL(`google.com/search?q=...`)을 열면 AI Overview가 페이지 로드 시 바로 렌더링됨 — 네이버와 달리 새로고침 불필요.
+- "AI 개요 더보기" 버튼 클릭으로 답변 전문 확장 후 텍스트 추출. 출처 링크는 `rhs-col` 패널(간략히/전체보기 두 리스트가 항상 동시에 DOM에 존재)에서 앵커 전체를 긁어 URL 기준 중복 제거 — 별도 클릭 불필요.
+- Playwright 내장 Chromium으로 직접 접속하면 "비정상적인 트래픽 감지" 캡차에 걸림 — 반드시 실제 Chrome 바이너리를 원격 디버깅 포트로 띄운 뒤 CDP(`connectOverCDP`)로 붙어야 함.
+
+**스케줄링**: 네이버와 동일하게 **주 1회 배치**, `llm_models`에 `name='Google AI Overview', provider='Google'` row로 등록해 기존 배치 파이프라인에 편입.
+
+**Raw 저장**: `prompt_runs`에 그대로 적재. `rawMetadata.source='google-ai-overview'`(타입 확정, `src/lib/db/types.ts`).
+
+**가공**: 3.1/3.2와 동일한 `mentions`/`citations` 파이프라인 재사용.
+
+**구현 위치**: `scripts/collect-google-ai.mjs`(수집), `scripts/open-google-ai-chrome.mjs`(실제 Chrome 실행 + CDP 오픈).
 
 ---
 

@@ -1,4 +1,12 @@
 import { organizations } from "./data/organizations";
+import { brandPresenceByOrg } from "./data/brandPresence";
+import { brandsManagementByOrg } from "./data/brandsManagement";
+import { contentRecoveryOpportunityByOrg, robotsTxtOpportunityByOrg } from "./data/opportunities";
+import { gscConnectionByBrand } from "./data/connections";
+import { promptLibraryByOrg, promptLibraryHealthByOrg } from "./data/promptLibrary";
+import { promptResearchByTopic } from "./data/promptResearch";
+import { promptStrategyByOrg } from "./data/promptStrategy";
+import { urlInspectorByOrg } from "./data/urlInspector";
 import {
   checklistByOrg,
   contentVisibilityByOrg,
@@ -189,15 +197,55 @@ export const db = {
     getOpportunities: async (orgId: string) => opportunitiesByOrg[orgId] ?? [],
   },
   visibilityOverview: {
-    // Reuses the same snapshot-derived stat cards as the Overview page,
-    // trimmed to the 4 this screen shows — same pattern, same query.
+    // Reuses the same snapshot-derived stat cards as the Overview page.
+    // P0-safe subset only (neodigm_p0_scope.md §2): agentic interactions
+    // and LLM referral traffic both need CDN/analytics logs we don't have,
+    // so they're dropped here even though Overview still shows them.
     getStatCards: async (orgId: string, range: DateRange = "4w") =>
-      (await getStatCards(orgId, range)).slice(0, 4),
+      (await getStatCards(orgId, range)).filter((stat) =>
+        ["visibility-score", "brand-mentions", "citations"].includes(stat.id)
+      ),
     getTopicCategories: async (orgId: string) => topicCategoriesByOrg[orgId] ?? [],
     getMentionsByModel: async (orgId: string) => mentionsByModelByOrg[orgId] ?? {},
     getMentionsByMarket: async (orgId: string) => mentionsByMarketByOrg[orgId] ?? {},
     getTopics: async (orgId: string, categoryId: string) =>
       topicsByOrgAndCategory[orgId]?.[categoryId] ?? [],
+  },
+  promptResearch: {
+    // Single lookup for now (matches the /prompt-research API contract in
+    // neodigm_screens_documentation.md §3 — one call returns everything the
+    // screen needs). Unknown topics resolve to null → empty state.
+    search: async (topic: string) => promptResearchByTopic[topic.trim()] ?? null,
+  },
+  promptStrategy: {
+    get: async (orgId: string) => promptStrategyByOrg[orgId] ?? null,
+  },
+  promptLibrary: {
+    list: async (orgId: string) => promptLibraryByOrg[orgId] ?? [],
+    getHealth: async (orgId: string) => promptLibraryHealthByOrg[orgId] ?? null,
+  },
+  connections: {
+    getGsc: async (brandId: string) => gscConnectionByBrand[brandId] ?? null,
+  },
+  brandsManagement: {
+    get: async (orgId: string) => brandsManagementByOrg[orgId] ?? null,
+    getBrand: async (orgId: string, brandId: string) =>
+      brandsManagementByOrg[orgId]?.brands.find((b) => b.id === brandId) ?? null,
+  },
+  urlInspector: {
+    get: async (orgId: string) => urlInspectorByOrg[orgId] ?? null,
+  },
+  opportunities: {
+    getRobotsTxt: async (orgId: string) => robotsTxtOpportunityByOrg[orgId] ?? null,
+    getContentRecovery: async (orgId: string) => contentRecoveryOpportunityByOrg[orgId] ?? null,
+  },
+  brandPresence: {
+    // Reuses the same P0-safe stat cards as Visibility Overview.
+    getStatCards: async (orgId: string, range: DateRange = "4w") =>
+      (await getStatCards(orgId, range)).filter((stat) =>
+        ["visibility-score", "brand-mentions", "citations"].includes(stat.id)
+      ),
+    get: async (orgId: string) => brandPresenceByOrg[orgId] ?? null,
   },
   seed: {
     brands: async () => seedBrands,

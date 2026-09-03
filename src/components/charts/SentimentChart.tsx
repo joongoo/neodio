@@ -27,8 +27,8 @@ export function SentimentChart({ data }: { data: SentimentWeek[] }) {
         />
         <Tooltip formatter={(value) => `${value}%`} />
         <Legend verticalAlign="bottom" height={32} />
-        <Bar dataKey="positive" name="우호적" stackId="s" fill="#22c55e" barSize={28} />
-        <Bar dataKey="neutral" name="중립" stackId="s" fill="#cbd5e1" barSize={28} />
+        <Bar dataKey="positive" name="우호적" stackId="s" fill="#22c55e" barSize={28} isAnimationActive={false} />
+        <Bar dataKey="neutral" name="중립" stackId="s" fill="#cbd5e1" barSize={28} isAnimationActive={false} />
         <Bar
           dataKey="negative"
           name="비우호적"
@@ -36,6 +36,7 @@ export function SentimentChart({ data }: { data: SentimentWeek[] }) {
           fill="#f87171"
           radius={[4, 4, 0, 0]}
           barSize={28}
+          isAnimationActive={false}
         />
       </BarChart>
     </ResponsiveContainer>

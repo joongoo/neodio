@@ -16,6 +16,13 @@ import { cn } from "@/lib/cn";
 // Matches Figma "LNB / Sidebar_ko" (node 646:29832, Korean page) — a flat,
 // always-expanded nav tree with no collapse affordance, so no client state
 // is needed beyond active-link detection.
+//
+// Re-scoped to P0 per neodigm_p0_scope.md: only screens buildable from data
+// we can directly collect (our own LLM/AI-search runs, sitemap crawling,
+// LLM topic brainstorming) are listed. Screens that structurally need
+// 3rd-party SEO/analytics data (Market Comparison, Prompt Strategy, Brand
+// Claims, Agentic Traffic, Traffic Insights, Business Impact) are dropped
+// from the nav until that data source exists — see the doc's §2 table.
 
 interface NavLeaf {
   label: string;
@@ -37,8 +44,7 @@ const NAV: NavGroup[] = [
     icon: TrendingUp,
     children: [
       { label: "가시성 개요", href: "/visibility-overview" },
-      { label: "프롬프트 리서치", href: "#" },
-      { label: "마켓 비교", href: "#" },
+      { label: "프롬프트 리서치", href: "/prompt-research" },
     ],
   },
   {
@@ -46,44 +52,33 @@ const NAV: NavGroup[] = [
     href: "#",
     icon: MessageSquareText,
     children: [
-      { label: "프롬프트 전략", href: "#" },
-      { label: "프롬프트 라이브러리", href: "#" },
+      { label: "프롬프트 전략", href: "/prompt-strategy" },
+      { label: "프롬프트 라이브러리", href: "/prompt-library" },
     ],
   },
   {
     label: "브랜드 관리",
     href: "#",
     icon: CheckCircle2,
-    children: [
-      { label: "브랜드 가시성", href: "#" },
-      { label: "브랜드 전략", href: "#" },
-    ],
+    children: [{ label: "브랜드 가시성", href: "/brand-presence" }],
   },
   {
     label: "도메인",
     href: "#",
     icon: Globe,
-    children: [
-      { label: "URL 인스펙터", href: "#" },
-      { label: "에이전틱 트래픽", href: "#" },
-      { label: "트래픽 인사이트", href: "#" },
-      { label: "비즈니스 임팩트", href: "#" },
-    ],
+    children: [{ label: "URL 인스펙터", href: "/url-inspector" }],
   },
   {
     label: "기회",
     href: "#",
     icon: Sparkles,
-    children: [
-      { label: "개요", href: "#" },
-      { label: "기회 워크스페이스", href: "#" },
-    ],
+    children: [{ label: "개요", href: "/opportunities" }],
   },
   {
     label: "설정",
     href: "#",
     icon: Settings,
-    children: [{ label: "브랜드 관리", href: "#" }],
+    children: [{ label: "브랜드 관리", href: "/brands-management" }],
   },
   { label: "도움말 및 학습", href: "#", icon: HelpCircle },
 ];

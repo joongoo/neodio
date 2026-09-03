@@ -26,6 +26,7 @@
 | 파일 | 역할 |
 | --- | --- |
 | `scripts/collect-naver-ai.mjs` | 네이버 AI 브리핑 수집 테스트 CLI |
+| `scripts/parse_naver_ai_html.py` | 렌더링된 네이버 AI HTML을 BeautifulSoup로 파싱 |
 | `scripts/process-raw.ts` | 수집 raw JSON을 processed JSON으로 변환하는 CLI |
 | `src/lib/db/types.ts` | raw/processed/dashboard seed 타입 |
 | `src/lib/db/data/seed.ts` | 2달치 Neodigm 기준 raw seed |
@@ -105,6 +106,67 @@ npm run collect:naver-ai -- \
   --timeout-ms=45000
 ```
 
+네이버 답변 URL을 그대로 지정해서 실행:
+
+```bash
+npm run collect:naver-ai -- \
+  --url="https://search.naver.com/search.naver?ssc=tab.ait.all&sm=top_clk.aitab&dtm_source=main&dtm_medium=searchbox&dtm_detail=empty&ait_pv=answer&query=..." \
+  --query="b2b 통합 마케팅 솔루션 추천"
+```
+
+실제 Chrome 채널을 시크릿/isolated context로 열어서 실행:
+
+```bash
+npm run collect:naver-ai -- \
+  --browser-channel=chrome \
+  --incognito \
+  --headed \
+  --query="아기랑 함께 가기 좋은 국내 여행지 추천" \
+  --timeout-ms=90000 \
+  --min-wait-ms=20000
+```
+
+쿠키/세션 오염을 막기 위해 기본값은 persistent profile이 아닌 isolated context입니다. `--user-data-dir`는 세션 재현 디버깅용으로만 사용하고, 정식 수집 테스트에서는 `--incognito`를 사용합니다.
+
+브라우저에서 복사한 DOM 조각으로 selector를 디버그:
+
+```bash
+npm run collect:naver-ai -- \
+  --html-file="/path/to/pasted-text.txt" \
+  --url="https://search.naver.com/search.naver?ssc=tab.ait.all&ait_pv=answer&query=..." \
+  --query="b2b 통합 마케팅 솔루션 추천"
+```
+
+BeautifulSoup parser만 분리해서 실행:
+
+```bash
+python3 -m venv .tmp/venv
+. .tmp/venv/bin/activate
+pip install -r requirements-backend.txt
+
+npm run parse:naver-ai-html -- \
+  --html-file="/path/to/rendered-naver-ai.html" \
+  --url="https://search.naver.com/search.naver?ssc=tab.ait.all&ait_pv=answer&query=..." \
+  --query="b2b 통합 마케팅 솔루션 추천"
+```
+
+브라우저 렌더링 + BeautifulSoup 방식의 역할 분담:
+
+```txt
+Playwright:
+  - 네이버 페이지 진입
+  - JS 렌더링 대기
+  - "자세히 더보기" 클릭
+  - screenshot/html 저장
+  - 기본적으로 isolated context로 실행해 쿠키를 유지하지 않음
+
+BeautifulSoup:
+  - 저장된 rendered HTML 파싱
+  - AI 답변 본문 추출
+  - 출처 패널 citation 추출
+  - promptRun JSON 생성
+```
+
 결과:
 
 ```txt
@@ -115,9 +177,11 @@ npm run collect:naver-ai -- \
 현재 추출 기준:
 
 - 페이지: `https://search.naver.com/search.naver?ssc=tab.ait.all&ait_pv=answer&query=...`
-- AI 브리핑 root: `.fds-aib-expandable-container`
-- 본문: root 내부 `fds-markdown-*` leaf node
-- citation: root 내부의 외부 링크만 추출
+- AI 브리핑 root: `.fds-aib-expandable-container` 또는 `.conversation-column`
+- 본문: root 내부 `.fds-markdown-p`, `.fds-markdown-h`, `.fds-markdown-li-text`, `.fds-markdown-tr`
+- table row는 cell을 ` | `로 join
+- overlay citation chip/button/svg는 본문에서 제거
+- citation: `[aria-label='출처 정보']` 또는 root 내부의 `.fds-source-overlay-item[href]` / `a[href]`
 - 일반 통합검색 결과는 제외
 
 참고:
@@ -126,6 +190,8 @@ npm run collect:naver-ai -- \
 - headless 신규 세션에서 이 URL을 바로 열면 네이버가 `잘못된 접근입니다`를 반환할 수 있습니다.
 - 이 경우 AI 브리핑 DOM이 렌더링되지 않으므로 collector는 일반 검색 결과를 fallback으로 수집하지 않고 `empty_ai_briefing` 실패로 저장합니다.
 - 이전 검색 결과 진입 방식인 `where=nexearch&ssc=tab.ait.all&query=...`는 일부 쿼리에서 검색 결과 상단의 `AI 브리핑` 카드를 수집할 수 있지만, `ait_pv=answer` 대화형 답변 URL과는 다른 진입 경로입니다.
+- 실제 브라우저에서 답변이 보이는데 headless에서 실패하는 경우, 우선 DOM 조각을 `--html-file`로 넣어 selector를 검증합니다. selector 검증이 통과하면 남은 문제는 세션/쿠키/접근 경로 문제로 분리해서 봅니다.
+- BeautifulSoup는 JS를 실행하지 못하므로 단독 수집기로 쓰지 않습니다. 반드시 Playwright나 실제 브라우저에서 렌더링된 HTML을 입력으로 사용합니다.
 
 주의:
 

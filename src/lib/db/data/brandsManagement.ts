@@ -1,0 +1,66 @@
+import { BrandsManagementData } from "../types";
+
+// Matches Figma "Brands Management" (doc §21) — our own org's tracked
+// brands/categories, pure CRUD, no 3rd-party dependency.
+export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
+  neodigm: {
+    brands: [
+      {
+        id: "brand-neodigm",
+        name: "Neodigm",
+        url: "https://neodigm.com",
+        description: "AI 가시성 대시보드를 만드는 B2B SaaS",
+        industry: "B2B SaaS",
+        markets: ["한국 (KR)"],
+        status: "active",
+        aliases: ["네오다임", "네오디지엠"],
+        otherBrands: ["HubSpot", "Salesforce", "Rinda AI"],
+        urls: ["https://blog.neodigm.com"],
+        socialAccounts: [{ platform: "LinkedIn", handle: "neodigm" }],
+        earnedContentSources: ["cafe.naver.com/ticketsuccess"],
+        cdnConnected: false,
+        gscConnected: true,
+        analyticsConnected: false,
+      },
+      {
+        id: "brand-growth-collective",
+        name: "Growth Collective",
+        url: "https://growthcollective.io",
+        description: "",
+        industry: "",
+        markets: ["미국 (US)"],
+        status: "pending",
+        aliases: [],
+        otherBrands: [],
+        urls: [],
+        socialAccounts: [],
+        earnedContentSources: [],
+        cdnConnected: false,
+        gscConnected: false,
+        analyticsConnected: false,
+      },
+      {
+        id: "brand-peak-marketing",
+        name: "Peak Marketing",
+        url: "https://peakmarketing.co",
+        description: "",
+        industry: "",
+        markets: ["전세계"],
+        status: "pending",
+        aliases: [],
+        otherBrands: [],
+        urls: [],
+        socialAccounts: [],
+        earnedContentSources: [],
+        cdnConnected: false,
+        gscConnected: false,
+        analyticsConnected: false,
+      },
+    ],
+    categories: [
+      { id: "cat-marketing", name: "마케팅", promptCount: 69, origin: "system" },
+      { id: "cat-automation", name: "자동화 툴", promptCount: 30, origin: "system" },
+      { id: "cat-ads", name: "광고", promptCount: 5, origin: "system" },
+    ],
+  },
+};

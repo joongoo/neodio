@@ -78,7 +78,7 @@ export interface RawCitationMetadata {
 
 export interface PromptRunMetadata {
   locale?: string;
-  source: "seed" | "naver-ai-search" | "api" | "headless-browser";
+  source: "seed" | "naver-ai-search" | "google-ai-overview" | "api" | "headless-browser";
   basedOn?: string[];
   collectedBy?: string;
   query?: string;
@@ -285,13 +285,14 @@ export interface TopicPromptRow {
   market: string;
 }
 
+// searchVolume/difficulty dropped for P0 (neodigm_p0_scope.md §2) — those
+// numbers only exist behind a 3rd-party keyword API (Semrush etc.) we don't
+// have. mentions/visibility stay: both are derived from our own prompt_runs.
 export interface TopicRow {
   id: string;
   topic: string;
-  searchVolume: number;
   mentions: number;
   visibility: number;
-  difficulty: number;
   market: string;
   prompts: TopicPromptRow[];
 }
@@ -300,4 +301,360 @@ export interface TopicCategory {
   id: string;
   label: string;
   badge: number;
+}
+
+export interface BrandRankRow {
+  id: string;
+  brand: string;
+  mentions: number;
+}
+
+export interface CitedPageRow {
+  id: string;
+  pageUrl: string;
+  responses: number;
+  market: string;
+  myBrand: string;
+}
+
+// organicTraffic dropped for P0 — a domain-level SEO index (Semrush/Ahrefs)
+// number, not something our own collection produces.
+export interface CitedSourceRow {
+  id: string;
+  domain: string;
+  market: string;
+  myBrandMentions: number;
+  citedPages: number;
+  prompts: number;
+}
+
+export type VisibilityTableRow = TopicRow | BrandRankRow | CitedPageRow | CitedSourceRow;
+
+// ---- Prompt Research page ----
+
+export type Relevancy = "낮음" | "중간" | "높음" | "Best";
+
+// searchVolume dropped for P0 — no keyword-volume API. `relevancy` stays:
+// it comes from an LLM relevance classification, not a keyword tool.
+// One LLM-generated sub-prompt under a related topic. `promptCount` on the
+// parent row is this array's length — the number of sub-prompts the LLM
+// suggested for that topic, not a keyword-volume metric.
+export interface RelatedTopicSubPrompt {
+  id: string;
+  prompt: string;
+  model: string;
+  aiResponseSummary: string;
+  brandsMentioned: number;
+  sourcesCited: number;
+}
+
+export interface RelatedTopicRow {
+  id: string;
+  topic: string;
+  promptCount: number;
+  relevancy: Relevancy;
+  subPrompts: RelatedTopicSubPrompt[];
+}
+
+export interface BrandMentionRow {
+  id: string;
+  brand: string;
+  mentions: number;
+  sourceDomains: number;
+  examplePrompt: string;
+}
+
+// organicTraffic dropped for P0 — same reason as CitedSourceRow above.
+export interface SourceDomainRow {
+  id: string;
+  domain: string;
+  mentions: number;
+  sourceUrls: number;
+  examplePrompt: string;
+}
+
+export interface PromptResearchResult {
+  topic: string;
+  stats: {
+    uniqueTopics: number;
+    uniquePrompts: number;
+    uniqueBrands: number;
+    uniqueSourceDomains: number;
+  };
+  intent: { informational: number; commercial: number; transactional: number };
+  relatedTopics: RelatedTopicRow[];
+  brands: BrandMentionRow[];
+  sourceDomains: SourceDomainRow[];
+}
+
+// ---- Prompt Library page ----
+
+export interface PromptLibraryRow {
+  id: string;
+  prompt: string;
+  origin: "manual" | "ai_generated" | "csv_import";
+  category: string;
+  subcategory: string;
+  lastModifiedAt: string | null;
+  lastModifiedBy: string | null;
+}
+
+// brandedRatio/topicIntentMatch come from our own classification of tracked
+// prompts (LLM call over prompt text) — P0-safe. Agentic URL coverage and
+// strategy recommendations both need data we don't have yet (crawler logs,
+// keyword API) and are dropped per neodigm_p0_scope.md §2.
+export interface PromptLibraryHealth {
+  brandedRatio: number;
+  brandedTarget: number;
+  topicIntentMatchCount: number;
+  topicIntentTotal: number;
+}
+
+// ---- Manage Connections page (GSC only for now — CDN/Commerce are P0-out) ----
+
+// Keyed by brandId, not orgId — GSC is a per-brand-domain connection.
+// Multiple brands each get their own row, not a single org-wide one.
+export interface GscConnection {
+  brandId: string;
+  status: "connected" | "disconnected";
+  accountEmail: string;
+  property: string;
+  lastSyncedAt: string;
+  syncedQueries: number;
+  syncedImpressions: number;
+  syncedClicks: number;
+}
+
+// ---- Brand Presence page ----
+
+// One point per week; brand names are dynamic keys holding that week's
+// value for that brand (recharts wants one row per x-axis tick).
+export interface BrandWeeklyPoint {
+  week: string;
+  [brand: string]: number | string;
+}
+
+export interface PromptMetricsPoint {
+  week: string;
+  totalPrompts: number;
+  sentimentDetectedPrompts: number;
+}
+
+export interface SentimentMoverRow {
+  id: string;
+  prompt: string;
+  source: string;
+  topic: string;
+  category: string;
+  market: string;
+  popularity: number;
+  fromSentiment: Sentiment;
+  toSentiment: Sentiment;
+}
+
+export interface DataInsightRow {
+  id: string;
+  topic: string;
+  source: string;
+  popularity: number;
+  visibilityScore: number;
+  mentions: number;
+  sentiment: Sentiment;
+  totalCitations: number;
+  ownCitations: number;
+}
+
+export interface ShareOfVoiceRow {
+  id: string;
+  topic: string;
+  popularity: number;
+  mentions: number;
+  rank: number;
+  sharePercent: number;
+  topBrands: { brand: string; share: number }[];
+}
+
+export interface BrandPresenceData {
+  allCompetitors: string[];
+  defaultSelectedCompetitors: string[];
+  mentionsByWeek: BrandWeeklyPoint[];
+  citationsByWeek: BrandWeeklyPoint[];
+  sentimentByWeek: { week: string; positive: number; neutral: number; negative: number }[];
+  promptMetricsByWeek: PromptMetricsPoint[];
+  topMovers: SentimentMoverRow[];
+  bottomMovers: SentimentMoverRow[];
+  dataInsights: DataInsightRow[];
+  shareOfVoice: ShareOfVoiceRow[];
+}
+
+// ---- Opportunity Detail — Template B (robots.txt diagnostic) ----
+
+export interface RobotsTxtLine {
+  lineNumber: number;
+  text: string;
+  blocksAgent: boolean;
+}
+
+export interface BlockedAgentRow {
+  agent: string;
+  blockedUrls: number;
+  rule: string;
+}
+
+export interface RobotsTxtOpportunity {
+  title: string;
+  description: string;
+  summary: string;
+  totalUrls: number;
+  blockedAgentsCount: number;
+  sitemapUrl: string;
+  lines: RobotsTxtLine[];
+  blockedTraffic: BlockedAgentRow[];
+}
+
+// ---- Opportunity Detail — Template C (content recovery) ----
+
+// No `traffic` column here on purpose — pageview counts need GA/CDN logs,
+// which are P0-out (neodigm_p0_scope.md §2). `priorityScore` is derived
+// from our own crawl (lower contentVisibility -> higher priority).
+export interface ContentRecoveryUrl {
+  id: string;
+  url: string;
+  status: "not_optimized" | "optimized";
+  contentVisibility: number;
+  priorityScore: number;
+}
+
+export interface ContentRecoveryOpportunity {
+  title: string;
+  affectedUrls: number;
+  expectedVisibilityMultiplier: number;
+  averageContentVisibility: number;
+  description: string;
+  optimizedCount: number;
+  totalCount: number;
+  urls: ContentRecoveryUrl[];
+}
+
+// ---- URL Inspector page ----
+// "인용 시도"(citation attempts)/"LLM 레퍼럴 유입 수" charts and the
+// "도메인 강도" column are dropped for P0 — they need CDN logs, referral
+// analytics, or a domain-authority index, none of which we have
+// (neodigm_p0_scope.md §2). Everything below comes from our own citations.
+
+export interface OwnCitedUrlRow {
+  id: string;
+  url: string;
+  citations: number;
+  citedPrompts: number;
+  contentVisibility: number;
+  category: string;
+  market: string;
+}
+
+export interface ThirdPartyUrlRow {
+  id: string;
+  url: string;
+  contentType: string;
+  citations: number;
+  citedPrompts: number;
+  category: string;
+  market: string;
+}
+
+export interface CitedDomainRow {
+  id: string;
+  domain: string;
+  citations: number;
+  uniqueUrls: number;
+  citationsPerUrl: number;
+  citedPrompts: number;
+  contentType: string;
+}
+
+export interface UrlInspectorData {
+  ownCitedPrompts: number;
+  totalCitedPrompts: number;
+  uniqueCitedUrls: number;
+  totalCitations: number;
+  ownUrls: OwnCitedUrlRow[];
+  thirdPartyUrls: ThirdPartyUrlRow[];
+  citedDomains: CitedDomainRow[];
+}
+
+// ---- Brands Management page (Settings > 브랜드 관리) ----
+// Pure CRUD over our own org's tracked brands/categories — no 3rd-party
+// data involved, fully P0.
+
+export interface SocialAccount {
+  platform: string;
+  handle: string;
+}
+
+export interface ManagedBrand {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+  industry: string;
+  markets: string[];
+  status: BrandStatus;
+  aliases: string[];
+  otherBrands: string[];
+  urls: string[];
+  socialAccounts: SocialAccount[];
+  earnedContentSources: string[];
+  cdnConnected: boolean;
+  gscConnected: boolean;
+  analyticsConnected: boolean;
+}
+
+export interface ManagedCategory {
+  id: string;
+  name: string;
+  promptCount: number;
+  origin: "system" | "user";
+}
+
+export interface BrandsManagementData {
+  brands: ManagedBrand[];
+  categories: ManagedCategory[];
+}
+
+// ---- Prompt Strategy page ----
+// Two P0 sources only (neodigm_p0_scope.md §1/§2): GSC (real impressions on
+// our own property) and a weekly LLM "insight brainstorm" batch seeded with
+// our current mentions/citations — Semrush and synthetic personas (the
+// original design's other two sources) are dropped. Both sources land in
+// this exact shape so the future batch job can write into it unchanged.
+
+export type StrategySource = "gsc" | "llm_brainstorm";
+
+export interface PromptStrategySuggestion {
+  id: string;
+  tag: "coverage_gap" | "strength";
+  source: StrategySource;
+  title: string;
+  summary: string;
+  stat: string;
+}
+
+export interface StrategyBrandMention {
+  brand: string;
+  mentions: number;
+  isOwnBrand: boolean;
+}
+
+export interface PromptStrategyTopicRow {
+  id: string;
+  topic: string;
+  market: string;
+  source: StrategySource;
+  gscImpressions: number | null;
+  brandMentions: StrategyBrandMention[];
+}
+
+export interface PromptStrategyData {
+  suggestions: PromptStrategySuggestion[];
+  topics: PromptStrategyTopicRow[];
 }

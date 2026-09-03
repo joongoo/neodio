@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 
@@ -26,8 +26,24 @@ function hasFlag(name) {
   return process.argv.includes(`--${name}`);
 }
 
+function buildNaverQueryValue(query) {
+  return query.trim().replace(/\s+/g, "+");
+}
+
+function buildNaverAiAnswerUrl(query) {
+  return `https://search.naver.com/search.naver?ssc=tab.ait.all&query=${buildNaverQueryValue(query)}&ait_pv=answer`;
+}
+
 function normalizeWhitespace(value) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeMultiline(value) {
+  return value
+    .split("\n")
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function decodeNaverRedirect(href) {
@@ -44,8 +60,8 @@ function isUsefulExternalUrl(href) {
   try {
     const url = new URL(href);
     if (!["http:", "https:"].includes(url.protocol)) return false;
-    if (url.hostname.endsWith("naver.com")) return false;
     if (url.hostname.endsWith("pstatic.net")) return false;
+    if (url.hostname === "search.naver.com") return false;
     return true;
   } catch {
     return false;
@@ -73,6 +89,45 @@ async function waitForStableText(page, timeoutMs) {
   }
 }
 
+async function waitForAiAnswer(page, timeoutMs, minWaitMs) {
+  const start = Date.now();
+  let previous = "";
+  let stableCount = 0;
+
+  await page.waitForTimeout(minWaitMs);
+
+  while (Date.now() - start < timeoutMs) {
+    const state = await page
+      .evaluate(() => {
+        const normalize = (value) => value.replace(/\s+/g, " ").trim();
+        const root = document.querySelector(".fds-aib-expandable-container") || document.querySelector(".conversation-column");
+        if (!root) {
+          return { hasRoot: false, text: "" };
+        }
+
+        const text = Array.from(
+          root.querySelectorAll(".fds-markdown-p, .fds-markdown-h, .fds-markdown-li-text, .fds-markdown-tr")
+        )
+          .map((node) => normalize(node.innerText || node.textContent || ""))
+          .filter((value) => value.length >= 10)
+          .join(" ");
+
+        return { hasRoot: true, text };
+      })
+      .catch(() => ({ hasRoot: false, text: "" }));
+
+    if (state.hasRoot && state.text.length >= 180 && Math.abs(state.text.length - previous.length) < 20) {
+      stableCount += 1;
+      if (stableCount >= 3) return;
+    } else {
+      stableCount = 0;
+    }
+
+    previous = state.text;
+    await page.waitForTimeout(1_000);
+  }
+}
+
 async function pickAnswerText(page, query) {
   return page.evaluate((queryText) => {
     const normalize = (value) => value.replace(/\s+/g, " ").trim();
@@ -80,16 +135,45 @@ async function pickAnswerText(page, query) {
       const explicit = document.querySelector(".fds-aib-expandable-container");
       if (explicit) return explicit;
 
+      const conversation = document.querySelector(".conversation-column");
+      if (conversation) return conversation;
+
       return null;
     };
 
     const root = findAiRoot();
     if (!root) return "";
 
-    const markdownText = Array.from(root.querySelectorAll("[class*='fds-markdown']"))
-      .filter((node) => !node.querySelector("[class*='fds-markdown']"))
-      .map((node) => normalize(node.innerText || ""))
-      .filter((text) => text.length >= 10 && !text.includes("새 창 열림"))
+    const readableText = (node) => {
+      const clone = node.cloneNode(true);
+      clone.querySelectorAll(".fds-overlay-chip, button, svg, [aria-hidden='true']").forEach((child) => child.remove());
+
+      if (clone.getAttribute("role") === "row") {
+        const cells = Array.from(clone.querySelectorAll("[role='columnheader'], [role='cell']"))
+          .map((cell) => normalize(cell.innerText || cell.textContent || ""))
+          .filter(Boolean);
+        return cells.join(" | ");
+      }
+
+      return normalize(clone.innerText || clone.textContent || "");
+    };
+
+    const markdownText = Array.from(
+      root.querySelectorAll(".fds-markdown-p, .fds-markdown-h, .fds-markdown-li-text, .fds-markdown-tr")
+    )
+      .filter((node) => !node.closest(".fds-source-overlay-item"))
+      .filter((node) => !node.parentElement?.closest(".fds-markdown-tr"))
+      .map(readableText)
+      .filter((text) => {
+        if (text.length < 10) return false;
+        if (text.includes("새 창 열림")) return false;
+        if (text.includes("도움이 됐어요")) return false;
+        if (text.includes("도움되지 않았어요")) return false;
+        if (text.includes("신고하기")) return false;
+        if (/^출처\s*\d+건/.test(text)) return false;
+        return true;
+      })
+      .filter((text, index, list) => list.indexOf(text) === index)
       .join("\n\n");
 
     if (markdownText.length >= 180) return markdownText;
@@ -117,18 +201,20 @@ async function pickAnswerText(page, query) {
 }
 
 async function collectCitations(page) {
-  const links = await page.evaluate(() =>
-    {
-      const explicit = document.querySelector(".fds-aib-expandable-container");
-      if (!explicit) return [];
+  const links = await page.evaluate(() => {
+    const anchors = document.querySelectorAll(
+      "a.fds-source-overlay-item[href], [aria-label='출처 정보'] a[href], .fds-aib-expandable-container a.fds-source-overlay-item[href]"
+    );
 
-      return Array.from(explicit.querySelectorAll("a[href]")).map((anchor) => ({
-      href: anchor.href,
+    return Array.from(anchors).map((anchor) => ({
+      href: anchor.getAttribute("data-nlog-imp-url") || anchor.href,
       text: (anchor.innerText || anchor.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim(),
-      title: anchor.getAttribute("title") || "",
-      }));
-    }
-  );
+      title:
+        anchor.querySelector(".fds-source-overlay-item-title")?.textContent?.replace(/\s+/g, " ").trim() ||
+        anchor.getAttribute("title") ||
+        "",
+    }));
+  });
 
   const seen = new Set();
   const citations = [];
@@ -153,40 +239,86 @@ async function collectCitations(page) {
 
 async function main() {
   const query = argValue("query", DEFAULT_QUERY);
+  const urlArg = argValue("url");
+  const htmlFile = argValue("html-file");
   const promptId = argValue("prompt-id", DEFAULT_PROMPT_ID);
   const marketId = argValue("market-id", DEFAULT_MARKET_ID);
   const outputDir = argValue("out", ".tmp/naver-ai");
   const headed = hasFlag("headed");
   const timeoutMs = Number(argValue("timeout-ms", "45000"));
+  const minWaitMs = Number(argValue("min-wait-ms", "18000"));
+  const userDataDir = argValue("user-data-dir");
+  const browserChannel = argValue("browser-channel");
+  const incognito = hasFlag("incognito") || !userDataDir;
+  const clickToStart = hasFlag("click-to-start");
+  const cdpEndpoint = argValue("cdp-endpoint");
   const runAt = new Date().toISOString();
 
-  const searchUrl = new URL("https://search.naver.com/search.naver");
-  searchUrl.searchParams.set("ssc", "tab.ait.all");
-  searchUrl.searchParams.set("ait_pv", "answer");
-  searchUrl.searchParams.set("query", query);
+  const searchUrl = urlArg || buildNaverAiAnswerUrl(query);
 
   await mkdir(outputDir, { recursive: true });
 
-  const browser = await chromium.launch({ headless: !headed });
-  const page = await browser.newPage({
+  const browserOptions = {
+    headless: !headed,
+    ...(browserChannel ? { channel: browserChannel } : {}),
+  };
+  const contextOptions = {
     locale: "ko-KR",
     viewport: { width: 1365, height: 960 },
     userAgent:
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-  });
+  };
+
+  const browser = cdpEndpoint ? await chromium.connectOverCDP(cdpEndpoint) : null;
+  const context = cdpEndpoint
+    ? browser.contexts()[0] || (await browser.newContext(contextOptions))
+    : !incognito && userDataDir
+      ? await chromium.launchPersistentContext(userDataDir, {
+          ...browserOptions,
+          ...contextOptions,
+        })
+      : await (async () => {
+          const launchedBrowser = await chromium.launch(browserOptions);
+          const browserContext = await launchedBrowser.newContext(contextOptions);
+          browserContext.once("close", () => launchedBrowser.close().catch(() => {}));
+          return browserContext;
+        })();
+  const page = cdpEndpoint
+    ? context.pages().find((candidate) => candidate.url().includes("search.naver.com/search.naver")) ||
+      (await context.newPage())
+    : await context.newPage();
 
   let status = "success";
   let errorMessage = null;
 
   try {
-    await page.goto(searchUrl.toString(), { waitUntil: "domcontentloaded", timeout: timeoutMs });
-    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-    await page.getByText("자세히 더보기").first().click({ timeout: 5_000 }).catch(() => {});
-    await waitForStableText(page, timeoutMs);
+    if (htmlFile) {
+      await page.setContent(await readFile(htmlFile, "utf8"));
+    } else {
+      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      if (clickToStart) {
+        await page.mouse.click(680, 520);
+        await page.waitForTimeout(1_000);
+      }
+      await waitForAiAnswer(page, timeoutMs, minWaitMs);
+      await page.getByText("자세히 더보기").first().click({ timeout: 5_000 }).catch(() => {});
+      await waitForAiAnswer(page, Math.min(timeoutMs, 20_000), 0);
+      await page.getByText(/출처 \d+건 전체보기/).first().click({ timeout: 5_000 }).catch(() => {});
+      await page.waitForTimeout(1_000);
+    }
+    if (htmlFile) {
+      await waitForStableText(page, timeoutMs);
+    }
 
-    const rawResponse = normalizeWhitespace(await pickAnswerText(page, query));
+    const rawResponse = normalizeMultiline(await pickAnswerText(page, query));
     const citations = await collectCitations(page);
-    const screenshotPath = path.join(outputDir, `naver-ai-${Date.now()}.png`);
+    const artifactId = Date.now();
+    const screenshotPath = path.join(outputDir, `naver-ai-${artifactId}.png`);
+    const htmlPath = path.join(outputDir, `naver-ai-${artifactId}.html`);
+    await writeFile(htmlPath, await page.content(), "utf8");
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
     if (rawResponse.length < 180) {
@@ -207,10 +339,17 @@ async function main() {
           source: "naver-ai-search",
           collectedBy: "playwright",
           query,
-          queryUrl: searchUrl.toString(),
+          queryUrl: searchUrl,
           finalUrl: page.url(),
+          htmlFile,
+          userDataDir: incognito ? undefined : userDataDir,
+          browserChannel,
+          incognito,
+          clickToStart,
+          cdpEndpoint,
           answerTextLength: rawResponse.length,
           screenshotPath,
+          htmlPath,
           citations,
           errorMessage,
         },
@@ -240,7 +379,7 @@ async function main() {
               source: "naver-ai-search",
               collectedBy: "playwright",
               query,
-              queryUrl: searchUrl.toString(),
+              queryUrl: searchUrl,
               finalUrl: page.url(),
               errorMessage: error instanceof Error ? error.message : String(error),
             },
@@ -254,7 +393,11 @@ async function main() {
     console.error(JSON.stringify({ status, outputPath, error: error instanceof Error ? error.message : String(error) }, null, 2));
     process.exitCode = 1;
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    } else {
+      await context.close();
+    }
   }
 }
 

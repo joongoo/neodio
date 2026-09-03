@@ -6,8 +6,17 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
+import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
-import { TopicCategory, TopicRow } from "@/lib/db";
+import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
+import {
+  BrandRankRow,
+  CitedPageRow,
+  CitedSourceRow,
+  TopicCategory,
+  TopicRow,
+  VisibilityTableRow,
+} from "@/lib/db";
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   "top-prompts": "이미 브랜드가 언급된 토픽의 프롬프트입니다.",
@@ -18,60 +27,164 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   "source-opportunities": "아직 우리 브랜드가 인용되지 않은 출처 기회입니다.",
 };
 
-const columns: DataTableColumn<TopicRow>[] = [
-  { key: "topic", label: "토픽", width: "w-[240px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
-  {
-    key: "searchVolume",
-    label: "검색량",
-    width: "w-[110px]",
-    render: (r) => r.searchVolume.toLocaleString("ko-KR"),
-  },
-  { key: "mentions", label: "언급 수", width: "w-[90px]", render: (r) => r.mentions },
-  { key: "visibility", label: "가시성", width: "w-[90px]", render: (r) => `${r.visibility}%` },
-  { key: "difficulty", label: "난이도", width: "w-[90px]", render: (r) => `${r.difficulty}%` },
+// Topic-shaped categories keep the full prompt-level expansion; the other
+// four categories (per neodigm_screens_documentation.md #2) each have their
+// own column set — brand-rank, cited-page and cited-source rows are never
+// reshaped into the topic table, unlike the Figma source (a documented bug).
+const TOPIC_FAMILY = new Set(["top-prompts", "topic-opportunities"]);
+const BRAND_FAMILY = new Set(["latest-top-brands"]);
+const PAGE_FAMILY = new Set(["cited-pages"]);
+const SOURCE_FAMILY = new Set(["cited-sources", "source-opportunities"]);
+
+type Family = "topic" | "brand" | "page" | "source";
+
+function familyOf(categoryId: string): Family {
+  if (TOPIC_FAMILY.has(categoryId)) return "topic";
+  if (BRAND_FAMILY.has(categoryId)) return "brand";
+  if (PAGE_FAMILY.has(categoryId)) return "page";
+  if (SOURCE_FAMILY.has(categoryId)) return "source";
+  return "topic";
+}
+
+// Configure-columns modal (node 837:10983) only ever toggles the non-primary,
+// non-action columns — each family's optional list below.
+const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
+  topic: [
+    { key: "mentions", label: "언급 수" },
+    { key: "visibility", label: "가시성" },
+    { key: "market", label: "마켓" },
+  ],
+  brand: [{ key: "mentions", label: "언급 수" }],
+  page: [
+    { key: "responses", label: "응답 수" },
+    { key: "market", label: "마켓" },
+  ],
+  source: [
+    { key: "market", label: "마켓" },
+    { key: "myBrandMentions", label: "내 브랜드 언급 수" },
+    { key: "citedPages", label: "인용된 페이지 수" },
+    { key: "prompts", label: "프롬프트 수" },
+  ],
+};
+
+function buildTopicColumns(trackedIds: Set<string>, onTrack: (row: TopicRow) => void): DataTableColumn<TopicRow>[] {
+  return [
+    { key: "topic", label: "토픽", width: "w-[280px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
+    { key: "mentions", label: "언급 수", width: "w-[100px]", render: (r) => r.mentions },
+    { key: "visibility", label: "가시성", width: "w-[100px]", render: (r) => `${r.visibility}%` },
+    {
+      key: "market",
+      label: "마켓",
+      width: "w-[90px]",
+      render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
+    },
+    {
+      key: "action",
+      width: "w-[100px]",
+      label: "액션",
+      render: (r) =>
+        trackedIds.has(r.id) ? (
+          <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTrack(r);
+            }}
+            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+          >
+            추적
+          </button>
+        ),
+    },
+  ];
+}
+
+const brandColumns: DataTableColumn<BrandRankRow>[] = [
+  { key: "brand", label: "브랜드", width: "w-[320px]", render: (r) => <span className="text-neutral-700">{r.brand}</span> },
+  { key: "mentions", label: "언급 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
+];
+
+const pageColumns: DataTableColumn<CitedPageRow>[] = [
+  { key: "pageUrl", label: "페이지 URL", width: "w-[360px]", render: (r) => <span className="truncate text-neutral-700">{r.pageUrl}</span> },
+  { key: "responses", label: "응답 수", width: "w-[110px]", render: (r) => r.responses },
   {
     key: "market",
     label: "마켓",
     width: "w-[90px]",
-    render: (r) => (
-      <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>
-    ),
-  },
-  {
-    key: "action",
-    width: "w-[100px]",
-    label: "액션",
-    render: () => (
-      <button className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer">
-        추적
-      </button>
-    ),
+    render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
   },
 ];
+
+const sourceColumns: DataTableColumn<CitedSourceRow>[] = [
+  { key: "domain", label: "도메인", width: "w-[220px]", render: (r) => <span className="text-neutral-700">{r.domain}</span> },
+  {
+    key: "market",
+    label: "마켓",
+    width: "w-[90px]",
+    render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
+  },
+  { key: "myBrandMentions", label: "내 브랜드 언급 수", width: "w-[130px]", render: (r) => r.myBrandMentions },
+  { key: "citedPages", label: "인용된 페이지 수", width: "w-[130px]", render: (r) => r.citedPages },
+  { key: "prompts", label: "프롬프트 수", width: "w-[110px]", render: (r) => r.prompts },
+];
+
+function isTopicRow(row: VisibilityTableRow): row is TopicRow {
+  return "topic" in row;
+}
+
+function allKeys(family: Family) {
+  return new Set(OPTIONAL_COLUMNS[family].map((c) => c.key));
+}
 
 export function TopicsTableSection({
   categories,
   topicsByCategory,
 }: {
   categories: TopicCategory[];
-  topicsByCategory: Record<string, TopicRow[]>;
+  topicsByCategory: Record<string, VisibilityTableRow[]>;
 }) {
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
+  const [trackingTopic, setTrackingTopic] = useState<TopicRow | null>(null);
+  const [visibleByFamily, setVisibleByFamily] = useState<Record<Family, Set<string>>>({
+    topic: allKeys("topic"),
+    brand: allKeys("brand"),
+    page: allKeys("page"),
+    source: allKeys("source"),
+  });
 
   const category = categories.find((c) => c.id === categoryId);
   const allRows = useMemo(() => topicsByCategory[categoryId] ?? [], [topicsByCategory, categoryId]);
   const pageCount = Math.max(1, Math.ceil(allRows.length / pageSize));
-  const rows = useMemo(
-    () => allRows.slice((page - 1) * pageSize, page * pageSize),
-    [allRows, page, pageSize]
-  );
+  const rows = useMemo(() => allRows.slice((page - 1) * pageSize, page * pageSize), [allRows, page, pageSize]);
 
   function selectCategory(id: string) {
     setCategoryId(id);
     setPage(1);
   }
+
+  const family = familyOf(categoryId);
+  const isTopicFamily = family === "topic";
+  const isBrandFamily = family === "brand";
+  const isPageFamily = family === "page";
+  const isSourceFamily = family === "source";
+  const visible = visibleByFamily[family];
+
+  const topicColumns = useMemo(
+    () => buildTopicColumns(trackedIds, (row) => setTrackingTopic(row)),
+    [trackedIds]
+  );
+  const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
+  const visibleBrandColumns = brandColumns.filter((c) => c.key !== "mentions" || visible.has(c.key));
+  const visiblePageColumns = pageColumns.filter((c) => !["responses", "market"].includes(c.key) || visible.has(c.key));
+  const visibleSourceColumns = sourceColumns.filter(
+    (c) => !["market", "myBrandMentions", "citedPages", "prompts"].includes(c.key) || visible.has(c.key)
+  );
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5">
@@ -85,13 +198,12 @@ export function TopicsTableSection({
       <div className="mt-4 flex items-start gap-3">
         <div className="flex-1">
           <h3 className="text-base font-bold text-neutral-900">{category?.label}</h3>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            {CATEGORY_DESCRIPTIONS[categoryId] ?? ""}
-          </p>
+          <p className="mt-0.5 text-xs text-neutral-500">{CATEGORY_DESCRIPTIONS[categoryId] ?? ""}</p>
         </div>
         <button
           type="button"
-          aria-label="설정"
+          aria-label="컬럼 설정"
+          onClick={() => setColumnsOpen(true)}
           className="grid size-9 place-items-center rounded-md text-neutral-500 hover:bg-neutral-100 cursor-pointer"
         >
           <Settings size={16} />
@@ -102,46 +214,66 @@ export function TopicsTableSection({
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-2.5">
-        <Dropdown label="" value="AI 가시성: 전체" bold options={["AI 가시성: 전체"]} />
+        {isTopicFamily && <Dropdown label="" value="AI 가시성: 전체" bold options={["AI 가시성: 전체"]} />}
         <div className="flex h-10 w-[189px] items-center justify-end rounded-md border border-neutral-300 px-3">
-          <span className="text-xs text-neutral-500">
-            0/{category?.badge ?? allRows.length}
-          </span>
+          <span className="text-xs text-neutral-500">0/{category?.badge ?? allRows.length}</span>
         </div>
       </div>
 
       <div className="mt-4">
-        <DataTable
-          columns={columns}
-          rows={rows}
-          getRowId={(r) => r.id}
-          renderExpanded={(row) => (
-            <div className="flex flex-col gap-2.5">
-              <div className="flex items-center gap-3 border-b border-neutral-100 pb-2 text-xs font-bold text-neutral-500">
-                <span className="w-[280px]">프롬프트</span>
-                <span className="w-[110px]">모델</span>
-                <span className="w-[70px]">내 브랜드</span>
-                <span className="w-[70px]">브랜드</span>
-                <span className="w-[70px]">소스</span>
-                <span className="w-[70px]">마켓</span>
-              </div>
-              {row.prompts.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 text-xs text-neutral-700">
-                  <span className="w-[280px] truncate">{p.prompt}</span>
-                  <span className="w-[110px]">{p.model}</span>
-                  <span className="w-[70px]">{p.myBrand}</span>
-                  <span className="w-[70px]">{p.brand}</span>
-                  <span className="w-[70px]">{p.source}</span>
-                  <span className="w-[70px]">
-                    <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">
-                      {p.market}
-                    </span>
-                  </span>
+        {isTopicFamily && (
+          <DataTable
+            columns={visibleTopicColumns}
+            rows={rows.filter(isTopicRow)}
+            getRowId={(r) => r.id}
+            renderExpanded={(row) => (
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-3 border-b border-neutral-100 pb-2 text-xs font-bold text-neutral-500">
+                  <span className="w-[280px]">프롬프트</span>
+                  <span className="w-[110px]">모델</span>
+                  <span className="w-[70px]">내 브랜드</span>
+                  <span className="w-[70px]">브랜드</span>
+                  <span className="w-[70px]">소스</span>
+                  <span className="w-[70px]">마켓</span>
                 </div>
-              ))}
-            </div>
-          )}
-        />
+                {row.prompts.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 text-xs text-neutral-700">
+                    <span className="w-[280px] truncate">{p.prompt}</span>
+                    <span className="w-[110px]">{p.model}</span>
+                    <span className="w-[70px]">{p.myBrand}</span>
+                    <span className="w-[70px]">{p.brand}</span>
+                    <span className="w-[70px]">{p.source}</span>
+                    <span className="w-[70px]">
+                      <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{p.market}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          />
+        )}
+
+        {isBrandFamily && (
+          <DataTable columns={visibleBrandColumns} rows={rows as BrandRankRow[]} getRowId={(r) => r.id} />
+        )}
+
+        {isPageFamily && (
+          <DataTable
+            columns={visiblePageColumns}
+            rows={rows as CitedPageRow[]}
+            getRowId={(r) => r.id}
+            renderExpanded={(row) => (
+              <div className="flex items-center gap-2 text-xs text-neutral-700">
+                <span className="font-semibold text-neutral-500">내 브랜드</span>
+                <span>{row.myBrand}건</span>
+              </div>
+            )}
+          />
+        )}
+
+        {isSourceFamily && (
+          <DataTable columns={visibleSourceColumns} rows={rows as CitedSourceRow[]} getRowId={(r) => r.id} />
+        )}
       </div>
 
       <div className="mt-4">
@@ -157,6 +289,20 @@ export function TopicsTableSection({
           }}
         />
       </div>
+
+      <ConfigureColumnsModal
+        open={columnsOpen}
+        onClose={() => setColumnsOpen(false)}
+        columns={OPTIONAL_COLUMNS[family]}
+        visible={visible}
+        onApply={(next) => setVisibleByFamily((prev) => ({ ...prev, [family]: next }))}
+      />
+
+      <TrackTopicModal
+        topic={trackingTopic}
+        onClose={() => setTrackingTopic(null)}
+        onTrack={(id) => setTrackedIds((prev) => new Set(prev).add(id))}
+      />
     </div>
   );
 }

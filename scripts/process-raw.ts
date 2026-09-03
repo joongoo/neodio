@@ -4,7 +4,7 @@ import { processPromptRuns } from "../src/lib/backend/processing";
 import { seedBrands, seedPromptRuns } from "../src/lib/db/data/seed";
 import { PromptRunSeed } from "../src/lib/db/types";
 
-const DEFAULT_INPUT_DIR = ".tmp/naver-ai";
+const DEFAULT_INPUT_DIRS = [".tmp/naver-ai", ".tmp/google-ai"];
 const DEFAULT_OUTPUT_DIR = ".tmp/processed";
 
 function argValue(name: string, fallback: string) {
@@ -24,7 +24,7 @@ function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
 }
 
-async function readCollectedNaverRuns(inputDir: string): Promise<PromptRunSeed[]> {
+async function readCollectedRuns(inputDir: string): Promise<PromptRunSeed[]> {
   const filenames = await readdir(inputDir).catch(() => []);
   const jsonFiles = filenames.filter((filename) => filename.endsWith(".json")).sort();
   const runs: PromptRunSeed[] = [];
@@ -39,10 +39,14 @@ async function readCollectedNaverRuns(inputDir: string): Promise<PromptRunSeed[]
 }
 
 async function main() {
-  const inputDir = argValue("input-dir", DEFAULT_INPUT_DIR);
+  const inputDirs = argValue("input-dir", DEFAULT_INPUT_DIRS.join(","))
+    .split(",")
+    .map((dir) => dir.trim())
+    .filter(Boolean);
   const outputDir = argValue("out", DEFAULT_OUTPUT_DIR);
   const includeSeed = hasFlag("include-seed");
-  const collectedRuns = await readCollectedNaverRuns(inputDir);
+  const collectedRunsPerDir = await Promise.all(inputDirs.map((dir) => readCollectedRuns(dir)));
+  const collectedRuns = collectedRunsPerDir.flat();
   const promptRuns = includeSeed ? [...seedPromptRuns, ...collectedRuns] : collectedRuns;
 
   const processed = processPromptRuns({
