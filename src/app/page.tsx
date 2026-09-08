@@ -15,7 +15,7 @@ import {
   buildEmptyContentVisibility,
   getLatestSitemapCrawl,
 } from "@/lib/backend/sitemapCrawlReader";
-import { getRealStatSeries } from "@/lib/backend/collectionStatsReader";
+import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
 
 function normalizeHostname(hostname: string) {
   return hostname.replace(/^www\./, "");
@@ -67,10 +67,17 @@ export default async function OverviewPage({
       ? buildContentVisibilityFromCrawl(latestCrawl, contentVisibilitySeed)
       : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
 
-  // Real collected-run data (mentions/citations/visibility score) wins over
-  // the seeded weekly snapshots once at least one collection has run — see
-  // the "수집 로그" page for the same computation applied live there.
-  const realStats = await getRealStatSeries(range);
+  // Real collected-run data (mentions/citations/visibility score, sentiment,
+  // market comparison) wins over the seeded weekly snapshots once at least
+  // one collection has run — see the "수집 로그" page for the same
+  // computation applied live there. Traffic trends and opportunities stay
+  // seeded: they need CDN/analytics logs and a live robots.txt/opportunity
+  // feed we don't collect yet (neodigm_p0_scope.md §2).
+  const [realStats, realSentiment, realMarket] = await Promise.all([
+    getRealStatSeries(range),
+    getRealSentimentSeries(range),
+    getRealMarketComparison(range),
+  ]);
   const statCards = statCardsSeed.map((stat) => {
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
@@ -78,6 +85,8 @@ export default async function OverviewPage({
     if (stat.id === "citations") return { ...stat, ...realStats.citations };
     return stat;
   });
+  const sentimentData = realSentiment ?? sentiment;
+  const marketData = realMarket ?? market;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
@@ -123,28 +132,28 @@ export default async function OverviewPage({
           description={`${RANGE_TEXT[range]}간 AI 답변에 나타난 브랜드 언급의 감성을 우호적·중립·비우호적으로 나눠 보여줘요.`}
           actionLabel="자세히보기"
         >
-          <SentimentChart data={sentiment} />
+          <SentimentChart data={sentimentData} />
         </ChartPanel>
         <ChartPanel
           title="마켓 비교"
           description={`브랜드를 주요 마켓 브랜드와 비교해요. ${RANGE_TEXT[range]}간 집계된 주간 언급 수와 인용 수예요.`}
           actionLabel="자세히보기"
         >
-          <MarketComparisonChart data={market} />
+          <MarketComparisonChart data={marketData} />
         </ChartPanel>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartPanel
           title="트래픽 추이"
-          description="에이전틱 트래픽과 리퍼럴 트래픽이 주별로 어떻게 변화했는지 보여줘요."
+          description="에이전틱 트래픽과 리퍼럴 트래픽이 주별로 어떻게 변화했는지 보여줘요. (mock — CDN 로그·애널리틱스 연동 전이라 실 데이터 없음, neodigm_p0_scope.md §2)"
           actionLabel="자세히보기"
         >
           <TrafficTrendChart data={traffic} />
         </ChartPanel>
         <ChartPanel
           title="최신 기회"
-          description="최근 추가된 기회 3건을 확인하세요."
+          description="최근 추가된 기회 3건을 확인하세요. (mock — robots.txt/콘텐츠 회복 기회를 실 크롤 결과에서 자동 생성하는 배치가 아직 없음)"
           actionLabel="전체보기"
         >
           <div className="flex flex-col gap-2">

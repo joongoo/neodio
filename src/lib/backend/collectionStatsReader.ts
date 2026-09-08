@@ -2,7 +2,7 @@ import { listCollectedRuns } from "./collectionRuns";
 import { processPromptRuns } from "./processing";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { seedBrands } from "@/lib/db/data/seed";
-import { DateRange, StatCard } from "@/lib/db/types";
+import { DateRange, MarketComparisonRow, SentimentWeek, StatCard } from "@/lib/db/types";
 
 // Server-only (pulls in collectionRuns.ts, which uses node:fs) — call only
 // from a server component/route, never a "use client" file.
@@ -30,6 +30,86 @@ function trend(current: number, previous: number | undefined): StatCard["trend"]
 
 function average(values: number[]) {
   return values.length > 0 ? Number((values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(1)) : 0;
+}
+
+// Shared by getRealSentimentSeries/getRealMarketComparison — both need the
+// same processed mentions/citations bucketed by the run's week, just
+// aggregated differently. Returns null when nothing's been collected yet.
+async function getProcessedWithWeeks(range: DateRange) {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles.map((f) => f.promptRun);
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+
+  const weekOfRun = new Map<string, string>();
+  for (const run of promptRuns) {
+    if (run.status !== "success") continue;
+    weekOfRun.set(run.id, toUtcSundayWeekStart(run.runAt));
+  }
+
+  const weeks = Array.from(new Set(weekOfRun.values())).sort();
+  if (weeks.length === 0) return null;
+
+  const windowSize = RANGE_WEEKS[range];
+  const currentWeeks = weeks.slice(-windowSize);
+  return { processed, weekOfRun, currentWeeks };
+}
+
+// Same "우리 브랜드가 언급된 프롬프트 실행의 감성" the mentions pipeline
+// already classifies per-run (see processing/mentions.ts) — just bucketed
+// by week for the chart instead of by stat-card total. Returns null when
+// nothing's been collected yet, so Overview falls back to the seeded chart.
+export async function getRealSentimentSeries(range: DateRange): Promise<SentimentWeek[] | null> {
+  const result = await getProcessedWithWeeks(range);
+  if (!result) return null;
+  const { processed, weekOfRun, currentWeeks } = result;
+
+  const byWeek = new Map(currentWeeks.map((w) => [w, { positive: 0, neutral: 0, negative: 0 }]));
+  for (const mention of processed.mentions) {
+    if (mention.brandId !== OWN_BRAND_ID || !mention.isPresent) continue;
+    const week = weekOfRun.get(mention.promptRunId);
+    const bucket = week ? byWeek.get(week) : undefined;
+    if (bucket) bucket[mention.sentiment] += 1;
+  }
+
+  return currentWeeks.map((w) => ({ week: formatWeekLabel(w), ...byWeek.get(w)! }));
+}
+
+// Mentions/citations already carry a brandId for every tracked brand, not
+// just our own (see processing/mentions.ts + citations.ts), so market
+// comparison is just the same real pipeline aggregated per brand instead
+// of filtered to OWN_BRAND_ID. Returns null when nothing's been collected.
+export async function getRealMarketComparison(range: DateRange): Promise<MarketComparisonRow[] | null> {
+  const result = await getProcessedWithWeeks(range);
+  if (!result) return null;
+  const { processed, weekOfRun, currentWeeks } = result;
+  const currentWeekSet = new Set(currentWeeks);
+
+  const byBrand = new Map<string, { brand: string; isSelf: boolean; mentions: number; citations: number }>();
+  for (const brand of seedBrands) {
+    byBrand.set(brand.id, { brand: brand.name, isSelf: brand.isOwnBrand, mentions: 0, citations: 0 });
+  }
+
+  for (const mention of processed.mentions) {
+    if (!mention.isPresent) continue;
+    const week = weekOfRun.get(mention.promptRunId);
+    if (!week || !currentWeekSet.has(week)) continue;
+    const row = byBrand.get(mention.brandId);
+    if (row) row.mentions += 1;
+  }
+
+  for (const citation of processed.citations) {
+    if (!citation.brandId) continue;
+    const week = weekOfRun.get(citation.promptRunId);
+    if (!week || !currentWeekSet.has(week)) continue;
+    const row = byBrand.get(citation.brandId);
+    if (row) row.citations += 1;
+  }
+
+  return Array.from(byBrand.values())
+    .filter((row) => row.mentions > 0 || row.citations > 0)
+    .sort((a, b) => b.mentions + b.citations - (a.mentions + a.citations));
 }
 
 // Builds the same 3 real-data-backed metrics (visibility score, brand
