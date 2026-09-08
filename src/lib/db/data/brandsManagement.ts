@@ -48,6 +48,29 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
         gscConnected: true,
         analyticsConnected: false,
       },
+      // 시연용 — 실 데이터(수집 로그) 없이도 완성된 화면을 보여줘야 할 때
+      // 이 브랜드로 전환하면 모든 페이지가 mock 데이터로 그려진다. Neodigm은
+      // 계속 실 데이터(있으면)를 보여준다 — 목록 맨 앞이 기본 선택값이라
+      // (TopBar.tsx의 OrgBrandSwitcher) Neodigm보다 뒤에 둬서 기본은 실
+      // 데이터가 보이게 한다.
+      {
+        id: "brand-demo",
+        name: "Demo",
+        url: "https://demo.neodio.app",
+        sitemapUrl: "https://demo.neodio.app/sitemap.xml",
+        description: "실 데이터 없이 화면을 시연하기 위한 브랜드 (mock 데이터 고정)",
+        industry: "Demo",
+        markets: ["한국"],
+        status: "active",
+        aliases: [],
+        otherBrands: [],
+        urls: [],
+        socialAccounts: [],
+        earnedContentSources: [],
+        cdnConnected: false,
+        gscConnected: false,
+        analyticsConnected: false,
+      },
       {
         id: "brand-growth-collective",
         name: "Growth Collective",

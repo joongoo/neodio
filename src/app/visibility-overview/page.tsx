@@ -6,6 +6,7 @@ import {
   getRealStatSeries,
   getRealTopicRows,
 } from "@/lib/backend/collectionStatsReader";
+import { isDemoMode } from "@/lib/backend/demoMode";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 
@@ -23,28 +24,23 @@ export default async function VisibilityOverviewPage({
   const range: DateRange = VALID_RANGES.includes(requestedRange as DateRange)
     ? (requestedRange as DateRange)
     : "4w";
+  const demo = await isDemoMode();
 
-  const [
-    org,
-    statCardsSeed,
-    mentionsByModelSeed,
-    mentionsByMarketSeed,
-    topicCategories,
-    realStats,
-    realMentionsByModel,
-    realMentionsByMarket,
-    realTopicRows,
-  ] = await Promise.all([
+  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories] = await Promise.all([
     db.organizations.get(orgId),
     db.visibilityOverview.getStatCards(orgId, range),
     db.visibilityOverview.getMentionsByModel(orgId),
     db.visibilityOverview.getMentionsByMarket(orgId),
     db.visibilityOverview.getTopicCategories(orgId),
-    getRealStatSeries(range),
-    getRealMentionsByModel(range),
-    getRealMentionsByMarket(range),
-    getRealTopicRows(),
   ]);
+  const [realStats, realMentionsByModel, realMentionsByMarket, realTopicRows] = demo
+    ? [null, null, null, null]
+    : await Promise.all([
+        getRealStatSeries(range),
+        getRealMentionsByModel(range),
+        getRealMentionsByMarket(range),
+        getRealTopicRows(),
+      ]);
 
   // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
   const statCards = statCardsSeed.map((stat) => {

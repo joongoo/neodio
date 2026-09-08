@@ -1,6 +1,7 @@
 import { Bell, User } from "lucide-react";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { OrgBrandSwitcher } from "@/components/layout/OrgBrandSwitcher";
+import { getSelectedBrandName } from "@/lib/backend/demoMode";
 
 // Matches Figma "TopBar_ko" (node 646:28920, Korean page). Org/brand
 // switcher restored per Adobe Brand Visibility reference — every page had
@@ -14,6 +15,7 @@ export async function TopBar() {
     db.brandsManagement.get(DEFAULT_ORG_ID),
   ]);
   const activeBrandNames = (brandsData?.brands ?? []).filter((b) => b.status === "active").map((b) => b.name);
+  const selectedBrand = await getSelectedBrandName(activeBrandNames[0] ?? "");
 
   return (
     <header className="flex items-center gap-3 border-b border-neutral-200 bg-[#fbfbfb] px-6 py-3">
@@ -22,7 +24,11 @@ export async function TopBar() {
       </div>
       <p className="text-base font-bold text-black">Neodio</p>
       <div className="mx-2 h-6 w-px bg-neutral-200" />
-      <OrgBrandSwitcher organizations={organizations.map((o) => o.name)} brands={activeBrandNames} />
+      <OrgBrandSwitcher
+        organizations={organizations.map((o) => o.name)}
+        brands={activeBrandNames}
+        initialBrand={selectedBrand}
+      />
       <div className="flex-1" />
       <button
         type="button"

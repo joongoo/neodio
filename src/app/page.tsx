@@ -16,6 +16,7 @@ import {
 } from "@/lib/backend/sitemapCrawlReader";
 import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
 import { seedMarkets } from "@/lib/db/data/seed";
+import { isDemoMode } from "@/lib/backend/demoMode";
 
 function normalizeHostname(hostname: string) {
   return hostname.replace(/^www\./, "");
@@ -37,6 +38,10 @@ export default async function OverviewPage({
   const orgId = DEFAULT_ORG_ID;
   const params = await searchParams;
   const range: DateRange = VALID_RANGES.includes(params.range as DateRange) ? (params.range as DateRange) : "4w";
+  // "Demo" 브랜드가 선택돼 있으면(OrgBrandSwitcher) 실 수집 데이터를 아예
+  // 안 읽고 mock만 보여준다 — 수집 로그가 비어 있어도 완성된 화면을 시연할
+  // 수 있게. Neodigm(기본값)은 계속 실 데이터(있으면)를 우선한다.
+  const demo = await isDemoMode();
 
   const [
     org,
@@ -87,11 +92,13 @@ export default async function OverviewPage({
   // registered → prompt to crawl. No sitemap at all → prompt to register
   // one first. See scripts/crawl-sitemap.mjs and the "사이트맵 크롤" button
   // on a brand's detail page.
-  const latestCrawl = await getLatestSitemapCrawl(org.domain);
+  const latestCrawl = demo ? null : await getLatestSitemapCrawl(org.domain);
   const contentVisibility =
-    latestCrawl && contentVisibilitySeed
+    !demo && latestCrawl && contentVisibilitySeed
       ? buildContentVisibilityFromCrawl(latestCrawl, contentVisibilitySeed)
-      : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
+      : demo && contentVisibilitySeed
+        ? contentVisibilitySeed
+        : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
 
   // 플랫폼/마켓 필터는 PromptRunSeed.llmModelId/marketId와 1:1로 대응돼서 실
   // 데이터에 바로 적용된다. 카테고리는 수집 시점엔 안 받고 "수집 로그"의 "분석"
@@ -111,11 +118,13 @@ export default async function OverviewPage({
   // computation applied live there. Traffic trends and opportunities stay
   // seeded: they need CDN/analytics logs and a live robots.txt/opportunity
   // feed we don't collect yet (neodigm_p0_scope.md §2).
-  const [realStats, realSentiment, realMarket] = await Promise.all([
-    getRealStatSeries(range, realDataFilters),
-    getRealSentimentSeries(range, realDataFilters),
-    getRealMarketComparison(range, realDataFilters),
-  ]);
+  const [realStats, realSentiment, realMarket] = demo
+    ? [null, null, null]
+    : await Promise.all([
+        getRealStatSeries(range, realDataFilters),
+        getRealSentimentSeries(range, realDataFilters),
+        getRealMarketComparison(range, realDataFilters),
+      ]);
   const statCards = statCardsSeed.map((stat) => {
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
