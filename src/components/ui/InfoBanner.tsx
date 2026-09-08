@@ -11,10 +11,12 @@ export function InfoBanner({
   title,
   description,
   actionLabel,
+  onAction,
 }: {
   title: string;
   description: string;
   actionLabel?: string;
+  onAction?: () => void;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -39,6 +41,7 @@ export function InfoBanner({
       {actionLabel && (
         <button
           type="button"
+          onClick={onAction}
           className="flex shrink-0 items-center gap-2 rounded-full bg-neutral-900 px-4 py-2.5 text-[13px] font-medium text-white cursor-pointer hover:opacity-90"
         >
           <Play size={12} fill="currentColor" />

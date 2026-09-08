@@ -1,6 +1,7 @@
 "use client";
 
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useInViewOnce } from "@/lib/useInViewOnce";
 
 const COLORS = ["#1e293b", "#3b82f6", "#fa7317", "#22c55e", "#a855f7", "#e02699"];
 
@@ -15,26 +16,31 @@ export function MultiLineChart({
   data: Record<string, number | string>[];
   series: string[];
 }) {
+  const { ref, isVisible } = useInViewOnce<HTMLDivElement>();
+
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <LineChart data={data}>
-        <CartesianGrid vertical={false} stroke="#f1f5f9" />
-        <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={12} />
-        <YAxis tickLine={false} axisLine={false} fontSize={12} width={36} />
-        <Tooltip />
-        <Legend verticalAlign="bottom" height={32} />
-        {series.map((key, i) => (
-          <Line
-            key={key}
-            type="monotone"
-            dataKey={key}
-            stroke={COLORS[i % COLORS.length]}
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            isAnimationActive={false}
-          />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+    <div ref={ref} style={{ height: 200 }}>
+      {isVisible && (
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={data}>
+            <CartesianGrid vertical={false} stroke="#f1f5f9" />
+            <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={12} />
+            <YAxis tickLine={false} axisLine={false} fontSize={12} width={36} />
+            <Tooltip />
+            <Legend verticalAlign="bottom" height={32} />
+            {series.map((key, i) => (
+              <Line
+                key={key}
+                type="monotone"
+                dataKey={key}
+                stroke={COLORS[i % COLORS.length]}
+                strokeWidth={2}
+                dot={{ r: 3 }}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
   );
 }

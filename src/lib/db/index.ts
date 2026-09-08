@@ -3,8 +3,11 @@ import { brandPresenceByOrg } from "./data/brandPresence";
 import { brandsManagementByOrg } from "./data/brandsManagement";
 import { contentRecoveryOpportunityByOrg, robotsTxtOpportunityByOrg } from "./data/opportunities";
 import { gscConnectionByBrand } from "./data/connections";
+import { gscSearchPerformanceByBrand } from "./data/gscSearchPerformance";
 import { promptLibraryByOrg, promptLibraryHealthByOrg } from "./data/promptLibrary";
 import { promptResearchByTopic } from "./data/promptResearch";
+import { searchCollectionByKeyword } from "./data/searchCollection";
+import { searchTrendByKeyword } from "./data/searchTrend";
 import { promptStrategyByOrg } from "./data/promptStrategy";
 import { urlInspectorByOrg } from "./data/urlInspector";
 import {
@@ -217,6 +220,16 @@ export const db = {
     // screen needs). Unknown topics resolve to null → empty state.
     search: async (topic: string) => promptResearchByTopic[topic.trim()] ?? null,
   },
+  searchCollection: {
+    // Single lookup for now, same shape as promptResearch.search — one call
+    // returns everything the screen needs. Unknown keywords → empty state.
+    search: async (keyword: string) => searchCollectionByKeyword[keyword.trim()] ?? null,
+  },
+  searchTrend: {
+    // API 미연동 mock — docs/naver-datalab-search-trend-plan.md. 실 연동 시
+    // 이 lookup을 DataLab API 호출로 교체하면 화면은 그대로 동작한다.
+    search: async (keyword: string) => searchTrendByKeyword[keyword.trim()] ?? null,
+  },
   promptStrategy: {
     get: async (orgId: string) => promptStrategyByOrg[orgId] ?? null,
   },
@@ -226,6 +239,12 @@ export const db = {
   },
   connections: {
     getGsc: async (brandId: string) => gscConnectionByBrand[brandId] ?? null,
+  },
+  gscSearchPerformance: {
+    // API 미연동 mock — docs/gsc-search-analytics-plan.md. 연결된(connected)
+    // 브랜드에 대해서만 존재한다고 가정 — 실 연동 시 이 lookup을 배치 결과 조회로
+    // 교체하면 화면은 그대로 동작한다.
+    get: async (brandId: string) => gscSearchPerformanceByBrand[brandId] ?? null,
   },
   brandsManagement: {
     get: async (orgId: string) => brandsManagementByOrg[orgId] ?? null,

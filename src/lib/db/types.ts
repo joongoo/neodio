@@ -238,7 +238,12 @@ export interface ContentVisibility {
   headline: string;
   detail: string;
   buttonLabel: string;
+  buttonHref?: string;
   cta: { title: string; detail: string };
+  /** Set when no real crawl exists yet — the gauge/percent aren't measured,
+   *  so the card should prompt the user to set up a sitemap or run a crawl
+   *  instead of showing a number that looks measured but isn't. */
+  emptyReason?: "no_sitemap" | "not_crawled";
 }
 
 // A single week's pre-aggregated snapshot, captured every Sunday at 00:00.
@@ -385,6 +390,102 @@ export interface PromptResearchResult {
   relatedTopics: RelatedTopicRow[];
   brands: BrandMentionRow[];
   sourceDomains: SourceDomainRow[];
+}
+
+// ---- Search Collection page ----
+
+// Naver has two distinct surfaces per project_naver_p0 memory: an AI-chat
+// surface (reuses the prompt_runs/mentions/citations pipeline, so it lives
+// under Prompt Research's model dropdown) and this traditional ranked
+// integrated-search surface, which needs its own naver_search_results
+// (keyword, block_type, rank, url, snippet) table + adapter. Google is the
+// same ranked shape, just a different provider/block taxonomy.
+export type NaverBlockType = "블로그" | "카페" | "파워링크" | "쇼핑" | "지식iN";
+
+export interface NaverSearchResultRow {
+  id: string;
+  rank: number;
+  blockType: NaverBlockType;
+  title: string;
+  url: string;
+  snippet: string;
+  isOwnBrand: boolean;
+  /** ISO timestamp of the collection run that produced this row. */
+  collectedAt: string;
+}
+
+export interface GoogleSearchResultRow {
+  id: string;
+  rank: number;
+  title: string;
+  url: string;
+  snippet: string;
+  isAiOverview: boolean;
+  isOwnBrand: boolean;
+  /** ISO timestamp of the collection run that produced this row. */
+  collectedAt: string;
+}
+
+export interface SearchCollectionResult {
+  keyword: string;
+  stats: {
+    collectedBlocks: number;
+    rankedUrls: number;
+    ownBrandRanks: number;
+    competitorRanks: number;
+  };
+  naver: NaverSearchResultRow[];
+  google: GoogleSearchResultRow[];
+}
+
+// ---- Search Trend page ----
+// Naver DataLab 통합 검색어 트렌드 API 연동 전 화면 뼈대 (docs/naver-datalab-search-trend-plan.md
+// §3 참고). 클라이언트 아이디/시크릿 발급 전이라 실제 API 호출은 없고, 이 타입에 맞는 mock
+// 시계열만 채워둔 상태 — 실 연동 시 이 shape을 그대로 채우면 됨. `ratio`는 API 응답과 동일하게
+// 절대값이 아닌 구간 내 상대값(0~100)이라는 점을 유지한다.
+export interface SearchTrendPoint {
+  period: string;
+  ratio: number;
+}
+
+export interface SearchTrendSeries {
+  id: string;
+  groupName: string;
+  keywords: string[];
+  data: SearchTrendPoint[];
+}
+
+export interface SearchTrendResult {
+  startDate: string;
+  endDate: string;
+  timeUnit: "date" | "week" | "month";
+  series: SearchTrendSeries[];
+}
+
+// ---- Search Performance page (GSC) ----
+// GSC Search Analytics API 연동 전 화면 뼈대 (docs/gsc-search-analytics-plan.md
+// §3 참고). GscConnection이 "connected"인 브랜드에 한해 이 결과가 존재한다고
+// 가정한 mock — 실 연동 시 searchanalytics.query 배치 결과를 그대로 채우면 된다.
+export interface GscTrendWeek {
+  week: string;
+  clicks: number;
+  impressions: number;
+}
+
+export interface GscTopQueryRow {
+  id: string;
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface GscSearchPerformanceResult {
+  brandId: string;
+  property: string;
+  trend: GscTrendWeek[];
+  topQueries: GscTopQueryRow[];
 }
 
 // ---- Prompt Library page ----
@@ -595,6 +696,8 @@ export interface ManagedBrand {
   id: string;
   name: string;
   url: string;
+  /** Sitemap XML URL — drives the real content-visibility crawler (scripts/crawl-sitemap.mjs). */
+  sitemapUrl: string;
   description: string;
   industry: string;
   markets: string[];
@@ -607,6 +710,28 @@ export interface ManagedBrand {
   cdnConnected: boolean;
   gscConnected: boolean;
   analyticsConnected: boolean;
+}
+
+// ---- Sitemap crawler (content-visibility: raw vs rendered HTML) ----
+// Real crawl, no mock: scripts/crawl-sitemap.mjs fetches a brand's sitemap,
+// then for each page compares raw (pre-JS) HTML text against Playwright-
+// rendered text — the same raw-vs-rendered technique described for content
+// recovery (see opportunities.ts). A low contentVisibility % means most of
+// the page's text only exists after JS runs, which AI crawlers often skip.
+export interface SitemapCrawlUrlResult {
+  url: string;
+  status: "success" | "failed";
+  rawTextLength: number;
+  renderedTextLength: number;
+  contentVisibility: number;
+  error: string | null;
+}
+
+export interface SitemapCrawlResult {
+  domain: string;
+  sitemapUrl: string;
+  crawledAt: string;
+  urls: SitemapCrawlUrlResult[];
 }
 
 export interface ManagedCategory {

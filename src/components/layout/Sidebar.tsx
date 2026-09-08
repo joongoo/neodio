@@ -45,6 +45,10 @@ const NAV: NavGroup[] = [
     children: [
       { label: "가시성 개요", href: "/visibility-overview" },
       { label: "프롬프트 리서치", href: "/prompt-research" },
+      { label: "검색결과 리서치", href: "/search-collection" },
+      { label: "검색어 트렌드", href: "/search-trend" },
+      { label: "검색 성과 (GSC)", href: "/search-performance" },
+      { label: "수집 로그", href: "/collection-runs" },
     ],
   },
   {

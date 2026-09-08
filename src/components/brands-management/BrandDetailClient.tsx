@@ -1,14 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, X, Link2, Share2, FileText, Tag } from "lucide-react";
+import { ArrowLeft, Plus, X, Link2, Share2, FileText, Tag, Radar } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlModal";
 import { ManagedBrand } from "@/lib/db";
+import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
 
 const MARKET_OPTIONS = ["한국 (KR)", "미국 (US)", "전세계"];
+
+type SitemapCrawlStatus = Pick<SitemapCrawlJob, "stage" | "log" | "error" | "result">;
 
 // Matches Figma "브랜드 상세 (Brand Detail)" (doc §22). Save is local-only
 // (no PUT /brands/{id} yet) — same mock stage as the rest of Brands
@@ -23,6 +27,44 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [addSocialOpen, setAddSocialOpen] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [crawlJobId, setCrawlJobId] = useState<string | null>(null);
+  const [crawlStatus, setCrawlStatus] = useState<SitemapCrawlStatus | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!crawlJobId) return;
+
+    async function poll() {
+      const res = await fetch(`/api/sitemap-crawl/status?jobId=${crawlJobId}`);
+      if (!res.ok) return;
+      const data: SitemapCrawlStatus = await res.json();
+      setCrawlStatus(data);
+      if (data.stage === "done" || data.stage === "error") {
+        if (pollRef.current) clearInterval(pollRef.current);
+      }
+    }
+
+    poll();
+    pollRef.current = setInterval(poll, 1500);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [crawlJobId]);
+
+  async function startSitemapCrawl() {
+    const res = await fetch("/api/sitemap-crawl/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: new URL(brand.url).hostname, sitemapUrl: brand.sitemapUrl }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      window.alert(data.error ?? "사이트맵 크롤을 시작하지 못했습니다.");
+      return;
+    }
+    setCrawlStatus({ stage: "install", log: [], error: null, result: null });
+    setCrawlJobId(data.jobId);
+  }
 
   function updateDraft(patch: Partial<ManagedBrand>) {
     setDraft((d) => ({ ...d, ...patch }));
@@ -80,6 +122,29 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         </Field>
         <Field label="기본 URL">
           <input disabled value={draft.url} className="h-10 w-full rounded-md border border-neutral-200 bg-neutral-50 px-3 text-sm text-neutral-500" />
+        </Field>
+        <Field label="사이트맵 URL">
+          <div className="flex items-center gap-2">
+            <input
+              value={draft.sitemapUrl}
+              onChange={(e) => updateDraft({ sitemapUrl: e.target.value })}
+              placeholder="https://example.com/sitemap.xml"
+              className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Radar size={14} />}
+              disabled={!brand.sitemapUrl.trim() || crawlJobId !== null}
+              onClick={startSitemapCrawl}
+              className="shrink-0 whitespace-nowrap"
+            >
+              사이트맵 크롤
+            </Button>
+          </div>
+          <span className="text-[11px] text-neutral-400">
+            이 사이트맵 기준으로 실제 페이지를 크롤해 raw HTML 대비 렌더링 후 텍스트 비율로 콘텐츠 가시성을 계산합니다.
+          </span>
         </Field>
         <Field label="설명">
           <textarea
@@ -218,6 +283,15 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
           }}
         />
       </Modal>
+
+      <SitemapCrawlModal
+        open={crawlJobId !== null}
+        status={crawlStatus}
+        onClose={() => {
+          setCrawlJobId(null);
+          setCrawlStatus(null);
+        }}
+      />
     </div>
   );
 }

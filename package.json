@@ -12,7 +12,8 @@
     "collect:google-ai": "node scripts/collect-google-ai.mjs",
     "open:google-ai-chrome": "node scripts/open-google-ai-chrome.mjs",
     "parse:naver-ai-html": "python3 scripts/parse_naver_ai_html.py",
-    "process:raw": "tsx scripts/process-raw.ts"
+    "process:raw": "tsx scripts/process-raw.ts",
+    "crawl:sitemap": "node scripts/crawl-sitemap.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

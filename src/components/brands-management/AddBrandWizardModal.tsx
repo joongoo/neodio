@@ -12,11 +12,12 @@ interface WizardState {
   name: string;
   markets: string[];
   url: string;
+  sitemapUrl: string;
   description: string;
   industry: string;
 }
 
-const EMPTY_STATE: WizardState = { name: "", markets: [], url: "", description: "", industry: "" };
+const EMPTY_STATE: WizardState = { name: "", markets: [], url: "", sitemapUrl: "", description: "", industry: "" };
 
 // Matches Figma "Modal / Add a Brand — 4단계 마법사" (doc §21). New brands
 // land as `pending` — the doc confirms pending→active happens automatically
@@ -57,6 +58,7 @@ export function AddBrandWizardModal({
     onAdd({
       name: state.name.trim(),
       url: state.url.trim(),
+      sitemapUrl: state.sitemapUrl.trim(),
       description: state.description.trim(),
       industry: state.industry.trim(),
       markets: state.markets,
@@ -132,17 +134,31 @@ export function AddBrandWizardModal({
         )}
 
         {step === 1 && (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-neutral-600">기본 URL *</span>
-            <input
-              value={state.url}
-              onChange={(e) => setState((s) => ({ ...s, url: e.target.value }))}
-              className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
-              placeholder="https://example.com"
-              autoFocus
-            />
-            <span className="text-[11px] text-neutral-400">이 URL로 도메인 온보딩이 시작됩니다.</span>
-          </label>
+          <>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-neutral-600">기본 URL *</span>
+              <input
+                value={state.url}
+                onChange={(e) => setState((s) => ({ ...s, url: e.target.value }))}
+                className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+                placeholder="https://example.com"
+                autoFocus
+              />
+              <span className="text-[11px] text-neutral-400">이 URL로 도메인 온보딩이 시작됩니다.</span>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-neutral-600">사이트맵 URL</span>
+              <input
+                value={state.sitemapUrl}
+                onChange={(e) => setState((s) => ({ ...s, sitemapUrl: e.target.value }))}
+                className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+                placeholder="https://example.com/sitemap.xml"
+              />
+              <span className="text-[11px] text-neutral-400">
+                입력하면 브랜드 상세 페이지에서 이 사이트맵 기준으로 콘텐츠 가시성 크롤을 실행할 수 있습니다.
+              </span>
+            </label>
+          </>
         )}
 
         {step === 2 && (
@@ -173,6 +189,7 @@ export function AddBrandWizardModal({
             <ReviewRow label="브랜드 이름" value={state.name || "—"} />
             <ReviewRow label="마켓" value={state.markets.join(", ") || "—"} />
             <ReviewRow label="URL" value={state.url || "—"} />
+            <ReviewRow label="사이트맵 URL" value={state.sitemapUrl || "—"} />
             <ReviewRow label="업종" value={state.industry || "—"} />
             <ReviewRow label="설명" value={state.description || "—"} />
             <p className="mt-1 text-[11px] text-neutral-400">

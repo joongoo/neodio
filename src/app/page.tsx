@@ -10,6 +10,21 @@ import { ChartPanel } from "@/components/overview/ChartPanel";
 import { ContentVisibilityCard } from "@/components/overview/ContentVisibilityCard";
 import { StatCard } from "@/components/overview/StatCard";
 import { DateRange, DEFAULT_ORG_ID, db } from "@/lib/db";
+import {
+  buildContentVisibilityFromCrawl,
+  buildEmptyContentVisibility,
+  getLatestSitemapCrawl,
+} from "@/lib/backend/sitemapCrawlReader";
+import { getRealStatSeries } from "@/lib/backend/collectionStatsReader";
+
+function normalizeHostname(hostname: string) {
+  return hostname.replace(/^www\./, "");
+}
+
+// Sitemap crawl results live under .tmp (see scripts/crawl-sitemap.mjs) and
+// change whenever someone crawls from Brand Management — never cache this
+// page on that data.
+export const dynamic = "force-dynamic";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 const RANGE_TEXT: Record<DateRange, string> = { "1w": "최근 1주", "2w": "최근 2주", "4w": "최근 4주" };
@@ -25,7 +40,7 @@ export default async function OverviewPage({
     ? (requestedRange as DateRange)
     : "4w";
 
-  const [org, statCards, contentVisibility, checklist, sentiment, market, traffic, opportunities] =
+  const [org, statCardsSeed, contentVisibilitySeed, checklist, sentiment, market, traffic, opportunities, brandsData] =
     await Promise.all([
       db.organizations.get(orgId),
       db.overview.getStatCards(orgId, range),
@@ -35,7 +50,34 @@ export default async function OverviewPage({
       db.overview.getMarketComparison(orgId, range),
       db.overview.getTrafficTrends(orgId, range),
       db.overview.getOpportunities(orgId),
+      db.brandsManagement.get(orgId),
     ]);
+
+  const ownBrand = brandsData?.brands.find(
+    (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
+  );
+
+  // Real crawl data wins when one exists. No crawl yet but a sitemap is
+  // registered → prompt to crawl. No sitemap at all → prompt to register
+  // one first. See scripts/crawl-sitemap.mjs and the "사이트맵 크롤" button
+  // on a brand's detail page.
+  const latestCrawl = await getLatestSitemapCrawl(org.domain);
+  const contentVisibility =
+    latestCrawl && contentVisibilitySeed
+      ? buildContentVisibilityFromCrawl(latestCrawl, contentVisibilitySeed)
+      : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
+
+  // Real collected-run data (mentions/citations/visibility score) wins over
+  // the seeded weekly snapshots once at least one collection has run — see
+  // the "수집 로그" page for the same computation applied live there.
+  const realStats = await getRealStatSeries(range);
+  const statCards = statCardsSeed.map((stat) => {
+    if (!realStats) return stat;
+    if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
+    if (stat.id === "brand-mentions") return { ...stat, ...realStats.brandMentions };
+    if (stat.id === "citations") return { ...stat, ...realStats.citations };
+    return stat;
+  });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">

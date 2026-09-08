@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
@@ -8,6 +10,24 @@ const DEFAULT_QUERY = "B2B 마케팅 솔루션 추천";
 const DEFAULT_MARKET_ID = "market-kr";
 const DEFAULT_PROMPT_ID = "manual-google-ai-test";
 const GOOGLE_AI_MODEL_ID = "model-google-ai-overview";
+
+// Real Chrome install paths per OS — Google collection must always run
+// through a real, incognito Chrome (see ensureIncognitoCdpEndpoint below),
+// so this needs to resolve on whichever machine runs it, not just this one.
+const CHROME_PATH_CANDIDATES = {
+  darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+  win32: [
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    `${process.env.LOCALAPPDATA ?? ""}\\Google\\Chrome\\Application\\chrome.exe`,
+  ],
+  linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/opt/google/chrome/google-chrome"],
+};
+
+function resolveChromePath() {
+  const candidates = CHROME_PATH_CANDIDATES[process.platform] ?? [];
+  return candidates.find((candidate) => candidate && existsSync(candidate)) ?? null;
+}
 
 function argValue(name, fallback = undefined) {
   const prefix = `--${name}=`;
@@ -22,16 +42,18 @@ function argValue(name, fallback = undefined) {
   return fallback;
 }
 
-function hasFlag(name) {
-  return process.argv.includes(`--${name}`);
-}
-
 function buildGoogleQueryValue(query) {
   return encodeURIComponent(query.trim());
 }
 
+// udm=50 is Google's "AI Mode" surface — a conversational answer plus a
+// full source list, not the classic accordion "AI Overview" box. Headless
+// Playwright chromium hit a captcha wall against plain google.com/search;
+// a real, incognito Chrome window on this AI Mode URL did not. See
+// ensureIncognitoCdpEndpoint below — Google collection always goes through
+// that real browser now, never the bundled headless one.
 function buildGoogleSearchUrl(query) {
-  return `https://www.google.com/search?q=${buildGoogleQueryValue(query)}&hl=ko`;
+  return `https://www.google.com/search?q=${buildGoogleQueryValue(query)}&hl=ko&udm=50`;
 }
 
 function normalizeWhitespace(value) {
@@ -46,21 +68,48 @@ function normalizeMultiline(value) {
     .join("\n\n");
 }
 
-function isUsefulExternalUrl(href) {
-  try {
-    const url = new URL(href);
-    if (!["http:", "https:"].includes(url.protocol)) return false;
-    if (url.hostname.endsWith("google.com")) return false;
-    if (url.hostname.endsWith("gstatic.com")) return false;
-    return true;
-  } catch {
-    return false;
+// Spawns a fresh, disposable incognito Chrome with a CDP debug port and
+// waits for it to come up. Google must always be collected through a real,
+// private Chrome session — never Playwright's bundled headless chromium —
+// so this is the only way into main() when --cdp-endpoint isn't given.
+async function ensureIncognitoCdpEndpoint(explicitEndpoint) {
+  if (explicitEndpoint) return { endpoint: explicitEndpoint, ownedProcess: null };
+
+  const chromePath = resolveChromePath();
+  if (!chromePath) {
+    throw new Error(
+      `Google Chrome을 찾을 수 없습니다 (${process.platform}). Google AI Mode 수집은 실제 시크릿 Chrome이 반드시 필요합니다 — Chrome을 설치하거나, 이미 열려 있는 디버그 세션의 --cdp-endpoint를 넘겨주세요.`
+    );
   }
+
+  const port = 9223;
+  const profileDir = path.join(".tmp", `google-ai-auto-chrome-${Date.now()}`);
+  mkdirSync(profileDir, { recursive: true });
+
+  const child = spawn(
+    chromePath,
+    ["--incognito", `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`, "about:blank"],
+    { detached: true, stdio: "ignore" }
+  );
+  child.unref();
+
+  const endpoint = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${endpoint}/json/version`);
+      if (res.ok) return { endpoint, ownedProcess: child };
+    } catch {
+      // Chrome still starting up
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error("Timed out waiting for the incognito Chrome debug port to become ready.");
 }
 
-async function waitForAiOverview(page, timeoutMs, minWaitMs) {
+async function waitForAiModeAnswer(page, timeoutMs, minWaitMs) {
   const start = Date.now();
-  let previous = "";
+  let previous = -1;
   let stableCount = 0;
 
   await page.waitForTimeout(minWaitMs);
@@ -68,16 +117,12 @@ async function waitForAiOverview(page, timeoutMs, minWaitMs) {
   while (Date.now() - start < timeoutMs) {
     const length = await page
       .evaluate(() => {
-        const blocks = Array.from(document.querySelectorAll("div"))
-          .filter((node) => node.childElementCount > 0 && node.childElementCount < 60)
-          .map((node) => (node.innerText || "").trim())
-          .filter((text) => text.length > 300);
-        blocks.sort((a, b) => a.length - b.length);
-        return blocks[0]?.length || 0;
+        const el = document.querySelector(".mZJni.Dn7Fzd") || document.querySelector(".CKgc1d");
+        return el ? el.innerText.trim().length : 0;
       })
       .catch(() => 0);
 
-    if (length > 300 && Math.abs(length - previous) < 20) {
+    if (length > 100 && length === previous) {
       stableCount += 1;
       if (stableCount >= 3) return;
     } else {
@@ -89,80 +134,83 @@ async function waitForAiOverview(page, timeoutMs, minWaitMs) {
   }
 }
 
-async function pickAnswerText(page, query) {
-  return page.evaluate((queryText) => {
+async function pickAiModeAnswerText(page) {
+  return page.evaluate(() => {
     const normalize = (value) => value.replace(/\s+/g, " ").trim();
+    const clean = document.querySelector(".mZJni.Dn7Fzd");
+    if (clean) return normalize(clean.innerText || "");
 
-    const queryTerms = queryText
-      .split(/\s+/)
-      .map((term) => term.trim())
-      .filter((term) => term.length >= 2);
-
-    const candidates = Array.from(document.querySelectorAll("div"))
-      .filter((node) => node.childElementCount > 0 && node.childElementCount < 80)
-      .map((node) => {
-        const text = normalize(node.innerText || "");
-        const rect = node.getBoundingClientRect();
-        const termHits = queryTerms.filter((term) => text.includes(term)).length;
-        return {
-          node,
-          text,
-          score: text.length + termHits * 250 - Math.abs(rect.top) * 0.2,
-        };
-      })
-      .filter((item) => item.text.length >= 250 && item.text.length <= 8000)
-      .sort((a, b) => b.score - a.score);
-
-    return candidates[0]?.text || "";
-  }, query);
+    // Fallback carries a "<query>에 대한 AI 모드 대답" prefix — strip it.
+    const withPrefix = document.querySelector(".CKgc1d");
+    return withPrefix ? normalize(withPrefix.innerText || "").replace(/^.*?AI 모드 대답/, "") : "";
+  });
 }
 
-async function collectCitations(page) {
-  const links = await page.evaluate(() => {
-    const normalize = (value) => value.replace(/\s+/g, " ").trim();
+// AI Mode always pre-renders every source in the DOM behind a "모두 표시"
+// (show all) toggle — clicking it just reveals the rest for innerText to
+// read, it doesn't fetch anything new. Citation links are Google redirect
+// wrappers (/goto?url=<opaque token>), so each is resolved with a
+// no-follow GET to read the real destination off the Location header.
+async function collectAiModeCitations(page) {
+  await page.getByText("모두 표시").first().click({ timeout: 5_000 }).catch(() => {});
+  await page.waitForTimeout(800);
 
-    const root = document.querySelector('[data-container-id="rhs-col"]') || document;
-    const anchors = Array.from(root.querySelectorAll("a.vIWmYe[href]"));
+  const { hrefs, titles } = await page.evaluate(() => {
+    const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
+    const root = document.querySelector('div[role="main"]') || document.body;
 
-    return anchors.map((anchor) => {
-      const card = anchor.closest("div[data-src-id], div.cRH23c") || anchor.parentElement;
-      const favicon = card?.querySelector('img[src*="faviconV2"], img[data-src*="faviconV2"]');
-      const faviconUrl = favicon?.getAttribute("data-src") || favicon?.getAttribute("src") || "";
-      const sourceName = normalize(card?.querySelector(".jdxGff")?.textContent || "");
-      const titleText = normalize(card?.querySelector(".gpZmoc, .pNAzYe")?.textContent || "");
-      const ariaLabel = normalize(anchor.getAttribute("aria-label") || "");
-
-      return {
-        href: anchor.href,
-        faviconUrl,
-        sourceName,
-        title: titleText || ariaLabel,
-      };
-    });
-  });
-
-  const seen = new Set();
-  const citations = [];
-
-  for (const link of links) {
-    let domain = link.sourceName;
-    try {
-      const faviconUrl = new URL(link.faviconUrl, "https://www.google.com");
-      const targetUrl = faviconUrl.searchParams.get("url");
-      if (targetUrl) domain = new URL(targetUrl).hostname;
-    } catch {
-      // keep sourceName as fallback domain label
+    const hrefs = [];
+    const seen = new Set();
+    for (const anchor of root.querySelectorAll('a[href^="/goto?url="]')) {
+      if (!seen.has(anchor.href)) {
+        seen.add(anchor.href);
+        hrefs.push(anchor.href);
+      }
     }
 
-    const key = link.href;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const fullText = root.innerText;
+    const marker = fullText.indexOf("있을 수 있습니다");
+    const afterMarkerIdx = marker >= 0 ? fullText.indexOf("\n", marker) : -1;
+    const after = afterMarkerIdx >= 0 ? fullText.slice(afterMarkerIdx) : "";
+    const lines = after
+      .split("\n")
+      .map(normalize)
+      .filter(Boolean)
+      .filter((line) => line !== "모두 표시" && line !== "간략히" && line !== "간략히 표시");
+
+    // Each source renders as a (domain label, title, snippet) triplet, in
+    // the same order as the deduped href list above.
+    const titles = [];
+    for (let i = 0; i + 1 < lines.length; i += 3) {
+      titles.push(lines[i + 1] || lines[i]);
+    }
+
+    return { hrefs, titles };
+  });
+
+  const citations = [];
+  for (let i = 0; i < hrefs.length; i++) {
+    const href = hrefs[i];
+    let finalUrl = href;
+    try {
+      const response = await page.context().request.get(href, { maxRedirects: 0 });
+      finalUrl = response.headers()["location"] || href;
+    } catch {
+      // keep the redirect link itself as a fallback
+    }
+
+    let domain = "";
+    try {
+      domain = new URL(finalUrl).hostname;
+    } catch {
+      // leave domain empty if the resolved URL isn't parseable
+    }
 
     citations.push({
-      title: link.title || domain,
-      url: link.href,
+      title: titles[i] || domain || finalUrl,
+      url: finalUrl,
       domain,
-      isOwnDomain: domain === "neodigm.com" || domain?.endsWith?.(".neodigm.com"),
+      isOwnDomain: domain === "neodigm.com" || domain.endsWith(".neodigm.com"),
     });
   }
 
@@ -175,65 +223,42 @@ async function main() {
   const promptId = argValue("prompt-id", DEFAULT_PROMPT_ID);
   const marketId = argValue("market-id", DEFAULT_MARKET_ID);
   const outputDir = argValue("out", ".tmp/google-ai");
-  const headed = hasFlag("headed");
   const timeoutMs = Number(argValue("timeout-ms", "45000"));
   const minWaitMs = Number(argValue("min-wait-ms", "8000"));
-  const browserChannel = argValue("browser-channel");
-  const cdpEndpoint = argValue("cdp-endpoint");
   const runAt = new Date().toISOString();
 
   const searchUrl = urlArg || buildGoogleSearchUrl(query);
 
   await mkdir(outputDir, { recursive: true });
 
-  const browserOptions = {
-    headless: !headed,
-    ...(browserChannel ? { channel: browserChannel } : {}),
-  };
-  const contextOptions = {
-    locale: "ko-KR",
-    viewport: { width: 1365, height: 960 },
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-  };
-
-  const browser = cdpEndpoint ? await chromium.connectOverCDP(cdpEndpoint) : null;
-  const context = cdpEndpoint
-    ? browser.contexts()[0] || (await browser.newContext(contextOptions))
-    : await (async () => {
-        const launchedBrowser = await chromium.launch(browserOptions);
-        const browserContext = await launchedBrowser.newContext(contextOptions);
-        browserContext.once("close", () => launchedBrowser.close().catch(() => {}));
-        return browserContext;
-      })();
-  const page = cdpEndpoint
-    ? context.pages().find((candidate) => candidate.url().includes("google.com/search")) || (await context.newPage())
-    : await context.newPage();
+  const { endpoint: cdpEndpoint, ownedProcess } = await ensureIncognitoCdpEndpoint(argValue("cdp-endpoint"));
+  const browser = await chromium.connectOverCDP(cdpEndpoint);
+  const context = browser.contexts()[0] || (await browser.newContext({ locale: "ko-KR" }));
+  const page =
+    context.pages().find((candidate) => candidate.url().includes("google.com/search")) || (await context.newPage());
 
   let status = "success";
   let errorMessage = null;
 
   try {
-    const alreadyOnResultsPage = cdpEndpoint && page.url().includes("google.com/search");
+    const alreadyOnResultsPage = page.url().includes("google.com/search");
     if (!alreadyOnResultsPage) {
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     }
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-    await waitForAiOverview(page, timeoutMs, minWaitMs);
-    await page.getByRole("button", { name: /AI 개요 더보기/ }).first().click({ timeout: 5_000 }).catch(() => {});
-    await waitForAiOverview(page, Math.min(timeoutMs, 15_000), 0);
+    await waitForAiModeAnswer(page, timeoutMs, minWaitMs);
 
-    const rawResponse = normalizeMultiline(await pickAnswerText(page, query));
-    const citations = await collectCitations(page);
+    const rawResponse = normalizeMultiline(await pickAiModeAnswerText(page));
+    const citations = await collectAiModeCitations(page);
     const artifactId = Date.now();
     const screenshotPath = path.join(outputDir, `google-ai-${artifactId}.png`);
     const htmlPath = path.join(outputDir, `google-ai-${artifactId}.html`);
     await writeFile(htmlPath, await page.content(), "utf8");
-    await page.screenshot({ path: screenshotPath, fullPage: true });
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
 
-    if (rawResponse.length < 250) {
+    if (rawResponse.length < 100) {
       status = "failed";
-      errorMessage = "empty_ai_overview: Google did not render an AI overview for this query, or the AI overview DOM changed.";
+      errorMessage = "empty_ai_mode_answer: Google did not render an AI Mode answer for this query, or the DOM changed.";
     }
 
     const result = {
@@ -247,11 +272,10 @@ async function main() {
         rawResponse,
         rawMetadata: {
           source: "google-ai-overview",
-          collectedBy: "playwright",
+          collectedBy: "playwright-incognito-chrome",
           query,
           queryUrl: searchUrl,
           finalUrl: page.url(),
-          browserChannel,
           cdpEndpoint,
           answerTextLength: rawResponse.length,
           screenshotPath,
@@ -283,7 +307,7 @@ async function main() {
             rawResponse: "",
             rawMetadata: {
               source: "google-ai-overview",
-              collectedBy: "playwright",
+              collectedBy: "playwright-incognito-chrome",
               query,
               queryUrl: searchUrl,
               finalUrl: page.url(),
@@ -299,10 +323,13 @@ async function main() {
     console.error(JSON.stringify({ status, outputPath, error: error instanceof Error ? error.message : String(error) }, null, 2));
     process.exitCode = 1;
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-    } else {
-      await context.close();
+    await browser.close().catch(() => {});
+    if (ownedProcess) {
+      try {
+        process.kill(-ownedProcess.pid);
+      } catch {
+        // already exited
+      }
     }
   }
 }
