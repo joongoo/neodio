@@ -161,7 +161,11 @@ export function PromptLibraryClient({
             label="브랜디드 / 언브랜디드"
             badge={health.brandedRatio > health.brandedTarget ? "조치 필요" : undefined}
             value={`${health.brandedRatio}%`}
-            note={`최대 목표치(${health.brandedTarget}%)보다 ${health.brandedRatio - health.brandedTarget}%p 높습니다.`}
+            note={
+              health.brandedRatio > health.brandedTarget
+                ? `최대 목표치(${health.brandedTarget}%)보다 ${health.brandedRatio - health.brandedTarget}%p 높습니다.`
+                : `최대 목표치(${health.brandedTarget}%) 이내입니다.`
+            }
           />
           <HealthCard
             label="토픽 의도 일치도"
