@@ -64,6 +64,15 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
           "\"마케팅 자동화 업체 추천해줘\"보다 \"우리 회사가 B2B IT 회사인데 마케팅 자동화를 도입하려고 해. 국내에서 구축부터 운영까지 맡길 수 있는 업체 5곳 추천해줘\"처럼 실제 구매자가 할 법한 문장이 LLM 답변에서 브랜드가 언급될 가능성이 더 높습니다. 브랜드 검색이 아닌 카테고리 검색이라 LLMO 관점에서 가치가 큽니다.",
         stat: "자연어 구매자 질문 7개 제안",
       },
+      {
+        id: "sug-7",
+        tag: "strength",
+        source: "llm_brainstorm",
+        title: "네오다임의 카테고리 경계(Category Boundary) 발견",
+        summary:
+          "ChatGPT(GPT-5.6)로 Marketo 관련 5개 고의도 프롬프트를 실측한 결과 Mention·Recommendation·Top Pick 전부 100%였습니다. 반면 \"마케팅 자동화 도입 시 고려사항\", \"국내 B2B 마케팅 자동화 플랫폼\"처럼 넓은 토픽에서는 0%였습니다 — 네오다임은 넓은 토픽보다 \"Marketo + 국내 + 구축/운영/파트너\"처럼 구매 의도가 좁아질수록 강하게 등장합니다. 다음 측정은 이 5개보다 한 단계 넓은 질문(국내 B2B MarTech 에이전시 → Adobe 파트너 → 디지털 마케팅 에이전시 → GEO 컨설팅)으로 내려가며 경계선을 찾는 것을 제안합니다.",
+        stat: "고의도 프롬프트 5/5 100% · 광의 토픽 0%",
+      },
     ],
     topics: [
       {
@@ -124,19 +133,28 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
           { brand: "Adobe Marketo Engage", mentions: 2, isOwnBrand: false },
         ],
       },
-      // 아래 st-6~st-13은 2026-09 GEO/LLMO 프롬프트셋 분석(sug-4~sug-6)에서
-      // 나온 실제 공략 후보 질문들이다. 아직 실제로 이 프롬프트를 LLM에 돌려
-      // 측정한 적이 없어서 gscImpressions는 null, Neodigm mentions는 전부
-      // 0(측정 전) — "지금 안 나옴"이 아니라 "아직 안 재봄"이라는 뜻이다.
-      // 실제 수집(수집 로그) 또는 프롬프트 리서치로 측정되면 그 값으로
-      // 교체해야 한다.
+      // 아래 st-6~st-14는 2026-09 GEO/LLMO 프롬프트셋 분석(sug-4~sug-6)에서
+      // 나온 공략 후보 질문들이다.
+      //
+      // st-6~st-9, st-14는 실제 ChatGPT(GPT-5.6) 측정 결과로 채움 (신규
+      // 세션·메모리 배제·웹 검색 없음·네오다임 의도적 포함/배제 없음 조건).
+      // brandMentions는 GPT가 스스로 보고한 "언급된 브랜드" 목록을 존재
+      // 유무(1)로 반영한 것 — 답변 내 정확한 등장 횟수는 아니다. 5개 전부
+      // 네오다임 Mention/Recommendation/Top Pick 100%.
+      //
+      // st-10~st-13은 아직 측정 전이라 gscImpressions는 null, Neodigm
+      // mentions는 0 — "언급 안 됨"이 아니라 "아직 안 재봄"이라는 뜻이다.
+      // 다음 측정 후보(같은 분석에서 제안된 "카테고리 경계 찾기" 순서):
+      // 국내 B2B MarTech 전문 에이전시 추천 → 국내 Adobe 마케팅 솔루션
+      // 파트너 → B2B 디지털 마케팅 에이전시 → 생성형 AI 검색 최적화 업체 →
+      // 국내 GEO 컨설팅 업체. 실제로 측정되면 그 값으로 교체해야 한다.
       {
         id: "st-6",
         topic: "국내 Adobe Marketo 구축 파트너 추천해줘",
         market: "KR",
         source: "llm_brainstorm",
         gscImpressions: null,
-        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+        brandMentions: [{ brand: "Neodigm", mentions: 1, isOwnBrand: true }],
       },
       {
         id: "st-7",
@@ -144,26 +162,36 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
         market: "KR",
         source: "llm_brainstorm",
         gscImpressions: null,
-        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+        brandMentions: [{ brand: "Neodigm", mentions: 1, isOwnBrand: true }],
       },
       {
         id: "st-8",
-        topic: "Adobe AEM과 Marketo를 같이 구축하거나 연동해본 국내 업체 추천해줘",
+        topic: "AEM과 Marketo 연동 가능한 구축 업체 추천해줘",
         market: "KR",
         source: "llm_brainstorm",
         gscImpressions: null,
-        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+        brandMentions: [{ brand: "Neodigm", mentions: 1, isOwnBrand: true }],
       },
       {
         id: "st-9",
-        topic: "B2B 마케팅 자동화 구축 업체 추천해줘",
+        topic: "B2B 기업 마케팅 자동화 전문 업체 알려줘",
         market: "KR",
         source: "llm_brainstorm",
         gscImpressions: null,
         brandMentions: [
-          { brand: "Neodigm", mentions: 0, isOwnBrand: true },
-          { brand: "HubSpot", mentions: 0, isOwnBrand: false },
+          { brand: "Neodigm", mentions: 1, isOwnBrand: true },
+          { brand: "HubSpot", mentions: 1, isOwnBrand: false },
+          { brand: "Adobe Marketo Engage", mentions: 1, isOwnBrand: false },
+          { brand: "Salesforce Marketing Cloud Account Engagement", mentions: 1, isOwnBrand: false },
         ],
+      },
+      {
+        id: "st-14",
+        topic: "한국에서 Marketo 운영 대행해주는 업체 알려줘",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 1, isOwnBrand: true }],
       },
       {
         id: "st-10",
