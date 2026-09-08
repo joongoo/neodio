@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
+import { Download, Upload, Plus, Pencil, Trash2, Settings } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Button } from "@/components/ui/Button";
@@ -10,13 +10,14 @@ import { InfoBanner } from "@/components/ui/InfoBanner";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
-import { AddPromptModal, EditPromptModal, ImportPromptsModal } from "@/components/prompt-library/PromptLibraryModals";
+import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow } from "@/components/prompt-library/PromptLibraryModals";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
+import { downloadCsv } from "@/lib/csv";
 
-const ORIGIN_ICON: Record<PromptLibraryRow["origin"], { icon: typeof Pencil; className: string; label: string }> = {
-  ai_generated: { icon: Sparkles, className: "text-purple-500", label: "AI 생성" },
-  manual: { icon: Pencil, className: "text-slate-500", label: "수동 입력" },
-  csv_import: { icon: Upload, className: "text-emerald-500", label: "CSV 가져오기" },
+const ORIGIN_LABEL: Record<PromptLibraryRow["origin"], string> = {
+  ai_generated: "AI 생성",
+  manual: "수동 입력",
+  csv_import: "CSV 가져오기",
 };
 
 export function PromptLibraryClient({
@@ -59,6 +60,30 @@ export function PromptLibraryClient({
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
+  // 현재 필터(검색어/카테고리/서브카테고리) 적용된 결과만 내보낸다 — 화면에
+  // 보이는 것과 CSV가 일치해야 하므로 전체 rows가 아니라 filtered 기준.
+  function exportCsv() {
+    downloadCsv(
+      "prompt-library.csv",
+      ["prompt", "category", "subcategory", "origin", "lastModifiedAt", "lastModifiedBy"],
+      filtered.map((r) => [r.prompt, r.category, r.subcategory, r.origin, r.lastModifiedAt ?? "", r.lastModifiedBy ?? ""])
+    );
+  }
+
+  function importCsv(imported: ImportedPromptRow[]) {
+    const today = new Date().toISOString().slice(0, 10);
+    const newRows: PromptLibraryRow[] = imported.map((r, i) => ({
+      id: `pl-import-${Date.now()}-${i}`,
+      prompt: r.prompt,
+      origin: "csv_import",
+      category: r.category,
+      subcategory: r.subcategory || "—",
+      lastModifiedAt: today,
+      lastModifiedBy: "나",
+    }));
+    setRows((prev) => [...newRows, ...prev]);
+  }
+
   function toggleSelected(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -100,11 +125,8 @@ export function PromptLibraryClient({
     {
       key: "origin",
       label: "출처",
-      width: "w-[60px]",
-      render: (r) => {
-        const { icon: Icon, className, label } = ORIGIN_ICON[r.origin];
-        return <Icon size={16} className={className} aria-label={label} />;
-      },
+      width: "w-[100px]",
+      render: (r) => <span className="text-xs text-neutral-500">{ORIGIN_LABEL[r.origin]}</span>,
     },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => <span className="text-neutral-600">{r.category}</span> },
     { key: "subcategory", label: "서브카테고리", width: "w-[130px]", render: (r) => <span className="truncate text-neutral-600">{r.subcategory}</span> },
@@ -193,7 +215,7 @@ export function PromptLibraryClient({
         <Button variant="secondary" icon={<Upload size={14} />} onClick={() => setImportOpen(true)}>
           CSV 가져오기
         </Button>
-        <Button variant="secondary" icon={<Download size={14} />}>
+        <Button variant="secondary" icon={<Download size={14} />} onClick={exportCsv}>
           CSV 내보내기
         </Button>
         <Button variant="primary" icon={<Plus size={14} />} onClick={() => setAddOpen(true)}>
@@ -280,7 +302,7 @@ export function PromptLibraryClient({
           )
         }
       />
-      <ImportPromptsModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <ImportPromptsModal open={importOpen} onClose={() => setImportOpen(false)} onImport={importCsv} />
       <ConfigureColumnsModal
         open={columnsOpen}
         onClose={() => setColumnsOpen(false)}

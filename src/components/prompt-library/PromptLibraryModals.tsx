@@ -6,6 +6,7 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { PromptLibraryRow } from "@/lib/db";
 import { CANONICAL_CATEGORIES } from "@/lib/categories";
+import { downloadCsv, parseCsv } from "@/lib/csv";
 
 const CATEGORY_OPTIONS = CANONICAL_CATEGORIES;
 
@@ -176,8 +177,76 @@ function EditPromptForm({
   );
 }
 
-export function ImportPromptsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export interface ImportedPromptRow {
+  prompt: string;
+  category: string;
+  subcategory: string;
+}
+
+// CSV 헤더는 대소문자/순서 무관하게 prompt/category/subcategory 열만 찾는다
+// — 사용자가 템플릿을 그대로 안 쓰고 엑셀에서 열 순서를 바꿔도 견디도록.
+function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: string | null } {
+  const table = parseCsv(text);
+  if (table.length < 2) return { rows: [], error: "헤더와 데이터 행이 최소 1줄씩 필요합니다." };
+
+  const header = table[0].map((h) => h.trim().toLowerCase());
+  const promptIdx = header.indexOf("prompt");
+  const categoryIdx = header.indexOf("category");
+  const subcategoryIdx = header.indexOf("subcategory");
+
+  if (promptIdx === -1 || categoryIdx === -1) {
+    return { rows: [], error: "필수 컬럼(prompt, category)을 찾을 수 없습니다." };
+  }
+
+  const rows = table
+    .slice(1)
+    .map((cells) => ({
+      prompt: (cells[promptIdx] ?? "").trim(),
+      category: (cells[categoryIdx] ?? "").trim(),
+      subcategory: subcategoryIdx >= 0 ? (cells[subcategoryIdx] ?? "").trim() : "",
+    }))
+    .filter((r) => r.prompt && r.category);
+
+  if (rows.length === 0) return { rows: [], error: "가져올 수 있는 유효한 행이 없습니다." };
+  return { rows, error: null };
+}
+
+export function ImportPromptsModal({
+  open,
+  onClose,
+  onImport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImport: (rows: ImportedPromptRow[]) => void;
+}) {
   const [fileName, setFileName] = useState<string | null>(null);
+  const [parsed, setParsed] = useState<ImportedPromptRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFile(file: File | undefined) {
+    if (!file) {
+      setFileName(null);
+      setParsed([]);
+      setError(null);
+      return;
+    }
+    setFileName(file.name);
+    file.text().then((text) => {
+      const { rows, error } = parseImportFile(text);
+      setParsed(rows);
+      setError(error);
+    });
+  }
+
+  function submit() {
+    if (parsed.length === 0) return;
+    onImport(parsed);
+    setFileName(null);
+    setParsed([]);
+    setError(null);
+    onClose();
+  }
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -200,19 +269,34 @@ export function ImportPromptsModal({ open, onClose }: { open: boolean; onClose: 
           type="file"
           accept=".csv"
           className="hidden"
-          onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+          onChange={(e) => handleFile(e.target.files?.[0])}
         />
       </label>
 
+      {fileName && !error && (
+        <p className="mt-2 text-xs text-emerald-600">{parsed.length}개 프롬프트를 가져올 준비가 됐습니다.</p>
+      )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+
       <div className="mt-4 flex items-center justify-between">
-        <Button variant="ghost" icon={<Download size={14} />}>
+        <Button
+          variant="ghost"
+          icon={<Download size={14} />}
+          onClick={() =>
+            downloadCsv(
+              "prompt-library-template.csv",
+              ["prompt", "category", "subcategory"],
+              [["예: 국내 GEO 컨설팅 업체 추천해줘", CATEGORY_OPTIONS[0], "예시 서브카테고리"]]
+            )
+          }
+        >
           템플릿 다운로드
         </Button>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={onClose}>
             취소
           </Button>
-          <Button variant="primary" disabled={!fileName} onClick={onClose}>
+          <Button variant="primary" disabled={parsed.length === 0} onClick={submit}>
             가져오기
           </Button>
         </div>
