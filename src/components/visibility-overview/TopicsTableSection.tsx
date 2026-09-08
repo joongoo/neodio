@@ -9,7 +9,7 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
-import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
+import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import {
   BrandRankRow,
   CitedPageRow,
@@ -152,18 +152,28 @@ export function TopicsTableSection({
   const [pageSize, setPageSize] = useState(10);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
-  const [trackingTopic, setTrackingTopic] = useState<TopicRow | null>(null);
+  const [trackTarget, setTrackTarget] = useState<TrackTarget | null>(null);
 
   // 실제로 프롬프트 라이브러리에 저장(.tmp/tracked-topics)한 뒤 그 화면으로
   // 이동한다 — 이전엔 클라이언트 로컬 state만 바뀌고 새로고침하면 사라졌고,
-  // 프롬프트 라이브러리에도 전혀 반영되지 않았다.
-  async function handleTrack(topicId: string, topicName: string, category: string) {
-    setTrackedIds((prev) => new Set(prev).add(topicId));
-    await fetch("/api/tracked-topics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: topicName, category }),
-    });
+  // 프롬프트 라이브러리에도 전혀 반영되지 않았다. 토픽 단위 추적은 그 토픽의
+  // 프롬프트마다 한 번씩 저장 — 모달이 "N개 프롬프트가 추가됩니다"라고 알려준
+  // 그대로 실제로 N개가 생긴다.
+  async function handleTrack(target: TrackTarget, category: string) {
+    setTrackedIds((prev) => new Set(prev).add(target.id));
+    const requests =
+      target.kind === "topic"
+        ? (target.prompts ?? []).map((p) => ({ prompt: p.prompt, category, topic: target.topic }))
+        : [{ prompt: target.prompt, category, topic: target.topic }];
+    await Promise.all(
+      requests.map((body) =>
+        fetch("/api/tracked-topics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      )
+    );
     router.push("/prompt-library");
   }
   const [visibleByFamily, setVisibleByFamily] = useState<Record<Family, Set<string>>>({
@@ -191,7 +201,16 @@ export function TopicsTableSection({
   const visible = visibleByFamily[family];
 
   const topicColumns = useMemo(
-    () => buildTopicColumns(trackedIds, (row) => setTrackingTopic(row)),
+    () =>
+      buildTopicColumns(trackedIds, (row) =>
+        setTrackTarget({
+          kind: "topic",
+          id: row.id,
+          topic: row.topic,
+          market: row.market,
+          prompts: row.prompts.map((p) => ({ id: p.id, prompt: p.prompt })),
+        })
+      ),
     [trackedIds]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
@@ -250,19 +269,44 @@ export function TopicsTableSection({
                   <span className="w-[70px]">브랜드</span>
                   <span className="w-[70px]">소스</span>
                   <span className="w-[70px]">마켓</span>
+                  <span className="w-[70px]">액션</span>
                 </div>
-                {row.prompts.map((p) => (
-                  <div key={p.id} className="flex items-center gap-3 text-xs text-neutral-700">
-                    <span className="w-[280px] truncate">{p.prompt}</span>
-                    <span className="w-[110px]">{p.model}</span>
-                    <span className="w-[70px]">{p.myBrand}</span>
-                    <span className="w-[70px]">{p.brand}</span>
-                    <span className="w-[70px]">{p.source}</span>
-                    <span className="w-[70px]">
-                      <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{p.market}</span>
-                    </span>
-                  </div>
-                ))}
+                {row.prompts.map((p) => {
+                  const trackId = `${row.id}-${p.id}`;
+                  return (
+                    <div key={p.id} className="flex items-center gap-3 text-xs text-neutral-700">
+                      <span className="w-[280px] truncate">{p.prompt}</span>
+                      <span className="w-[110px]">{p.model}</span>
+                      <span className="w-[70px]">{p.myBrand}</span>
+                      <span className="w-[70px]">{p.brand}</span>
+                      <span className="w-[70px]">{p.source}</span>
+                      <span className="w-[70px]">
+                        <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{p.market}</span>
+                      </span>
+                      <span className="w-[70px]">
+                        {trackedIds.has(trackId) ? (
+                          <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTrackTarget({
+                                kind: "prompt",
+                                id: trackId,
+                                prompt: p.prompt,
+                                topic: row.topic,
+                                market: p.market,
+                              })
+                            }
+                            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+                          >
+                            추적
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           />
@@ -314,9 +358,9 @@ export function TopicsTableSection({
       />
 
       <TrackTopicModal
-        topic={trackingTopic}
-        onClose={() => setTrackingTopic(null)}
-        onTrack={(id, category) => handleTrack(id, trackingTopic?.topic ?? id, category)}
+        target={trackTarget}
+        onClose={() => setTrackTarget(null)}
+        onTrack={(target, category) => handleTrack(target, category)}
       />
     </div>
   );

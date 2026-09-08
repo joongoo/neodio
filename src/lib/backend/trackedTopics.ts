@@ -8,14 +8,17 @@ import { PromptLibraryRow } from "@/lib/db/types";
 // 읽어서 mock과 합침)으로 실제로 프롬프트 라이브러리에 반영되게 한다.
 const TRACKED_DIR = ".tmp/tracked-topics";
 
-export async function trackTopic(topic: string, category: string): Promise<void> {
+// `topicName`이 있으면 토픽 행 전체 추적(그 토픽의 프롬프트마다 한 번씩 호출)
+// — 서브카테고리에 어느 토픽에서 왔는지 남긴다. 없으면 아코디언을 펼쳐서
+// 개별 프롬프트만 추적한 경우.
+export async function trackTopic(promptText: string, category: string, topicName?: string): Promise<void> {
   await mkdir(path.join(process.cwd(), TRACKED_DIR), { recursive: true });
   const row: PromptLibraryRow = {
     id: `tracked-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    prompt: topic,
+    prompt: promptText,
     origin: "manual",
     category,
-    subcategory: "가시성 개요에서 추적",
+    subcategory: topicName ? `토픽: ${topicName}` : "가시성 개요에서 추적",
     lastModifiedAt: new Date().toISOString().slice(0, 10),
     lastModifiedBy: "나",
   };

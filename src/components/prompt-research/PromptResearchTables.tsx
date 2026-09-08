@@ -104,7 +104,7 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
   const [trackedTopicIds, setTrackedTopicIds] = useState<Set<string>>(new Set());
   const [trackedPromptIds, setTrackedPromptIds] = useState<Set<string>>(new Set());
   const [trackingTopic, setTrackingTopic] = useState<RelatedTopicRow | null>(null);
-  const [trackingPrompt, setTrackingPrompt] = useState<RelatedTopicSubPrompt | null>(null);
+  const [trackingPrompt, setTrackingPrompt] = useState<{ sp: RelatedTopicSubPrompt; topicName: string } | null>(null);
 
   const topicColumns = useMemo(
     () => buildTopicColumns(trackedTopicIds, (row) => setTrackingTopic(row)),
@@ -144,7 +144,7 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => setTrackingPrompt(sp)}
+                        onClick={() => setTrackingPrompt({ sp, topicName: row.topic })}
                         className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
                       >
                         추적
@@ -160,14 +160,18 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
       <ConfigureColumnsModal open={open} onClose={() => setOpen(false)} columns={topicOptional} visible={visible} onApply={setVisible} />
 
       <TrackTopicModal
-        topic={trackingTopic}
+        target={trackingTopic ? { kind: "topic", id: trackingTopic.id, topic: trackingTopic.topic } : null}
         onClose={() => setTrackingTopic(null)}
-        onTrack={(id) => setTrackedTopicIds((prev) => new Set(prev).add(id))}
+        onTrack={(target) => setTrackedTopicIds((prev) => new Set(prev).add(target.id))}
       />
       <TrackTopicModal
-        topic={trackingPrompt ? { id: trackingPrompt.id, topic: trackingPrompt.prompt } : null}
+        target={
+          trackingPrompt
+            ? { kind: "prompt", id: trackingPrompt.sp.id, prompt: trackingPrompt.sp.prompt, topic: trackingPrompt.topicName }
+            : null
+        }
         onClose={() => setTrackingPrompt(null)}
-        onTrack={(id) => setTrackedPromptIds((prev) => new Set(prev).add(id))}
+        onTrack={(target) => setTrackedPromptIds((prev) => new Set(prev).add(target.id))}
       />
     </TablePanel>
   );

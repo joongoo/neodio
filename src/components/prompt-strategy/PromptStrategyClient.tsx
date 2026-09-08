@@ -144,9 +144,13 @@ export function PromptStrategyClient({ initial }: { initial: PromptStrategyData 
       </div>
 
       <TrackTopicModal
-        topic={trackingTopic}
+        target={
+          trackingTopic
+            ? { kind: "topic", id: trackingTopic.id, topic: trackingTopic.topic, market: trackingTopic.market }
+            : null
+        }
         onClose={() => setTrackingTopic(null)}
-        onTrack={(id) => setTrackedIds((prev) => new Set(prev).add(id))}
+        onTrack={(target) => setTrackedIds((prev) => new Set(prev).add(target.id))}
       />
     </div>
   );
