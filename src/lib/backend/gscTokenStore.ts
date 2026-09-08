@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 // 브랜드별 GSC refresh_token을 저장 — 수집 로그/추적 토픽과 같은 .tmp 실
@@ -33,6 +33,5 @@ export async function getGscToken(brandId: string): Promise<GscTokenRecord | nul
 }
 
 export async function deleteGscToken(brandId: string): Promise<void> {
-  const { unlink } = await import("node:fs/promises");
   await unlink(filePathFor(brandId)).catch(() => {});
 }
