@@ -2,6 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import { GscConnectionCard } from "@/components/brands-management/GscConnectionCard";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
+import { isDemoMode } from "@/lib/backend/demoMode";
 
 // GSC 토큰이 방금 연결/해제됐을 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export default async function BrandConnectionsPage({
 }) {
   const { brandId } = await params;
   const query = await searchParams;
+  const demo = await isDemoMode();
   const [brand, gscMock, gscToken] = await Promise.all([
     db.brandsManagement.getBrand(DEFAULT_ORG_ID, brandId),
     db.connections.getGsc(brandId),
@@ -22,8 +24,12 @@ export default async function BrandConnectionsPage({
   ]);
   if (!brand) return null;
 
-  // 실 OAuth 연결(.tmp/gsc-tokens)이 있으면 그걸로 대체 — 개요 등 다른
-  // 페이지의 "실 데이터가 mock을 이긴다" 패턴과 동일.
+  // 실 OAuth 연결(.tmp/gsc-tokens)이 있으면 그걸로 대체. mock(gscConnectionByBrand)
+  // 은 "Demo" 브랜드에서만 쓴다 — 예전엔 실 연동이 없을 때 항상 mock의
+  // status:"connected"로 폴백해서, 연결 해제를 눌러도(진짜 토큰이 없으니
+  // 지울 것도 없이) 화면이 계속 "연결됨"으로 보이는 버그가 있었다. 실
+  // OAuth가 생긴 지금은 토큰의 유무 자체가 연결 상태의 유일한 근거여야
+  // 한다.
   const gsc = gscToken
     ? {
         brandId,
@@ -35,7 +41,9 @@ export default async function BrandConnectionsPage({
         syncedImpressions: gscMock?.syncedImpressions ?? 0,
         syncedClicks: gscMock?.syncedClicks ?? 0,
       }
-    : gscMock;
+    : demo
+      ? gscMock
+      : null;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">

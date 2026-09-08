@@ -18,7 +18,10 @@ export default async function SearchPerformancePage() {
     getGscToken(DEFAULT_BRAND_ID),
   ]);
 
-  const gsc = !demo && gscToken
+  // gscMock(항상 "connected")은 "Demo" 브랜드에서만 쓴다 — 실 토큰이 없는데
+  // mock으로 폴백하면 연결 해제를 눌러도 계속 "연결됨"으로 보이는 버그가
+  // 생긴다 (실제로 겪은 버그, connections 페이지와 동일한 원인).
+  const gsc = gscToken && !demo
     ? {
         brandId: DEFAULT_BRAND_ID,
         status: "connected" as const,
@@ -29,10 +32,12 @@ export default async function SearchPerformancePage() {
         syncedImpressions: gscMock?.syncedImpressions ?? 0,
         syncedClicks: gscMock?.syncedClicks ?? 0,
       }
-    : gscMock;
+    : demo
+      ? gscMock
+      : null;
 
-  const realPerformance = !demo && gscToken ? await getRealGscSearchPerformance(DEFAULT_BRAND_ID).catch(() => null) : null;
-  const performance = realPerformance ?? performanceMock;
+  const realPerformance = gscToken && !demo ? await getRealGscSearchPerformance(DEFAULT_BRAND_ID).catch(() => null) : null;
+  const performance = realPerformance ?? (demo ? performanceMock : null);
 
   return (
     <SearchPerformanceClient
