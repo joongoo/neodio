@@ -33,6 +33,37 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
         summary: "현재 mentions/citations 데이터를 기반으로 브레인스토밍한 결과, 아직 우리 브랜드가 전혀 언급되지 않는 인접 토픽으로 식별됐습니다.",
         stat: "브레인스토밍 생성 하위 토픽 4개",
       },
+      // 2026-09 GEO/LLMO 프롬프트셋 분석(실 콘텐츠 기반) — 네오다임 홈페이지가
+      // 실제로 내세우는 포지션(Adobe Marketo Engage 공식 인증 파트너, AEM 연계
+      // 구축 사례)을 근거로, 브랜드명을 직접 묻는 질문보다 "업체 추천" 카테고리
+      // 질문에서 우리 브랜드가 잡히는지가 진짜 GEO Visibility라는 분석.
+      {
+        id: "sug-4",
+        tag: "strength",
+        source: "llm_brainstorm",
+        title: "\"AEM+Marketo 연동 업체 추천\" 핵심 공략 프롬프트",
+        summary:
+          "네오다임이 공개 사례로 AEM 웹사이트와 Marketo 연동(방문자 행동 데이터를 Marketo 리드 프로파일과 연계)을 소개하고 있어, 이 조합을 묻는 질문에 대한 근거가 명확합니다. 초기 GEO 테스트셋의 핵심 프롬프트로 우선순위를 두는 것을 제안합니다.",
+        stat: "Adobe 공식 인증 파트너 + AEM 연동 공개 사례 보유",
+      },
+      {
+        id: "sug-5",
+        tag: "coverage_gap",
+        source: "llm_brainstorm",
+        title: "\"국내 Marketo 구축/운영 대행\" 카테고리 공백",
+        summary:
+          "\"네오다임 알려줘\"처럼 브랜드명을 직접 묻는 질문에서 노출되는 건 당연합니다. 진짜 중요한 건 \"국내 Marketo 구축 업체 추천해줘\" 같은 카테고리(업체 추천) 질문에서 잡히는지입니다 — 공략 순서는 Marketo → B2B 마케팅 자동화 → Adobe MarTech → AEM+Marketo → GEO/SEO 제안.",
+        stat: "우선순위 카테고리 5개 (Marketo/MarTech/Adobe/AEM/GEO)",
+      },
+      {
+        id: "sug-6",
+        tag: "coverage_gap",
+        source: "llm_brainstorm",
+        title: "구매자 관점 자연어 질문으로 전환 필요",
+        summary:
+          "\"마케팅 자동화 업체 추천해줘\"보다 \"우리 회사가 B2B IT 회사인데 마케팅 자동화를 도입하려고 해. 국내에서 구축부터 운영까지 맡길 수 있는 업체 5곳 추천해줘\"처럼 실제 구매자가 할 법한 문장이 LLM 답변에서 브랜드가 언급될 가능성이 더 높습니다. 브랜드 검색이 아닌 카테고리 검색이라 LLMO 관점에서 가치가 큽니다.",
+        stat: "자연어 구매자 질문 7개 제안",
+      },
     ],
     topics: [
       {
@@ -92,6 +123,79 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
           { brand: "Salesforce", mentions: 6, isOwnBrand: false },
           { brand: "Adobe Marketo Engage", mentions: 2, isOwnBrand: false },
         ],
+      },
+      // 아래 st-6~st-13은 2026-09 GEO/LLMO 프롬프트셋 분석(sug-4~sug-6)에서
+      // 나온 실제 공략 후보 질문들이다. 아직 실제로 이 프롬프트를 LLM에 돌려
+      // 측정한 적이 없어서 gscImpressions는 null, Neodigm mentions는 전부
+      // 0(측정 전) — "지금 안 나옴"이 아니라 "아직 안 재봄"이라는 뜻이다.
+      // 실제 수집(수집 로그) 또는 프롬프트 리서치로 측정되면 그 값으로
+      // 교체해야 한다.
+      {
+        id: "st-6",
+        topic: "국내 Adobe Marketo 구축 파트너 추천해줘",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      {
+        id: "st-7",
+        topic: "Adobe Marketo Engage 도입 컨설팅 업체 어디가 좋아?",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      {
+        id: "st-8",
+        topic: "Adobe AEM과 Marketo를 같이 구축하거나 연동해본 국내 업체 추천해줘",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      {
+        id: "st-9",
+        topic: "B2B 마케팅 자동화 구축 업체 추천해줘",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [
+          { brand: "Neodigm", mentions: 0, isOwnBrand: true },
+          { brand: "HubSpot", mentions: 0, isOwnBrand: false },
+        ],
+      },
+      {
+        id: "st-10",
+        topic: "국내 GEO(생성형 AI 검색 최적화) 컨설팅 업체 추천해줘",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      {
+        id: "st-11",
+        topic: "우리 회사가 B2B IT 회사인데 마케팅 자동화를 도입하려고 해. 국내에서 구축부터 운영까지 맡길 수 있는 업체 5곳 추천해줘.",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      {
+        id: "st-12",
+        topic: "B2B 기업에서 리드 너처링을 자동화하려면 어떤 업체에 맡겨야 해?",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      {
+        id: "st-13",
+        topic: "국내 B2B 마케팅 자동화 업체 5곳을 구축 경험, Adobe 전문성, 운영 지원 기준으로 비교해줘",
+        market: "KR",
+        source: "llm_brainstorm",
+        gscImpressions: null,
+        brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
       },
     ],
   },
