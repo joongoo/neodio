@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Settings } from "lucide-react";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Tabs } from "@/components/ui/Tabs";
@@ -28,10 +29,24 @@ const TAG_LABEL: Record<PromptStrategySuggestion["tag"], { text: string; classNa
 };
 
 export function PromptStrategyClient({ initial }: { initial: PromptStrategyData }) {
+  const router = useRouter();
   const topics = initial.topics;
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | StrategySource>("all");
   const [trackingTopic, setTrackingTopic] = useState<PromptStrategyTopicRow | null>(null);
+
+  // 가시성 개요의 "추적" 버튼과 동일하게 실제로 .tmp/tracked-topics에
+  // 저장하고 프롬프트 라이브러리로 이동한다 — 이전엔 로컬 state만 바뀌고
+  // 새로고침하면 사라졌고, 프롬프트 라이브러리에도 반영되지 않았다.
+  async function handleTrack(id: string, topic: string, category: string) {
+    setTrackedIds((prev) => new Set(prev).add(id));
+    await fetch("/api/tracked-topics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: topic, category, source: "프롬프트 전략" }),
+    });
+    router.push("/prompt-library");
+  }
 
   const tabs = [
     { id: "all", label: "전체", badge: topics.length },
@@ -150,7 +165,7 @@ export function PromptStrategyClient({ initial }: { initial: PromptStrategyData 
             : null
         }
         onClose={() => setTrackingTopic(null)}
-        onTrack={(target) => setTrackedIds((prev) => new Set(prev).add(target.id))}
+        onTrack={(target, category) => handleTrack(target.id, trackingTopic?.topic ?? target.id, category)}
       />
     </div>
   );

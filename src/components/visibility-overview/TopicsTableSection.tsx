@@ -161,10 +161,11 @@ export function TopicsTableSection({
   // 그대로 실제로 N개가 생긴다.
   async function handleTrack(target: TrackTarget, category: string) {
     setTrackedIds((prev) => new Set(prev).add(target.id));
+    const source = "가시성 개요";
     const requests =
       target.kind === "topic"
-        ? (target.prompts ?? []).map((p) => ({ prompt: p.prompt, category, topic: target.topic }))
-        : [{ prompt: target.prompt, category, topic: target.topic }];
+        ? (target.prompts ?? []).map((p) => ({ prompt: p.prompt, category, topic: target.topic, source }))
+        : [{ prompt: target.prompt, category, topic: target.topic, source }];
     await Promise.all(
       requests.map((body) =>
         fetch("/api/tracked-topics", {

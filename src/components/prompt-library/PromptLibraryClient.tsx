@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Upload, Plus, Pencil, Trash2, Settings2 } from "lucide-react";
+import { Download, Upload, Plus, Pencil, Trash2, Settings } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Button } from "@/components/ui/Button";
@@ -234,7 +234,7 @@ export function PromptLibraryClient({
           onClick={() => setColumnsOpen(true)}
           className="grid size-9 place-items-center rounded-md text-neutral-500 hover:bg-neutral-100 cursor-pointer"
         >
-          <Settings2 size={16} />
+          <Settings size={16} />
         </button>
       </div>
 
