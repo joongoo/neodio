@@ -57,12 +57,16 @@ export default async function OverviewPage({
   // (하드코딩된 "전체"뿐이던 플레이스홀더 대체) — 다만 감성/마켓 비교를 뺀 나머지
   // 차트·stat 카드는 아직 org 단위로만 집계되고 있어 이 필터들을 바꿔도 값 자체가
   // 갈리지는 않는다. 실제 필터링은 데이터 파이프라인에 해당 축이 추가돼야 한다.
+  // 대기 중(pending) 브랜드는 온보딩(도메인 인증 등)이 끝나지 않아 아직 실제로
+  // 추적되지 않는 브랜드라, 활성(active) 브랜드가 되기 전까지는 도메인/마켓
+  // 필터에 노출하지 않는다 — 활성으로 전환되면 자동으로 옵션에 포함된다.
+  const activeBrands = (brandsData?.brands ?? []).filter((b) => b.status === "active");
   const domainOptions = Array.from(
-    new Set((brandsData?.brands ?? []).map((b) => normalizeHostname(new URL(b.url).hostname)).concat(org.domain))
+    new Set(activeBrands.map((b) => normalizeHostname(new URL(b.url).hostname)).concat(org.domain))
   );
   const platformOptions = ["전체", ...llmModels.map((m) => m.name)];
   const categoryOptions = ["전체", ...(brandsData?.categories.map((c) => c.name) ?? [])];
-  const marketOptions = ["전체", ...Array.from(new Set((brandsData?.brands ?? []).flatMap((b) => b.markets)))];
+  const marketOptions = ["전체", ...Array.from(new Set(activeBrands.flatMap((b) => b.markets)))];
 
   const ownBrand = brandsData?.brands.find(
     (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
