@@ -1,6 +1,11 @@
 import { VisibilityOverviewClient } from "@/components/visibility-overview/VisibilityOverviewClient";
 import { DateRange, DEFAULT_ORG_ID, db, VisibilityTableRow } from "@/lib/db";
-import { getRealMentionsByMarket, getRealMentionsByModel, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
+import {
+  getRealMentionsByMarket,
+  getRealMentionsByModel,
+  getRealStatSeries,
+  getRealTopicRows,
+} from "@/lib/backend/collectionStatsReader";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 
@@ -19,22 +24,29 @@ export default async function VisibilityOverviewPage({
     ? (requestedRange as DateRange)
     : "4w";
 
-  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, realStats, realMentionsByModel, realMentionsByMarket] =
-    await Promise.all([
-      db.organizations.get(orgId),
-      db.visibilityOverview.getStatCards(orgId, range),
-      db.visibilityOverview.getMentionsByModel(orgId),
-      db.visibilityOverview.getMentionsByMarket(orgId),
-      db.visibilityOverview.getTopicCategories(orgId),
-      getRealStatSeries(range),
-      getRealMentionsByModel(range),
-      getRealMentionsByMarket(range),
-    ]);
+  const [
+    org,
+    statCardsSeed,
+    mentionsByModelSeed,
+    mentionsByMarketSeed,
+    topicCategories,
+    realStats,
+    realMentionsByModel,
+    realMentionsByMarket,
+    realTopicRows,
+  ] = await Promise.all([
+    db.organizations.get(orgId),
+    db.visibilityOverview.getStatCards(orgId, range),
+    db.visibilityOverview.getMentionsByModel(orgId),
+    db.visibilityOverview.getMentionsByMarket(orgId),
+    db.visibilityOverview.getTopicCategories(orgId),
+    getRealStatSeries(range),
+    getRealMentionsByModel(range),
+    getRealMentionsByMarket(range),
+    getRealTopicRows(),
+  ]);
 
-  // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴. 토픽 테이블
-  // (성과 좋은 프롬프트/토픽 기회/상위 브랜드/인용 페이지·소스)은 seedTopics에
-  // 미리 구성된 토픽·프롬프트 카탈로그가 있어야 해서, 임의 키워드 수집만으로는
-  // 아직 실 데이터로 못 만든다 — 계속 mock으로 유지.
+  // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
   const statCards = statCardsSeed.map((stat) => {
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
@@ -51,6 +63,14 @@ export default async function VisibilityOverviewPage({
       topicsByCategory[c.id] = await db.visibilityOverview.getTopics(orgId, c.id);
     })
   );
+  // "top-prompts"/"topic-opportunities"만 실 데이터로 교체 — 수집 로그에
+  // 입력한 키워드(rawMetadata.query)를 토픽처럼 묶은 것. 나머지 4개 카테고리
+  // (상위 브랜드/인용 페이지·소스)는 아직 실 파이프라인이 계산하지 않는
+  // 별도 지표라 mock 유지.
+  if (realTopicRows) {
+    topicsByCategory["top-prompts"] = realTopicRows.topPrompts;
+    topicsByCategory["topic-opportunities"] = realTopicRows.opportunities;
+  }
 
   return (
     <VisibilityOverviewClient

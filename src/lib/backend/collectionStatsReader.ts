@@ -2,7 +2,7 @@ import { listCollectedRuns } from "./collectionRuns";
 import { processPromptRuns } from "./processing";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { seedBrands, seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
-import { DateRange, MarketComparisonRow, RankedRow, SentimentWeek, StatCard } from "@/lib/db/types";
+import { DateRange, MarketComparisonRow, RankedRow, SentimentWeek, StatCard, TopicPromptRow, TopicRow } from "@/lib/db/types";
 
 // Server-only (pulls in collectionRuns.ts, which uses node:fs) — call only
 // from a server component/route, never a "use client" file.
@@ -239,4 +239,99 @@ export async function getRealMentionsByModel(range: DateRange, filters: RealData
 
 export async function getRealMentionsByMarket(range: DateRange, filters: RealDataFilters = {}): Promise<RankedRow[] | null> {
   return getRealMentionsBy(range, (run) => seedMarkets.find((m) => m.id === run.marketId)?.label, filters);
+}
+
+export interface RealTopicRows {
+  /** Visibility Overview's "top-prompts" category — 실행 중 우리 브랜드가
+   *  한 번이라도 언급된 쿼리들. */
+  topPrompts: TopicRow[];
+  /** "topic-opportunities" 카테고리 — 언급이 한 번도 없었던 쿼리들. */
+  opportunities: TopicRow[];
+}
+
+// Visibility Overview의 토픽 테이블은 원래 seedTopics(고정 8개 토픽 id)를
+// 기준으로 짜여 있는데, 실 수집 데이터는 그 id 체계를 전혀 모른다 — 대신
+// "수집 로그"에 입력한 키워드(rawMetadata.query)가 사실상의 "토픽"이다.
+// 나중에 스케줄러가 프롬프트 라이브러리의 프롬프트를 그대로 --query로 돌리게
+// 되면 이 query 값이 곧 그 프롬프트 텍스트가 되므로, 지금 이 그룹화 방식을
+// 그대로 쓸 수 있다 — 수동 키워드 수집이든 향후 배치 수집이든 같은 필드
+// (rawMetadata.query)만 채우면 자동으로 여기 반영된다. 주(week) 단위로
+// 거르지 않는 전체 기간 집계 — 토픽 테이블 자체가 range 필터를 안 받는다.
+export async function getRealTopicRows(filters: RealDataFilters = {}): Promise<RealTopicRows | null> {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => run.status === "success")
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  if (promptRuns.length === 0) return null;
+
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const runsById = new Map(promptRuns.map((run) => [run.id, run]));
+
+  const ownMentionByRun = new Map<string, boolean>();
+  const otherMentionCountByRun = new Map<string, number>();
+  for (const mention of processed.mentions) {
+    if (mention.brandId === OWN_BRAND_ID) {
+      ownMentionByRun.set(mention.promptRunId, mention.isPresent);
+    } else if (mention.isPresent) {
+      otherMentionCountByRun.set(mention.promptRunId, (otherMentionCountByRun.get(mention.promptRunId) ?? 0) + 1);
+    }
+  }
+  const citationCountByRun = new Map<string, number>();
+  for (const citation of processed.citations) {
+    citationCountByRun.set(citation.promptRunId, (citationCountByRun.get(citation.promptRunId) ?? 0) + 1);
+  }
+
+  const runIdsByQuery = new Map<string, string[]>();
+  for (const run of promptRuns) {
+    const query = run.rawMetadata.query?.trim();
+    if (!query) continue;
+    const list = runIdsByQuery.get(query) ?? [];
+    list.push(run.id);
+    runIdsByQuery.set(query, list);
+  }
+  if (runIdsByQuery.size === 0) return null;
+
+  const topPrompts: TopicRow[] = [];
+  const opportunities: TopicRow[] = [];
+
+  for (const [query, runIds] of runIdsByQuery) {
+    const mentionCount = runIds.filter((id) => ownMentionByRun.get(id)).length;
+    const firstRun = runsById.get(runIds[0])!;
+    const market = seedMarkets.find((m) => m.id === firstRun.marketId)?.label ?? firstRun.marketId;
+
+    const prompts: TopicPromptRow[] = runIds.map((id) => {
+      const run = runsById.get(id)!;
+      return {
+        id,
+        prompt: query,
+        model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId,
+        myBrand: ownMentionByRun.get(id) ? "노출" : "미노출",
+        brand: String(otherMentionCountByRun.get(id) ?? 0),
+        source: String(citationCountByRun.get(id) ?? 0),
+        market: seedMarkets.find((m) => m.id === run.marketId)?.label ?? run.marketId,
+      };
+    });
+
+    const row: TopicRow = {
+      id: `real-${query}`,
+      topic: query,
+      mentions: mentionCount,
+      visibility: Math.round((mentionCount / runIds.length) * 100),
+      market,
+      prompts,
+    };
+
+    (mentionCount > 0 ? topPrompts : opportunities).push(row);
+  }
+
+  topPrompts.sort((a, b) => b.mentions - a.mentions);
+  opportunities.sort((a, b) => b.prompts.length - a.prompts.length);
+
+  if (topPrompts.length === 0 && opportunities.length === 0) return null;
+  return { topPrompts, opportunities };
 }
