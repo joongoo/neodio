@@ -1,8 +1,8 @@
 import { listCollectedRuns } from "./collectionRuns";
 import { processPromptRuns } from "./processing";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
-import { seedBrands } from "@/lib/db/data/seed";
-import { DateRange, MarketComparisonRow, SentimentWeek, StatCard } from "@/lib/db/types";
+import { seedBrands, seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
+import { DateRange, MarketComparisonRow, RankedRow, SentimentWeek, StatCard } from "@/lib/db/types";
 
 // Server-only (pulls in collectionRuns.ts, which uses node:fs) — call only
 // from a server component/route, never a "use client" file.
@@ -79,7 +79,8 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
   const windowSize = RANGE_WEEKS[range];
   const currentWeeks = weeks.slice(-windowSize);
   const previousWeeks = weeks.slice(-windowSize * 2, -windowSize);
-  return { processed, weekOfRun, currentWeeks, previousWeeks };
+  const runsById = new Map(promptRuns.map((run) => [run.id, run]));
+  return { processed, weekOfRun, currentWeeks, previousWeeks, runsById };
 }
 
 // Same "우리 브랜드가 언급된 프롬프트 실행의 감성" the mentions pipeline
@@ -196,4 +197,46 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
       sparkline: sparkline(currentWeeks, citationsByWeek),
     },
   };
+}
+
+// Ranked "우리 브랜드가 언급된 횟수" broken down by which LLM/market produced
+// the run — Visibility Overview's "Mentions by Model"/"Mentions by Market"
+// panels. Only the "mentions" tab has a well-defined real computation this
+// way; "visibility"/"exposure" need a per-model scoring formula the pipeline
+// doesn't compute yet, so callers keep those two tabs on the seeded mock and
+// only swap in this real "mentions" list.
+async function getRealMentionsBy(
+  range: DateRange,
+  groupKey: (run: { llmModelId: string; marketId: string }) => string | undefined,
+  filters: RealDataFilters
+): Promise<RankedRow[] | null> {
+  const result = await getProcessedWithWeeks(range, filters);
+  if (!result) return null;
+  const { processed, weekOfRun, currentWeeks, runsById } = result;
+  const currentWeekSet = new Set(currentWeeks);
+
+  const countByGroup = new Map<string, number>();
+  for (const mention of processed.mentions) {
+    if (mention.brandId !== OWN_BRAND_ID || !mention.isPresent) continue;
+    const week = weekOfRun.get(mention.promptRunId);
+    if (!week || !currentWeekSet.has(week)) continue;
+    const run = runsById.get(mention.promptRunId);
+    const group = run && groupKey(run);
+    if (!group) continue;
+    countByGroup.set(group, (countByGroup.get(group) ?? 0) + 1);
+  }
+  if (countByGroup.size === 0) return null;
+
+  const total = Array.from(countByGroup.values()).reduce((s, v) => s + v, 0);
+  return Array.from(countByGroup.entries())
+    .map(([label, value]) => ({ label, value, display: `${value} (${Math.round((value / total) * 100)}%)` }))
+    .sort((a, b) => b.value - a.value);
+}
+
+export async function getRealMentionsByModel(range: DateRange, filters: RealDataFilters = {}): Promise<RankedRow[] | null> {
+  return getRealMentionsBy(range, (run) => seedLlmModels.find((m) => m.id === run.llmModelId)?.name, filters);
+}
+
+export async function getRealMentionsByMarket(range: DateRange, filters: RealDataFilters = {}): Promise<RankedRow[] | null> {
+  return getRealMentionsBy(range, (run) => seedMarkets.find((m) => m.id === run.marketId)?.label, filters);
 }

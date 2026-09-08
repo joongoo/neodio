@@ -5,9 +5,9 @@ import { Download, Upload } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { PromptLibraryRow } from "@/lib/db";
+import { CANONICAL_CATEGORIES } from "@/lib/categories";
 
-// Brand Management의 카테고리와 동일한 목록으로 통일 — brandsManagement.ts 참고.
-const CATEGORY_OPTIONS = ["MarTech 전략", "마케팅 자동화", "콘텐츠 최적화", "기술적 GEO", "소셜 및 커뮤니티"];
+const CATEGORY_OPTIONS = CANONICAL_CATEGORIES;
 
 // Matches Figma "Modal / Add Prompts", "Modal / Import Prompts", "Modal /
 // Edit Prompt" (Prompt Library screen spec, neodigm_screens_documentation.md

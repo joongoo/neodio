@@ -3,8 +3,9 @@
 import { FormEvent, useState } from "react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { CANONICAL_CATEGORIES } from "@/lib/categories";
 
-const CATEGORY_OPTIONS = ["마케팅", "브랜드", "자동화 툴", "광고"];
+const CATEGORY_OPTIONS = CANONICAL_CATEGORIES;
 
 export interface TrackableTopic {
   id: string;
@@ -13,7 +14,8 @@ export interface TrackableTopic {
 
 // Matches Figma "Modal / Add Topic to Configuration" (doc §2, reused across
 // Visibility Overview/Prompt Research/Market Comparison/Prompt Strategy) —
-// Brand(고정: Neodigm)/Category 선택 후 pending 상태로 Prompt Library에 추가.
+// Brand(고정: Neodigm)/Category 선택 후 실제로 .tmp/tracked-topics에 저장하고
+// (src/lib/backend/trackedTopics.ts) Prompt Library로 이동한다.
 export function TrackTopicModal({
   topic,
   onClose,
@@ -76,7 +78,7 @@ function TrackTopicForm({
           </select>
         </label>
         <p className="rounded-md bg-neutral-100 px-3 py-2 text-xs text-neutral-500">
-          프롬프트는 프롬프트 라이브러리에서 확정하기 전까지 대기(pending) 상태로 저장됩니다.
+          이 토픽을 프롬프트 라이브러리에 바로 추가하고, 확인할 수 있도록 그 화면으로 이동합니다.
         </p>
         <div className="mt-1 flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>

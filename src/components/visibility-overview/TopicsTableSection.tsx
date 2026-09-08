@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Settings, Download } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
@@ -145,12 +146,26 @@ export function TopicsTableSection({
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
 }) {
+  const router = useRouter();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [trackingTopic, setTrackingTopic] = useState<TopicRow | null>(null);
+
+  // 실제로 프롬프트 라이브러리에 저장(.tmp/tracked-topics)한 뒤 그 화면으로
+  // 이동한다 — 이전엔 클라이언트 로컬 state만 바뀌고 새로고침하면 사라졌고,
+  // 프롬프트 라이브러리에도 전혀 반영되지 않았다.
+  async function handleTrack(topicId: string, topicName: string, category: string) {
+    setTrackedIds((prev) => new Set(prev).add(topicId));
+    await fetch("/api/tracked-topics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: topicName, category }),
+    });
+    router.push("/prompt-library");
+  }
   const [visibleByFamily, setVisibleByFamily] = useState<Record<Family, Set<string>>>({
     topic: allKeys("topic"),
     brand: allKeys("brand"),
@@ -301,7 +316,7 @@ export function TopicsTableSection({
       <TrackTopicModal
         topic={trackingTopic}
         onClose={() => setTrackingTopic(null)}
-        onTrack={(id) => setTrackedIds((prev) => new Set(prev).add(id))}
+        onTrack={(id, category) => handleTrack(id, trackingTopic?.topic ?? id, category)}
       />
     </div>
   );
