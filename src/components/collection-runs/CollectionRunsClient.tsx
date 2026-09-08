@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TablePanel } from "@/components/ui/TablePanel";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 import { CollectionRunForm } from "@/components/collection-runs/CollectionRunForm";
 import { BrandSeed } from "@/lib/db";
 import { ProcessedPromptRuns } from "@/lib/backend/processing";
@@ -65,6 +66,19 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
       render: (f) => f.promptRun.rawMetadata.citations?.length ?? 0,
     },
     {
+      key: "category",
+      label: "카테고리",
+      width: "w-[130px]",
+      render: (f) =>
+        f.promptRun.rawMetadata.category ? (
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+            {f.promptRun.rawMetadata.category}
+          </span>
+        ) : (
+          <span className="text-[11px] text-neutral-400">미분류</span>
+        ),
+    },
+    {
       key: "analyze",
       label: "",
       width: "w-[80px]",
@@ -120,10 +134,12 @@ export function CollectionRunsClient({
   runFiles,
   processed,
   brands,
+  categories,
 }: {
   runFiles: CollectedRunFile[];
   processed: ProcessedPromptRuns;
   brands: BrandSeed[];
+  categories: string[];
 }) {
   const router = useRouter();
   const [analyzingFile, setAnalyzingFile] = useState<CollectedRunFile | null>(null);
@@ -185,17 +201,121 @@ export function CollectionRunsClient({
         </>
       )}
 
-      <Modal open={analyzingFile !== null} onClose={() => setAnalyzingFile(null)}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-neutral-900">분석 기능은 개발 진행 중입니다</h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              LLM을 붙여 프롬프트 전략/기회를 자동 제안하거나 수동으로 분석하는 기능이 이 자리에 추가될 예정입니다.
-            </p>
-          </div>
-          <ModalCloseButton onClose={() => setAnalyzingFile(null)} />
-        </div>
-      </Modal>
+      <CategorizeRunModal
+        file={analyzingFile}
+        categories={categories}
+        onClose={() => setAnalyzingFile(null)}
+        onSaved={() => {
+          setAnalyzingFile(null);
+          router.refresh();
+        }}
+      />
     </div>
+  );
+}
+
+// "분석" 버튼의 첫 단계 — 프롬프트 라이브러리의 "프롬프트 추가" 모달(AddPromptModal)과
+// 같은 카테고리 목록/레이아웃으로 이 실행을 분류한다. 수집 시점엔 카테고리를 안 받으므로
+// (키워드만 입력), 여기서 사후에 태그를 붙여야 Overview의 카테고리 필터가 실 데이터에
+// 적용될 수 있다. LLM 기반 프롬프트 제안 생성은 이 모달의 다음 단계로 남겨둠 — 실제 LLM
+// 호출에 필요한 API 키가 아직 설정돼 있지 않음.
+function CategorizeRunModal({
+  file,
+  categories,
+  onClose,
+  onSaved,
+}: {
+  file: CollectedRunFile | null;
+  categories: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [category, setCategory] = useState("");
+  const [subcategory, setSubcategory] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCategory(file?.promptRun.rawMetadata.category ?? "");
+    setSubcategory(file?.promptRun.rawMetadata.subcategory ?? "");
+    setError(null);
+  }, [file]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!file || !category) return;
+    setSaving(true);
+    setError(null);
+    const res = await fetch("/api/collection-runs/categorize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir: file.dir, filename: file.filename, category, subcategory }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (!res.ok) {
+      setError(data.error ?? "저장에 실패했습니다.");
+      return;
+    }
+    setCategory("");
+    setSubcategory("");
+    onSaved();
+  }
+
+  function close() {
+    setCategory("");
+    setSubcategory("");
+    setError(null);
+    onClose();
+  }
+
+  return (
+    <Modal open={file !== null} onClose={close}>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-neutral-900">이 실행 분류</h2>
+        <ModalCloseButton onClose={close} />
+      </div>
+      <p className="mt-1 text-sm text-neutral-500">
+        키워드 &quot;{file?.promptRun.rawMetadata.query}&quot;로 수집된 실행을 카테고리에 태그합니다.
+      </p>
+      <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-neutral-500">카테고리 *</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            required
+            className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+          >
+            <option value="" disabled>
+              선택하세요
+            </option>
+            {categories.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-neutral-500">서브카테고리</label>
+          <input
+            value={subcategory}
+            onChange={(e) => setSubcategory(e.target.value)}
+            className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+            placeholder="예: 캠페인 운영 기법"
+          />
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={close}>
+            취소
+          </Button>
+          <Button type="submit" variant="primary" disabled={!category || saving}>
+            {saving ? "저장 중..." : "저장"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

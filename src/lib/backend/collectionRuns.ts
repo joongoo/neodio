@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PromptRunSeed } from "@/lib/db/types";
 import { CollectedRunFile } from "./collectionRunsTypes";
@@ -32,6 +32,25 @@ async function readDirRuns(dir: string): Promise<CollectedRunFile[]> {
 export async function listCollectedRuns(): Promise<CollectedRunFile[]> {
   const perDir = await Promise.all(RUN_DIRS.map(readDirRuns));
   return perDir.flat().sort((a, b) => b.promptRun.runAt.localeCompare(a.promptRun.runAt));
+}
+
+// Collection ("수집 로그") doesn't ask for a category up front — only a
+// keyword — so tagging happens after the fact, from the run's "분석" modal
+// (same category list as Brand Management/Prompt Library, see
+// brandsManagement.ts). Rewrites the same .tmp JSON file in place; this is
+// the one write path into otherwise-read-only collector output.
+export async function categorizeRun(dir: string, filename: string, category: string, subcategory: string) {
+  if (!RUN_DIRS.includes(dir) || filename.includes("/") || filename.includes("\\") || !filename.endsWith(".json")) {
+    throw new Error("Invalid run file reference.");
+  }
+  const filePath = path.join(process.cwd(), dir, filename);
+  const raw = await readFile(filePath, "utf8");
+  const parsed = JSON.parse(raw) as { promptRun?: PromptRunSeed };
+  if (!parsed.promptRun) throw new Error(`Not a valid collected run: ${filePath}`);
+
+  parsed.promptRun.rawMetadata.category = category;
+  parsed.promptRun.rawMetadata.subcategory = subcategory || undefined;
+  await writeFile(filePath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
 }
 
 export type { CollectedRunFile };

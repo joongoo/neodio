@@ -2,6 +2,7 @@ import { CollectionRunsClient } from "@/components/collection-runs/CollectionRun
 import { listCollectedRuns } from "@/lib/backend/collectionRuns";
 import { processPromptRuns } from "@/lib/backend/processing";
 import { seedBrands } from "@/lib/db/data/seed";
+import { DEFAULT_ORG_ID, db } from "@/lib/db";
 
 // Always re-read .tmp/*-ai on request — the collector scripts
 // (npm run collect:naver-ai / collect:google-ai) write new files between
@@ -9,7 +10,7 @@ import { seedBrands } from "@/lib/db/data/seed";
 export const dynamic = "force-dynamic";
 
 export default async function CollectionRunsPage() {
-  const runFiles = await listCollectedRuns();
+  const [runFiles, brandsData] = await Promise.all([listCollectedRuns(), db.brandsManagement.get(DEFAULT_ORG_ID)]);
   const processed = processPromptRuns({
     organizationId: "neodigm",
     ownBrandId: "brand-neodigm",
@@ -17,5 +18,12 @@ export default async function CollectionRunsPage() {
     brands: seedBrands,
   });
 
-  return <CollectionRunsClient runFiles={runFiles} processed={processed} brands={seedBrands} />;
+  return (
+    <CollectionRunsClient
+      runFiles={runFiles}
+      processed={processed}
+      brands={seedBrands}
+      categories={brandsData?.categories.map((c) => c.name) ?? []}
+    />
+  );
 }

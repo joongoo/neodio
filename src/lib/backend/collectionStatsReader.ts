@@ -33,11 +33,15 @@ function average(values: number[]) {
 }
 
 export interface RealDataFilters {
-  /** Overview's "플랫폼" filter — PromptRunSeed.llmModelId matches the seed
-   *  LLM model list 1:1 (unlike "카테고리"/"마켓", which use a different id
-   *  space in Brand Management — see the chat thread this was scoped from),
-   *  so this is the one filter that's safe to apply to real collected runs. */
+  /** Overview's "플랫폼" 필터 — PromptRunSeed.llmModelId matches the seed
+   *  LLM model list 1:1, so it's safe to apply directly to real runs. */
   llmModelId?: string;
+  /** Overview's "카테고리" 필터 — collected runs don't get a category at
+   *  collection time (수집 로그 폼은 키워드만 받음), so this matches whatever
+   *  was tagged afterward via the run's "분석" 모달(rawMetadata.category,
+   *  Brand Management/Prompt Library와 같은 목록). 아직 분류 안 된 실행은
+   *  어떤 카테고리를 골라도 매칭되지 않는다. */
+  category?: string;
 }
 
 // Shared by every getReal* below — same processed mentions/citations
@@ -50,7 +54,8 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
 
   const promptRuns = runFiles
     .map((f) => f.promptRun)
-    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId);
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category);
   if (promptRuns.length === 0) return null;
 
   const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });

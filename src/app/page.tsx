@@ -83,10 +83,16 @@ export default async function OverviewPage({
       : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
 
   // 플랫폼 필터는 PromptRunSeed.llmModelId와 1:1로 대응돼서 실 데이터에 바로
-  // 적용할 수 있다 (카테고리/마켓 필터는 브랜드 관리 쪽 id 체계가 따로 있어
-  // 아직 적용 못 함 — 채팅에서 설명한 taxonomy 불일치 문제).
+  // 적용할 수 있다. 카테고리는 이제 Brand Management/토픽/프롬프트 라이브러리가
+  // 같은 목록을 쓰지만, 실 수집 데이터는 "수집 로그"의 "분석" 모달에서 사후에
+  // 태그해야만(rawMetadata.category) 매칭된다 — 아직 아무도 분류하지 않은
+  // 실행은 카테고리를 골라도 걸러지지 않는다(모두 제외됨). 마켓 필터는 여전히
+  // 브랜드 관리 쪽 id 체계가 따로 있어 미적용.
   const selectedLlmModelId = llmModels.find((m) => m.name === params.platform)?.id;
-  const realDataFilters = selectedLlmModelId ? { llmModelId: selectedLlmModelId } : {};
+  const realDataFilters = {
+    ...(selectedLlmModelId ? { llmModelId: selectedLlmModelId } : {}),
+    ...(params.category ? { category: params.category } : {}),
+  };
 
   // Real collected-run data (mentions/citations/visibility score, sentiment,
   // market comparison) wins over the seeded weekly snapshots once at least

@@ -88,6 +88,10 @@ export interface PromptRunMetadata {
   screenshotPath?: string;
   citations?: RawCitationMetadata[];
   errorMessage?: string | null;
+  /** Set from "수집 로그"의 분석 모달 (Brand Management 카테고리와 동일 목록) —
+   *  수집 시점엔 카테고리를 안 받으므로, 실행을 나중에 분류해 붙인다. */
+  category?: string;
+  subcategory?: string;
 }
 
 export interface PromptRunSeed {
