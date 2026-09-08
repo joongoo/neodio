@@ -13,6 +13,7 @@ import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MultiLineChart } from "@/components/charts/MultiLineChart";
 import { BrandPresenceDetailsModal } from "@/components/brand-presence/BrandPresenceDetailsModal";
+import { downloadCsv } from "@/lib/csv";
 import {
   BrandPresenceData,
   DataInsightRow,
@@ -63,6 +64,21 @@ export function BrandPresenceClient({
     () => data.bottomMovers.filter((r) => (market === "전체" || r.market === market) && (model === "전체" || r.source === model)),
     [data.bottomMovers, market, model]
   );
+
+  function exportShareOfVoiceCsv() {
+    downloadCsv(
+      "share-of-voice.csv",
+      ["topic", "popularity", "mentions", "rank", "sharePercent", "topBrands"],
+      data.shareOfVoice.map((r) => [
+        r.topic,
+        String(r.popularity),
+        String(r.mentions),
+        String(r.rank),
+        String(r.sharePercent),
+        r.topBrands.map((b) => `${b.brand} ${b.share}%`).join("; "),
+      ])
+    );
+  }
 
   function toggleCompetitor(brand: string) {
     setSelectedCompetitors((prev) => {
@@ -307,7 +323,11 @@ export function BrandPresenceClient({
           </div>
           <div className="flex items-center gap-2">
             <GearButton onClick={() => sov.setOpen(true)} />
-            <button className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-200 cursor-pointer">
+            <button
+              type="button"
+              onClick={exportShareOfVoiceCsv}
+              className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-slate-200 cursor-pointer"
+            >
               <Share2 size={14} />
               내보내기
             </button>
