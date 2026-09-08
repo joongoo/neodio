@@ -1,4 +1,23 @@
 import { BrandsManagementData } from "../types";
+import { seedCategories, seedPrompts, seedTopics } from "./seed";
+
+// Categories used to be a separate hand-picked list (마케팅/자동화 툴/광고) that
+// didn't line up with the topic categories the real prompt/LLM-run pipeline
+// is actually organized by (seedCategories → seedTopics.categoryId →
+// seedPrompts.topicId), nor with Prompt Library's own free-text category
+// strings. Brand Management is now the single source of truth: it mirrors
+// seedCategories 1:1, with promptCount computed from the real prompt count
+// per category instead of a hardcoded guess — so Overview's category filter
+// (and anything else reading brandsManagementByOrg.categories) stays correct
+// as topics/prompts change instead of drifting out of sync.
+const categories = seedCategories.map((category) => ({
+  id: category.id,
+  name: category.name,
+  promptCount: seedPrompts.filter(
+    (prompt) => seedTopics.find((topic) => topic.id === prompt.topicId)?.categoryId === category.id
+  ).length,
+  origin: "system" as const,
+}));
 
 // Matches Figma "Brands Management" (doc §21) — our own org's tracked
 // brands/categories, pure CRUD, no 3rd-party dependency.
@@ -60,10 +79,6 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
         analyticsConnected: false,
       },
     ],
-    categories: [
-      { id: "cat-marketing", name: "마케팅", promptCount: 69, origin: "system" },
-      { id: "cat-automation", name: "자동화 툴", promptCount: 30, origin: "system" },
-      { id: "cat-ads", name: "광고", promptCount: 5, origin: "system" },
-    ],
+    categories,
   },
 };
