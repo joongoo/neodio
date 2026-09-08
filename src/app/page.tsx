@@ -40,7 +40,6 @@ export default async function OverviewPage({
 
   const [
     org,
-    organizations,
     statCardsSeed,
     contentVisibilitySeed,
     checklistSeed,
@@ -53,7 +52,6 @@ export default async function OverviewPage({
     promptLibraryRows,
   ] = await Promise.all([
     db.organizations.get(orgId),
-    db.organizations.list(),
     db.overview.getStatCards(orgId, range),
     db.overview.getContentVisibility(orgId),
     db.overview.getChecklist(orgId),
@@ -150,7 +148,6 @@ export default async function OverviewPage({
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900">개요</h1>
           <div className="mt-2 flex flex-wrap gap-2">
-            <FilterDropdown label="" paramKey="org" value={org.name} options={organizations.map((o) => o.name)} bold />
             <RangeDropdown value={range} />
             <FilterDropdown label="" paramKey="domain" value={params.domain ?? org.domain} options={domainOptions} />
             <FilterDropdown label="플랫폼" paramKey="platform" value={params.platform ?? "전체"} options={platformOptions} />
