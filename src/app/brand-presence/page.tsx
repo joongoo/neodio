@@ -1,6 +1,13 @@
 import { BrandPresenceClient } from "@/components/brand-presence/BrandPresenceClient";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
-import { getRealSentimentSeries, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
+import {
+  getRealDataInsights,
+  getRealMarketWeeklyTracking,
+  getRealPromptMetricsByWeek,
+  getRealSentimentSeries,
+  getRealShareOfVoice,
+  getRealStatSeries,
+} from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 
 const RANGE = "4w" as const;
@@ -16,15 +23,22 @@ export default async function BrandPresencePage() {
   ]);
   if (!data) return null;
 
-  const [realStats, realSentiment] = demo
-    ? [null, null]
-    : await Promise.all([getRealStatSeries(RANGE), getRealSentimentSeries(RANGE)]);
+  const [realStats, realSentiment, realWeeklyTracking, realPromptMetrics, realDataInsights, realShareOfVoice] = demo
+    ? [null, null, null, null, null, null]
+    : await Promise.all([
+        getRealStatSeries(RANGE),
+        getRealSentimentSeries(RANGE),
+        getRealMarketWeeklyTracking(RANGE),
+        getRealPromptMetricsByWeek(RANGE),
+        getRealDataInsights(),
+        getRealShareOfVoice(),
+      ]);
 
-  // 개요/가시성 개요와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴 —
-  // 가시성 점수/브랜드 언급/인용 수와 감성 분포만 실 파이프라인이 계산할 수
-  // 있고, 마켓 트래킹(주간·브랜드별)·프롬프트 지표·감성 무버·데이터
-  // 인사이트·Share of Voice는 아직 실 데이터로 만들 파이프라인이 없어 mock
-  // 그대로 유지한다.
+  // 개요/가시성 개요와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
+  // 개선/하락 상위 항목(감성 무버)만 여전히 mock — "이 프롬프트가 지난
+  // 실행 대비 감성이 바뀌었다"는 시계열 비교가 필요한데, 같은 쿼리를 여러
+  // 주에 걸쳐 반복 수집한 데이터가 충분히 쌓이기 전까진 신뢰할 수 있게
+  // 계산할 방법이 없다.
   const statCards = statCardsSeed.map((stat) => {
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
@@ -32,7 +46,19 @@ export default async function BrandPresencePage() {
     if (stat.id === "citations") return { ...stat, ...realStats.citations };
     return stat;
   });
-  const sentimentByWeek = realSentiment ?? data.sentimentByWeek;
 
-  return <BrandPresenceClient statCards={statCards} data={{ ...data, sentimentByWeek }} />;
+  return (
+    <BrandPresenceClient
+      statCards={statCards}
+      data={{
+        ...data,
+        sentimentByWeek: realSentiment ?? data.sentimentByWeek,
+        mentionsByWeek: realWeeklyTracking?.mentionsByWeek ?? data.mentionsByWeek,
+        citationsByWeek: realWeeklyTracking?.citationsByWeek ?? data.citationsByWeek,
+        promptMetricsByWeek: realPromptMetrics ?? data.promptMetricsByWeek,
+        dataInsights: realDataInsights ?? data.dataInsights,
+        shareOfVoice: realShareOfVoice ?? data.shareOfVoice,
+      }}
+    />
+  );
 }
