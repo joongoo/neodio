@@ -4,6 +4,7 @@ import {
   getRealDataInsights,
   getRealMarketWeeklyTracking,
   getRealPromptMetricsByWeek,
+  getRealSentimentMovers,
   getRealSentimentSeries,
   getRealShareOfVoice,
   getRealStatSeries,
@@ -23,8 +24,8 @@ export default async function BrandPresencePage() {
   ]);
   if (!data) return null;
 
-  const [realStats, realSentiment, realWeeklyTracking, realPromptMetrics, realDataInsights, realShareOfVoice] = demo
-    ? [null, null, null, null, null, null]
+  const [realStats, realSentiment, realWeeklyTracking, realPromptMetrics, realDataInsights, realShareOfVoice, realMovers] = demo
+    ? [null, null, null, null, null, null, null]
     : await Promise.all([
         getRealStatSeries(RANGE),
         getRealSentimentSeries(RANGE),
@@ -32,13 +33,14 @@ export default async function BrandPresencePage() {
         getRealPromptMetricsByWeek(RANGE),
         getRealDataInsights(),
         getRealShareOfVoice(),
+        getRealSentimentMovers(RANGE),
       ]);
 
   // 개요/가시성 개요와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
-  // 개선/하락 상위 항목(감성 무버)만 여전히 mock — "이 프롬프트가 지난
-  // 실행 대비 감성이 바뀌었다"는 시계열 비교가 필요한데, 같은 쿼리를 여러
-  // 주에 걸쳐 반복 수집한 데이터가 충분히 쌓이기 전까진 신뢰할 수 있게
-  // 계산할 방법이 없다.
+  // 개선/하락 상위 항목(감성 무버)은 같은 (키워드, 모델) 조합을 최소 2개
+  // 주에 걸쳐 반복 수집해야 계산할 수 있다 — 지금은 대부분 한 주 안에서만
+  // 수집돼서 realMovers가 null이라 mock이 보이지만, 같은 키워드로 수집을
+  // 반복해 데이터가 쌓이면 코드 변경 없이 자동으로 실 데이터로 바뀐다.
   const statCards = statCardsSeed.map((stat) => {
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
@@ -58,6 +60,8 @@ export default async function BrandPresencePage() {
         promptMetricsByWeek: realPromptMetrics ?? data.promptMetricsByWeek,
         dataInsights: realDataInsights ?? data.dataInsights,
         shareOfVoice: realShareOfVoice ?? data.shareOfVoice,
+        topMovers: realMovers?.topMovers ?? data.topMovers,
+        bottomMovers: realMovers?.bottomMovers ?? data.bottomMovers,
       }}
     />
   );

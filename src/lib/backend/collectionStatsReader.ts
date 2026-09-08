@@ -10,6 +10,7 @@ import {
   PromptMetricsPoint,
   RankedRow,
   Sentiment,
+  SentimentMoverRow,
   SentimentWeek,
   ShareOfVoiceRow,
   StatCard,
@@ -603,4 +604,71 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
 
   rows.sort((a, b) => b.popularity - a.popularity);
   return rows;
+}
+
+const SENTIMENT_RANK: Record<Sentiment, number> = { negative: 0, neutral: 1, positive: 2 };
+
+// "개선/하락 상위 항목" — 같은 (수집 키워드, 모델) 조합을 여러 주에 걸쳐
+// 반복 수집했을 때만 계산할 수 있다. 지금 당장은 대부분의 조합이 한 주
+// 안에서만 수집돼서 비교할 두 번째 시점이 없으니 null(→ mock 폴백)이
+// 나오는 게 정상 — 같은 키워드로 수집을 몇 주 더 반복하면 이 함수가
+// 자동으로 실 데이터를 채운다. 별도 배포/코드 변경 필요 없음.
+export async function getRealSentimentMovers(
+  range: DateRange,
+  filters: RealDataFilters = {}
+): Promise<{ topMovers: SentimentMoverRow[]; bottomMovers: SentimentMoverRow[] } | null> {
+  const result = await getProcessedWithWeeks(range, filters);
+  if (!result) return null;
+  const { processed, weekOfRun, currentWeeks, runsById } = result;
+  const currentWeekSet = new Set(currentWeeks);
+
+  const groups = new Map<string, { runId: string; week: string; sentiment: Sentiment }[]>();
+  for (const mention of processed.mentions) {
+    if (mention.brandId !== OWN_BRAND_ID || !mention.isPresent) continue;
+    const week = weekOfRun.get(mention.promptRunId);
+    if (!week || !currentWeekSet.has(week)) continue;
+    const run = runsById.get(mention.promptRunId);
+    const query = run?.rawMetadata.query?.trim();
+    if (!run || !query) continue;
+    const key = `${query}__${run.llmModelId}`;
+    const list = groups.get(key) ?? [];
+    list.push({ runId: run.id, week, sentiment: mention.sentiment });
+    groups.set(key, list);
+  }
+
+  const topMovers: SentimentMoverRow[] = [];
+  const bottomMovers: SentimentMoverRow[] = [];
+
+  for (const [key, points] of groups) {
+    if (points.length < 2) continue; // 비교할 두 번째 시점이 아직 없음
+    points.sort((a, b) => a.week.localeCompare(b.week));
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (first.sentiment === last.sentiment) continue;
+
+    const query = key.slice(0, key.lastIndexOf("__"));
+    const run = runsById.get(last.runId)!;
+    const modelName = seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId;
+
+    const row: SentimentMoverRow = {
+      id: `real-mover-${key}`,
+      prompt: query,
+      source: modelName,
+      topic: query,
+      category: run.rawMetadata.category ?? "—",
+      market: seedMarkets.find((m) => m.id === run.marketId)?.label ?? run.marketId,
+      popularity: points.length,
+      fromSentiment: first.sentiment,
+      toSentiment: last.sentiment,
+    };
+
+    if (SENTIMENT_RANK[last.sentiment] > SENTIMENT_RANK[first.sentiment]) topMovers.push(row);
+    else bottomMovers.push(row);
+  }
+
+  if (topMovers.length === 0 && bottomMovers.length === 0) return null;
+
+  topMovers.sort((a, b) => b.popularity - a.popularity);
+  bottomMovers.sort((a, b) => b.popularity - a.popularity);
+  return { topMovers, bottomMovers };
 }
