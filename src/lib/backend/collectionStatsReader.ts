@@ -199,23 +199,42 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
   };
 }
 
-// Ranked "우리 브랜드가 언급된 횟수" broken down by which LLM/market produced
-// the run — Visibility Overview's "Mentions by Model"/"Mentions by Market"
-// panels. Only the "mentions" tab has a well-defined real computation this
-// way; "visibility"/"exposure" need a per-model scoring formula the pipeline
-// doesn't compute yet, so callers keep those two tabs on the seeded mock and
-// only swap in this real "mentions" list.
-async function getRealMentionsBy(
+export interface RealRankedTabs {
+  /** 우리 브랜드가 언급된 횟수, 그룹(모델/마켓)별. */
+  mentions: RankedRow[];
+  /** 그 그룹에서 실행된 프롬프트 중 우리 브랜드가 언급된 비율(%) — 모델/
+   *  마켓별 "적중률"에 해당하는, mentions/exposure로 정의한 지표. */
+  visibility: RankedRow[];
+  /** 그 그룹에서 실행된 프롬프트(수집 실행) 총량 — 언급 여부와 무관하게
+   *  얼마나 그 모델/마켓에 노출(실행)됐는지. */
+  exposure: RankedRow[];
+}
+
+// Visibility Overview's "Mentions by Model"/"Mentions by Market" 패널의 3개
+// 탭을 전부 실 데이터로 계산 — 모델/마켓별로 그룹화해 언급 수(mentions),
+// 언급 비율(visibility = mentions/exposure), 총 실행 수(exposure)를 한 번에
+// 구한다.
+async function getRealRankedTabs(
   range: DateRange,
   groupKey: (run: { llmModelId: string; marketId: string }) => string | undefined,
   filters: RealDataFilters
-): Promise<RankedRow[] | null> {
+): Promise<RealRankedTabs | null> {
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks, runsById } = result;
   const currentWeekSet = new Set(currentWeeks);
 
-  const countByGroup = new Map<string, number>();
+  const mentionByGroup = new Map<string, number>();
+  const exposureByGroup = new Map<string, number>();
+
+  for (const run of runsById.values()) {
+    const week = weekOfRun.get(run.id);
+    if (!week || !currentWeekSet.has(week)) continue;
+    const group = groupKey(run);
+    if (!group) continue;
+    exposureByGroup.set(group, (exposureByGroup.get(group) ?? 0) + 1);
+  }
+
   for (const mention of processed.mentions) {
     if (mention.brandId !== OWN_BRAND_ID || !mention.isPresent) continue;
     const week = weekOfRun.get(mention.promptRunId);
@@ -223,22 +242,43 @@ async function getRealMentionsBy(
     const run = runsById.get(mention.promptRunId);
     const group = run && groupKey(run);
     if (!group) continue;
-    countByGroup.set(group, (countByGroup.get(group) ?? 0) + 1);
+    mentionByGroup.set(group, (mentionByGroup.get(group) ?? 0) + 1);
   }
-  if (countByGroup.size === 0) return null;
+  if (exposureByGroup.size === 0) return null;
 
-  const total = Array.from(countByGroup.values()).reduce((s, v) => s + v, 0);
-  return Array.from(countByGroup.entries())
-    .map(([label, value]) => ({ label, value, display: `${value} (${Math.round((value / total) * 100)}%)` }))
+  const totalMentions = Array.from(mentionByGroup.values()).reduce((s, v) => s + v, 0);
+  const totalExposure = Array.from(exposureByGroup.values()).reduce((s, v) => s + v, 0);
+
+  const groups = Array.from(exposureByGroup.keys());
+  const toRow = (
+    label: string,
+    value: number,
+    displayOf: (value: number) => string
+  ): RankedRow => ({ label, value, display: displayOf(value) });
+
+  const mentions = groups
+    .map((label) => toRow(label, mentionByGroup.get(label) ?? 0, (v) => `${v} (${Math.round((v / (totalMentions || 1)) * 100)}%)`))
     .sort((a, b) => b.value - a.value);
+  const visibility = groups
+    .map((label) => {
+      const exposure = exposureByGroup.get(label) ?? 0;
+      const pct = exposure > 0 ? Math.round(((mentionByGroup.get(label) ?? 0) / exposure) * 100) : 0;
+      return toRow(label, pct, (v) => `${v}%`);
+    })
+    .sort((a, b) => b.value - a.value);
+  const exposure = groups
+    .map((label) => toRow(label, exposureByGroup.get(label) ?? 0, (v) => `${v} (${Math.round((v / (totalExposure || 1)) * 100)}%)`))
+    .sort((a, b) => b.value - a.value);
+
+  return { mentions, visibility, exposure };
 }
 
-export async function getRealMentionsByModel(range: DateRange, filters: RealDataFilters = {}): Promise<RankedRow[] | null> {
-  return getRealMentionsBy(range, (run) => seedLlmModels.find((m) => m.id === run.llmModelId)?.name, filters);
+export async function getRealMentionsByModel(range: DateRange, filters: RealDataFilters = {}): Promise<RealRankedTabs | null> {
+  return getRealRankedTabs(range, (run) => seedLlmModels.find((m) => m.id === run.llmModelId)?.name, filters);
 }
 
-export async function getRealMentionsByMarket(range: DateRange, filters: RealDataFilters = {}): Promise<RankedRow[] | null> {
-  return getRealMentionsBy(range, (run) => seedMarkets.find((m) => m.id === run.marketId)?.label, filters);
+export async function getRealMentionsByMarket(range: DateRange, filters: RealDataFilters = {}): Promise<RealRankedTabs | null> {
+  return getRealRankedTabs(range, (run) => seedMarkets.find((m) => m.id === run.marketId)?.label, filters);
 }
 
 export interface RealTopicRows {

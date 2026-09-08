@@ -54,8 +54,8 @@ export default async function VisibilityOverviewPage({
     if (stat.id === "citations") return { ...stat, ...realStats.citations };
     return stat;
   });
-  const mentionsByModel = { ...mentionsByModelSeed, ...(realMentionsByModel ? { mentions: realMentionsByModel } : {}) };
-  const mentionsByMarket = { ...mentionsByMarketSeed, ...(realMentionsByMarket ? { mentions: realMentionsByMarket } : {}) };
+  const mentionsByModel = { ...mentionsByModelSeed, ...(realMentionsByModel ?? {}) };
+  const mentionsByMarket = { ...mentionsByMarketSeed, ...(realMentionsByMarket ?? {}) };
 
   const topicsByCategory: Record<string, VisibilityTableRow[]> = {};
   await Promise.all(
