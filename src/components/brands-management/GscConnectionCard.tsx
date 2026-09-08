@@ -5,14 +5,17 @@ import { GscConnection } from "@/lib/db";
 
 // Matches Figma "Manage Connections" GSC tab (doc §23) — now scoped to a
 // single brand instead of the whole org (each brand connects its own GSC
-// property; see neodigm_p0_scope.md's GSC row).
-export function GscConnectionCard({ gsc }: { gsc: GscConnection | null }) {
+// property; see neodigm_p0_scope.md's GSC row). "연결" 버튼은 이제 실제
+// OAuth 흐름(/api/connections/gsc/oauth/start)으로 이동한다.
+export function GscConnectionCard({ gsc, brandId }: { gsc: GscConnection | null; brandId: string }) {
   if (!gsc || gsc.status === "disconnected") {
     return (
       <Card className="flex flex-col items-start gap-3">
         <h2 className="text-base font-bold text-neutral-900">Google Search Console</h2>
         <p className="text-sm text-neutral-500">아직 연결되지 않았습니다.</p>
-        <Button variant="primary">Google 계정으로 연결</Button>
+        <Button variant="primary" href={`/api/connections/gsc/oauth/start?brandId=${brandId}`}>
+          Google 계정으로 연결
+        </Button>
       </Card>
     );
   }
@@ -49,7 +52,12 @@ export function GscConnectionCard({ gsc }: { gsc: GscConnection | null }) {
       </div>
 
       <div>
-        <Button variant="secondary">계정 관리</Button>
+        <form action="/api/connections/gsc/disconnect" method="POST">
+          <input type="hidden" name="brandId" value={brandId} />
+          <Button type="submit" variant="secondary">
+            연결 해제
+          </Button>
+        </form>
       </div>
     </Card>
   );

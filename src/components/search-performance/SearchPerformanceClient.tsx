@@ -17,10 +17,15 @@ export function SearchPerformanceClient({
   brandName,
   gsc,
   performance,
+  real,
 }: {
   brandName: string;
   gsc: GscConnection | null;
   performance: GscSearchPerformanceResult | null;
+  /** true only when `gsc`/`performance` came from an actual OAuth-connected
+   *  account (src/app/api/connections/gsc/oauth) — false for the mock
+   *  fallback (no connection yet, or "Demo" 브랜드). */
+  real: boolean;
 }) {
   const connected = gsc?.status === "connected";
 
@@ -36,14 +41,14 @@ export function SearchPerformanceClient({
       {!connected && (
         <InfoBanner
           title="Google Search Console 연동 필요"
-          description="OAuth 연동 전이라 아래 그래프·표는 화면 구조 검증용 mock 데이터입니다. Manage Connections에서 계정을 연결하면 실제 데이터로 교체됩니다."
+          description="계정을 연결하면 실제 검색 노출·클릭 데이터를 확인할 수 있습니다."
         />
       )}
 
-      {connected && (
+      {connected && !real && (
         <InfoBanner
-          title="Search Console OAuth 연동 배치 미구현"
-          description="계정 연결 상태는 mock이며, 실제 searchanalytics.query 일 배치가 아직 없어 아래 데이터는 화면 구조 검증용입니다."
+          title="화면 구조 검증용 mock 데이터입니다"
+          description="실제 계정 연결 전까지는 아래 그래프·표가 mock 데이터로 표시됩니다."
         />
       )}
 
@@ -51,7 +56,7 @@ export function SearchPerformanceClient({
         <Card className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-sm font-medium text-neutral-700">연결된 Search Console 데이터가 없습니다.</p>
           <p className="text-xs text-neutral-500">Manage Connections에서 계정을 연결하면 검색 성과 데이터를 볼 수 있습니다.</p>
-          <a href="/brands-management">
+          <a href="/brands-management/brand-neodigm/connections">
             <Button variant="primary">Manage Connections으로 이동</Button>
           </a>
         </Card>
