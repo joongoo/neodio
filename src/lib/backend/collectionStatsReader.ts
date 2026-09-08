@@ -32,14 +32,27 @@ function average(values: number[]) {
   return values.length > 0 ? Number((values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(1)) : 0;
 }
 
-// Shared by getRealSentimentSeries/getRealMarketComparison — both need the
-// same processed mentions/citations bucketed by the run's week, just
-// aggregated differently. Returns null when nothing's been collected yet.
-async function getProcessedWithWeeks(range: DateRange) {
+export interface RealDataFilters {
+  /** Overview's "플랫폼" filter — PromptRunSeed.llmModelId matches the seed
+   *  LLM model list 1:1 (unlike "카테고리"/"마켓", which use a different id
+   *  space in Brand Management — see the chat thread this was scoped from),
+   *  so this is the one filter that's safe to apply to real collected runs. */
+  llmModelId?: string;
+}
+
+// Shared by every getReal* below — same processed mentions/citations
+// bucketed by the run's week, just aggregated differently per caller.
+// Returns null when nothing's been collected yet (or nothing survives the
+// filter), so callers fall back to the seeded mock.
+async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters = {}) {
   const runFiles = await listCollectedRuns();
   if (runFiles.length === 0) return null;
 
-  const promptRuns = runFiles.map((f) => f.promptRun);
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId);
+  if (promptRuns.length === 0) return null;
+
   const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
 
   const weekOfRun = new Map<string, string>();
@@ -53,15 +66,16 @@ async function getProcessedWithWeeks(range: DateRange) {
 
   const windowSize = RANGE_WEEKS[range];
   const currentWeeks = weeks.slice(-windowSize);
-  return { processed, weekOfRun, currentWeeks };
+  const previousWeeks = weeks.slice(-windowSize * 2, -windowSize);
+  return { processed, weekOfRun, currentWeeks, previousWeeks };
 }
 
 // Same "우리 브랜드가 언급된 프롬프트 실행의 감성" the mentions pipeline
 // already classifies per-run (see processing/mentions.ts) — just bucketed
 // by week for the chart instead of by stat-card total. Returns null when
 // nothing's been collected yet, so Overview falls back to the seeded chart.
-export async function getRealSentimentSeries(range: DateRange): Promise<SentimentWeek[] | null> {
-  const result = await getProcessedWithWeeks(range);
+export async function getRealSentimentSeries(range: DateRange, filters: RealDataFilters = {}): Promise<SentimentWeek[] | null> {
+  const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks } = result;
 
@@ -80,8 +94,8 @@ export async function getRealSentimentSeries(range: DateRange): Promise<Sentimen
 // just our own (see processing/mentions.ts + citations.ts), so market
 // comparison is just the same real pipeline aggregated per brand instead
 // of filtered to OWN_BRAND_ID. Returns null when nothing's been collected.
-export async function getRealMarketComparison(range: DateRange): Promise<MarketComparisonRow[] | null> {
-  const result = await getProcessedWithWeeks(range);
+export async function getRealMarketComparison(range: DateRange, filters: RealDataFilters = {}): Promise<MarketComparisonRow[] | null> {
+  const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks } = result;
   const currentWeekSet = new Set(currentWeeks);
@@ -118,25 +132,15 @@ export async function getRealMarketComparison(range: DateRange): Promise<MarketC
 // filter (1w/2w/4w) and trend-vs-previous-period behave the same as the
 // mock snapshot path it replaces. Returns null when nothing's been
 // collected yet, so the caller can fall back to the seeded snapshot cards.
-export async function getRealStatSeries(range: DateRange): Promise<RealStatSeries | null> {
-  const runFiles = await listCollectedRuns();
-  if (runFiles.length === 0) return null;
+export async function getRealStatSeries(range: DateRange, filters: RealDataFilters = {}): Promise<RealStatSeries | null> {
+  const result = await getProcessedWithWeeks(range, filters);
+  if (!result) return null;
+  const { processed, weekOfRun, currentWeeks, previousWeeks } = result;
 
-  const promptRuns = runFiles.map((f) => f.promptRun);
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
-
-  const weekOfRun = new Map<string, string>();
-  for (const run of promptRuns) {
-    if (run.status !== "success") continue;
-    weekOfRun.set(run.id, toUtcSundayWeekStart(run.runAt));
-  }
-
-  const weeks = Array.from(new Set(weekOfRun.values())).sort();
-  if (weeks.length === 0) return null;
-
-  const mentionsByWeek = new Map(weeks.map((w) => [w, 0]));
-  const citationsByWeek = new Map(weeks.map((w) => [w, 0]));
-  const visibilityByWeek = new Map<string, number[]>(weeks.map((w) => [w, []]));
+  const allWeeks = Array.from(new Set([...currentWeeks, ...previousWeeks]));
+  const mentionsByWeek = new Map(allWeeks.map((w) => [w, 0]));
+  const citationsByWeek = new Map(allWeeks.map((w) => [w, 0]));
+  const visibilityByWeek = new Map<string, number[]>(allWeeks.map((w) => [w, []]));
 
   for (const mention of processed.mentions) {
     if (mention.brandId !== OWN_BRAND_ID || !mention.isPresent) continue;
@@ -153,10 +157,6 @@ export async function getRealStatSeries(range: DateRange): Promise<RealStatSerie
   for (const score of processed.visibilityScores) {
     visibilityByWeek.get(score.weekStart)?.push(score.totalScore);
   }
-
-  const windowSize = RANGE_WEEKS[range];
-  const currentWeeks = weeks.slice(-windowSize);
-  const previousWeeks = weeks.slice(-windowSize * 2, -windowSize);
 
   const sum = (list: string[], map: Map<string, number>) => list.reduce((s, w) => s + (map.get(w) ?? 0), 0);
   const sparkline = (list: string[], map: Map<string, number>) =>

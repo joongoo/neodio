@@ -82,6 +82,12 @@ export default async function OverviewPage({
       ? buildContentVisibilityFromCrawl(latestCrawl, contentVisibilitySeed)
       : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
 
+  // 플랫폼 필터는 PromptRunSeed.llmModelId와 1:1로 대응돼서 실 데이터에 바로
+  // 적용할 수 있다 (카테고리/마켓 필터는 브랜드 관리 쪽 id 체계가 따로 있어
+  // 아직 적용 못 함 — 채팅에서 설명한 taxonomy 불일치 문제).
+  const selectedLlmModelId = llmModels.find((m) => m.name === params.platform)?.id;
+  const realDataFilters = selectedLlmModelId ? { llmModelId: selectedLlmModelId } : {};
+
   // Real collected-run data (mentions/citations/visibility score, sentiment,
   // market comparison) wins over the seeded weekly snapshots once at least
   // one collection has run — see the "수집 로그" page for the same
@@ -89,9 +95,9 @@ export default async function OverviewPage({
   // seeded: they need CDN/analytics logs and a live robots.txt/opportunity
   // feed we don't collect yet (neodigm_p0_scope.md §2).
   const [realStats, realSentiment, realMarket] = await Promise.all([
-    getRealStatSeries(range),
-    getRealSentimentSeries(range),
-    getRealMarketComparison(range),
+    getRealStatSeries(range, realDataFilters),
+    getRealSentimentSeries(range, realDataFilters),
+    getRealMarketComparison(range, realDataFilters),
   ]);
   const statCards = statCardsSeed.map((stat) => {
     if (!realStats) return stat;
