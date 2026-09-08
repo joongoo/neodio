@@ -39,20 +39,33 @@ export default async function OverviewPage({
   const params = await searchParams;
   const range: DateRange = VALID_RANGES.includes(params.range as DateRange) ? (params.range as DateRange) : "4w";
 
-  const [org, organizations, statCardsSeed, contentVisibilitySeed, checklist, sentiment, market, traffic, opportunities, brandsData, llmModels] =
-    await Promise.all([
-      db.organizations.get(orgId),
-      db.organizations.list(),
-      db.overview.getStatCards(orgId, range),
-      db.overview.getContentVisibility(orgId),
-      db.overview.getChecklist(orgId),
-      db.overview.getSentiment(orgId, range),
-      db.overview.getMarketComparison(orgId, range),
-      db.overview.getTrafficTrends(orgId, range),
-      db.overview.getOpportunities(orgId),
-      db.brandsManagement.get(orgId),
-      db.seed.llmModels(),
-    ]);
+  const [
+    org,
+    organizations,
+    statCardsSeed,
+    contentVisibilitySeed,
+    checklistSeed,
+    sentiment,
+    market,
+    traffic,
+    opportunities,
+    brandsData,
+    llmModels,
+    promptLibraryRows,
+  ] = await Promise.all([
+    db.organizations.get(orgId),
+    db.organizations.list(),
+    db.overview.getStatCards(orgId, range),
+    db.overview.getContentVisibility(orgId),
+    db.overview.getChecklist(orgId),
+    db.overview.getSentiment(orgId, range),
+    db.overview.getMarketComparison(orgId, range),
+    db.overview.getTrafficTrends(orgId, range),
+    db.overview.getOpportunities(orgId),
+    db.brandsManagement.get(orgId),
+    db.seed.llmModels(),
+    db.promptLibrary.list(orgId),
+  ]);
 
   // 카테고리/마켓/도메인 옵션은 Brand Management에 등록된 실제 데이터에서 가져온다
   // (하드코딩된 "전체"뿐이던 플레이스홀더 대체). 도메인 필터는 org가 1개뿐이라
@@ -71,6 +84,7 @@ export default async function OverviewPage({
   const ownBrand = brandsData?.brands.find(
     (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
   );
+  const gsc = ownBrand ? await db.connections.getGsc(ownBrand.id) : null;
 
   // Real crawl data wins when one exists. No crawl yet but a sitemap is
   // registered → prompt to crawl. No sitemap at all → prompt to register
@@ -114,6 +128,22 @@ export default async function OverviewPage({
   });
   const sentimentData = realSentiment ?? sentiment;
   const marketData = realMarket ?? market;
+
+  // 체크리스트 단계별 done을 실제 상태에서 계산 (docs/overview-checklists-plan.md).
+  // href가 없는 단계는 관련 기능이 아직 없다는 뜻이라 done도 항상 false로 둔다 —
+  // ChecklistCard가 그 단계를 "준비 중"으로 표시한다.
+  const hasUploadedPrompt = promptLibraryRows.some((p) => p.origin === "manual" || p.origin === "csv_import");
+  const STEP_DONE: Record<string, boolean> = {
+    "connect-traffic": realStats !== null,
+    "more-exposure": promptLibraryRows.length > 0,
+    "connect-search-console": gsc?.status === "connected",
+    "connect-web-analytics": ownBrand?.analyticsConnected ?? false,
+    "upload-prompts": hasUploadedPrompt,
+  };
+  const checklist = checklistSeed.map((item) => {
+    const steps = item.steps.map((step) => ({ ...step, done: STEP_DONE[step.id] ?? step.done }));
+    return { ...item, steps, completedSteps: steps.filter((s) => s.done).length };
+  });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">

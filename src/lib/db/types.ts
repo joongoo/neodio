@@ -223,6 +223,11 @@ export interface ChecklistStep {
   title: string;
   description: string;
   done: boolean;
+  /** Real page this step's action lives on. Omit when the feature behind
+   *  this step isn't built yet — the step still shows, but clicking it
+   *  surfaces a "준비 중" note instead of navigating (see
+   *  docs/overview-checklists-plan.md groups A vs B). */
+  href?: string;
 }
 
 export interface ChecklistItem {

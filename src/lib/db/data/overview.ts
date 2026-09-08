@@ -186,8 +186,14 @@ export const contentVisibilityByOrg: Record<string, ContentVisibility> = {
   },
 };
 
-// Confirmed copy from Figma "Modal - Your AI Visibility Journey" (646:11511)
-// and "Modal - Your Prompting Strategy" (646:11557).
+// 원래 Figma "Modal - Your AI Visibility Journey" / "Modal - Your Prompting
+// Strategy" 카피 그대로였으나 docs/overview-checklists-plan.md 기획에 따라
+// 개편: 이 프로젝트에 없는 기능(엣지 사전 렌더링/CDN 봇 배포)을 가정한 단계
+// 2개는 삭제, 나머지는 실제로 이동 가능한 페이지(`href`)를 달았다. `href`가
+// 없는 단계는 관련 기능(CDN/Analytics 연동 화면, AI 프롬프트 제안)이 아직
+// 없다는 뜻 — ChecklistCard가 이 경우 "준비 중"으로 표시한다. `done`은
+// page.tsx가 실 데이터(수집된 인용, GSC 연결 상태, 프롬프트 라이브러리 출처)
+// 기준으로 덮어쓴다.
 export const checklistByOrg: Record<string, ChecklistItem[]> = {
   neodigm: [
     {
@@ -195,7 +201,7 @@ export const checklistByOrg: Record<string, ChecklistItem[]> = {
       title: "더 많은 인사이트를 확인하는 다음 단계",
       description: "거의 다 왔어요. 한 단계씩 AI에게 발견되고 선택받는 브랜드로 가까워집니다.",
       completedSteps: 1,
-      totalSteps: 6,
+      totalSteps: 4,
       steps: [
         {
           id: "sign-up",
@@ -205,33 +211,24 @@ export const checklistByOrg: Record<string, ChecklistItem[]> = {
         },
         {
           id: "connect-traffic",
-          title: "어떤 AI 엔진이 나를 인용하는지 확인하기",
-          description: "트래픽 데이터를 연동하면 어떤 AI 봇이 콘텐츠를 인용하려 하는지 확인할 수 있습니다.",
+          title: "네이버·구글 AI 답변 수집 시작하기",
+          description: "수집을 실행하면 어떤 AI 엔진이 실제로 우리 브랜드를 인용하는지 확인할 수 있습니다.",
           done: false,
-        },
-        {
-          id: "one-click-deploy",
-          title: "원클릭 배포 활성화하기",
-          description: "개발팀 없이도 AI 봇을 위한 최적화를 즉시 배포할 수 있습니다.",
-          done: false,
+          href: "/collection-runs",
         },
         {
           id: "more-exposure",
-          title: "더 많은 AI 검색 노출 확보하기",
-          description: "고객이 AI 어시스턴트에게 무엇을 묻는지 알려주시면, 그 답변에 노출될 수 있도록 도와드립니다.",
+          title: "프롬프트 라이브러리에 새 프롬프트 추가하기",
+          description: "고객이 AI 어시스턴트에게 무엇을 묻는지 등록하면, 그 답변에 노출될 수 있도록 도와드립니다.",
           done: false,
+          href: "/prompt-library",
         },
         {
           id: "find-opportunities",
           title: "시장 기회 발견하기",
           description: "AI 기반 검색 결과에서 점유율을 높이고 시장을 더 넓힐 수 있는 지점을 확인하세요.",
           done: false,
-        },
-        {
-          id: "publish-and-appear",
-          title: "게시하고 노출되기",
-          description: "이 사이트에 대해 아직 사용 가능한 사전 렌더링(pre-rendering) 기회가 없습니다.",
-          done: false,
+          href: "/opportunities",
         },
       ],
     },
@@ -253,18 +250,20 @@ export const checklistByOrg: Record<string, ChecklistItem[]> = {
           title: "쿼리 분석을 위해 Google Search Console 연동하기",
           description: "실제 검색 쿼리를 가져와서, 사용자가 AI 답변을 받기 전에 무엇을 검색하는지 확인하세요.",
           done: false,
+          href: "/brands-management/brand-neodigm/connections",
         },
         {
           id: "connect-web-analytics",
           title: "리퍼럴 트래픽 인사이트를 위해 웹 분석 연동하기",
           description: "Google Analytics 4 또는 Adobe Analytics를 연결해 AI 기반 리퍼럴 트래픽을 측정하세요.",
-          done: true,
+          done: false,
         },
         {
           id: "upload-prompts",
           title: "프롬프트 직접 업로드하기",
           description: "고객이 실제로 묻는 질문을 추가해서 AI 답변 커버리지를 개선하세요.",
           done: false,
+          href: "/prompt-library",
         },
         {
           id: "add-suggested-prompts",
