@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Upload, Plus, Pencil, Trash2, Settings } from "lucide-react";
+import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Button } from "@/components/ui/Button";
@@ -13,10 +13,10 @@ import { Pagination } from "@/components/ui/Pagination";
 import { AddPromptModal, EditPromptModal, ImportPromptsModal } from "@/components/prompt-library/PromptLibraryModals";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
 
-const ORIGIN_COLOR: Record<PromptLibraryRow["origin"], string> = {
-  ai_generated: "bg-purple-500",
-  manual: "bg-slate-500",
-  csv_import: "bg-emerald-500",
+const ORIGIN_ICON: Record<PromptLibraryRow["origin"], { icon: typeof Pencil; className: string; label: string }> = {
+  ai_generated: { icon: Sparkles, className: "text-purple-500", label: "AI 생성" },
+  manual: { icon: Pencil, className: "text-slate-500", label: "수동 입력" },
+  csv_import: { icon: Upload, className: "text-emerald-500", label: "CSV 가져오기" },
 };
 
 export function PromptLibraryClient({
@@ -101,7 +101,10 @@ export function PromptLibraryClient({
       key: "origin",
       label: "출처",
       width: "w-[60px]",
-      render: (r) => <span className={`size-4 rounded ${ORIGIN_COLOR[r.origin]}`} aria-hidden />,
+      render: (r) => {
+        const { icon: Icon, className, label } = ORIGIN_ICON[r.origin];
+        return <Icon size={16} className={className} aria-label={label} />;
+      },
     },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => <span className="text-neutral-600">{r.category}</span> },
     { key: "subcategory", label: "서브카테고리", width: "w-[130px]", render: (r) => <span className="truncate text-neutral-600">{r.subcategory}</span> },
