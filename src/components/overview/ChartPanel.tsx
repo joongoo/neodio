@@ -7,6 +7,8 @@ interface ChartPanelProps {
   title: string;
   description?: string;
   actionLabel?: string;
+  /** Navigates to a page (server-safe — use this from a server component). */
+  actionHref?: string;
   onAction?: () => void;
   children: ReactNode;
 }
@@ -19,6 +21,7 @@ export function ChartPanel({
   title,
   description,
   actionLabel,
+  actionHref,
   onAction,
   children,
 }: ChartPanelProps) {
@@ -31,6 +34,7 @@ export function ChartPanel({
             variant="detail"
             size="sm"
             icon={<BarChart3 size={16} />}
+            href={actionHref}
             onClick={onAction}
           >
             {actionLabel}

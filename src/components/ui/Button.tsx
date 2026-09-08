@@ -1,4 +1,5 @@
 import { ButtonHTMLAttributes, ReactNode } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost" | "detail" | "link";
@@ -30,6 +31,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: ReactNode;
   /** Which side `icon` renders on. Defaults to "start". */
   iconPosition?: "start" | "end";
+  /** Navigates to a page instead of firing onClick — renders a Link with
+   *  the same classes so it works from a server component (no onClick
+   *  handler needed), e.g. Overview's chart panel "자세히보기" actions. */
+  href?: string;
 }
 
 export function Button({
@@ -39,18 +44,28 @@ export function Button({
   iconPosition = "start",
   className,
   children,
+  href,
   ...props
 }: ButtonProps) {
+  const classes = cn(
+    "inline-flex items-center gap-1.5 font-medium transition-colors whitespace-nowrap cursor-pointer",
+    sizeClasses[size],
+    variantClasses[variant],
+    className
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={classes}>
+        {icon && iconPosition === "start" && icon}
+        {children}
+        {icon && iconPosition === "end" && icon}
+      </Link>
+    );
+  }
+
   return (
-    <button
-      className={cn(
-        "inline-flex items-center gap-1.5 font-medium transition-colors whitespace-nowrap cursor-pointer",
-        sizeClasses[size],
-        variantClasses[variant],
-        className
-      )}
-      {...props}
-    >
+    <button className={classes} {...props}>
       {icon && iconPosition === "start" && icon}
       {children}
       {icon && iconPosition === "end" && icon}

@@ -1,10 +1,10 @@
 import { ArrowUpRight, Download, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Dropdown } from "@/components/ui/Dropdown";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MarketComparisonChart } from "@/components/charts/MarketComparisonChart";
 import { TrafficTrendChart } from "@/components/charts/TrafficTrendChart";
 import { RangeDropdown } from "@/components/overview/RangeDropdown";
+import { FilterDropdown } from "@/components/overview/FilterDropdown";
 import { ChecklistCard } from "@/components/overview/ChecklistCard";
 import { ChartPanel } from "@/components/overview/ChartPanel";
 import { ContentVisibilityCard } from "@/components/overview/ContentVisibilityCard";
@@ -32,17 +32,16 @@ const RANGE_TEXT: Record<DateRange, string> = { "1w": "최근 1주", "2w": "최�
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; domain?: string; platform?: string; category?: string; market?: string }>;
 }) {
   const orgId = DEFAULT_ORG_ID;
-  const requestedRange = (await searchParams).range;
-  const range: DateRange = VALID_RANGES.includes(requestedRange as DateRange)
-    ? (requestedRange as DateRange)
-    : "4w";
+  const params = await searchParams;
+  const range: DateRange = VALID_RANGES.includes(params.range as DateRange) ? (params.range as DateRange) : "4w";
 
-  const [org, statCardsSeed, contentVisibilitySeed, checklist, sentiment, market, traffic, opportunities, brandsData] =
+  const [org, organizations, statCardsSeed, contentVisibilitySeed, checklist, sentiment, market, traffic, opportunities, brandsData, llmModels] =
     await Promise.all([
       db.organizations.get(orgId),
+      db.organizations.list(),
       db.overview.getStatCards(orgId, range),
       db.overview.getContentVisibility(orgId),
       db.overview.getChecklist(orgId),
@@ -51,7 +50,19 @@ export default async function OverviewPage({
       db.overview.getTrafficTrends(orgId, range),
       db.overview.getOpportunities(orgId),
       db.brandsManagement.get(orgId),
+      db.seed.llmModels(),
     ]);
+
+  // 카테고리/마켓/도메인 옵션은 Brand Management에 등록된 실제 데이터에서 가져온다
+  // (하드코딩된 "전체"뿐이던 플레이스홀더 대체) — 다만 감성/마켓 비교를 뺀 나머지
+  // 차트·stat 카드는 아직 org 단위로만 집계되고 있어 이 필터들을 바꿔도 값 자체가
+  // 갈리지는 않는다. 실제 필터링은 데이터 파이프라인에 해당 축이 추가돼야 한다.
+  const domainOptions = Array.from(
+    new Set((brandsData?.brands ?? []).map((b) => normalizeHostname(new URL(b.url).hostname)).concat(org.domain))
+  );
+  const platformOptions = ["전체", ...llmModels.map((m) => m.name)];
+  const categoryOptions = ["전체", ...(brandsData?.categories.map((c) => c.name) ?? [])];
+  const marketOptions = ["전체", ...Array.from(new Set((brandsData?.brands ?? []).flatMap((b) => b.markets)))];
 
   const ownBrand = brandsData?.brands.find(
     (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
@@ -94,12 +105,12 @@ export default async function OverviewPage({
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900">개요</h1>
           <div className="mt-2 flex flex-wrap gap-2">
-            <Dropdown label="" value={org.name} bold options={[org.name]} />
+            <FilterDropdown label="" paramKey="org" value={org.name} options={organizations.map((o) => o.name)} bold />
             <RangeDropdown value={range} />
-            <Dropdown label="" value={org.domain} options={[org.domain]} />
-            <Dropdown label="플랫폼" value="전체" />
-            <Dropdown label="카테고리" value="전체" />
-            <Dropdown label="마켓" value="전체" />
+            <FilterDropdown label="" paramKey="domain" value={params.domain ?? org.domain} options={domainOptions} />
+            <FilterDropdown label="플랫폼" paramKey="platform" value={params.platform ?? "전체"} options={platformOptions} />
+            <FilterDropdown label="카테고리" paramKey="category" value={params.category ?? "전체"} options={categoryOptions} />
+            <FilterDropdown label="마켓" paramKey="market" value={params.market ?? "전체"} options={marketOptions} />
           </div>
         </div>
         <div className="flex gap-2">
@@ -131,6 +142,7 @@ export default async function OverviewPage({
           title="감성 분포"
           description={`${RANGE_TEXT[range]}간 AI 답변에 나타난 브랜드 언급의 감성을 우호적·중립·비우호적으로 나눠 보여줘요.`}
           actionLabel="자세히보기"
+          actionHref="/brand-presence"
         >
           <SentimentChart data={sentimentData} />
         </ChartPanel>
@@ -138,6 +150,7 @@ export default async function OverviewPage({
           title="마켓 비교"
           description={`브랜드를 주요 마켓 브랜드와 비교해요. ${RANGE_TEXT[range]}간 집계된 주간 언급 수와 인용 수예요.`}
           actionLabel="자세히보기"
+          actionHref="/brand-presence"
         >
           <MarketComparisonChart data={marketData} />
         </ChartPanel>
@@ -147,7 +160,6 @@ export default async function OverviewPage({
         <ChartPanel
           title="트래픽 추이"
           description="에이전틱 트래픽과 리퍼럴 트래픽이 주별로 어떻게 변화했는지 보여줘요."
-          actionLabel="자세히보기"
         >
           <TrafficTrendChart data={traffic} />
         </ChartPanel>
@@ -155,6 +167,7 @@ export default async function OverviewPage({
           title="최신 기회"
           description="최근 추가된 기회 3건을 확인하세요."
           actionLabel="전체보기"
+          actionHref="/opportunities"
         >
           <div className="flex flex-col gap-2">
             {opportunities.map((opp) => (
