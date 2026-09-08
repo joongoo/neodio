@@ -45,6 +45,25 @@ export function BrandPresenceClient({
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>(data.defaultSelectedCompetitors);
   const [detailRow, setDetailRow] = useState<DataInsightRow | null>(null);
 
+  // 상단 마켓/모델 드롭다운이 실제로 아무 테이블에도 적용 안 되고 있었음
+  // (마켓 트래킹 카드만 "상단 필터의 영향을 받지 않습니다"라고 명시돼 있고,
+  // 나머지는 영향을 받아야 하는데 실제로는 다 무시됐던 버그). 데이터
+  // 인사이트/무버 테이블에 있는 필드 기준으로 실제로 걸러지도록 수정 —
+  // Share of Voice는 market/source 필드 자체가 없어 구조적으로 필터링
+  // 불가능하니 그대로 둔다.
+  const dataInsights = useMemo(
+    () => data.dataInsights.filter((r) => model === "전체" || r.source === model),
+    [data.dataInsights, model]
+  );
+  const topMovers = useMemo(
+    () => data.topMovers.filter((r) => (market === "전체" || r.market === market) && (model === "전체" || r.source === model)),
+    [data.topMovers, market, model]
+  );
+  const bottomMovers = useMemo(
+    () => data.bottomMovers.filter((r) => (market === "전체" || r.market === market) && (model === "전체" || r.source === model)),
+    [data.bottomMovers, market, model]
+  );
+
   function toggleCompetitor(brand: string) {
     setSelectedCompetitors((prev) => {
       if (prev.includes(brand)) return prev.filter((b) => b !== brand);
@@ -251,18 +270,18 @@ export function BrandPresenceClient({
           <GearButton onClick={() => mover.setOpen(true)} />
         </div>
         <div className="mt-4">
-          <DataTable columns={mover.filtered} rows={data.topMovers} getRowId={(r) => r.id} />
+          <DataTable columns={mover.filtered} rows={topMovers} getRowId={(r) => r.id} />
         </div>
       </Card>
 
       <Card>
         <h2 className="text-base font-bold text-neutral-900">하락 상위 항목</h2>
         <p className="mt-0.5 text-xs text-neutral-500">감성이 하락한(긍정→중립, 긍정→부정, 중립→부정) 검색량 상위 프롬프트</p>
-        {data.bottomMovers.length === 0 ? (
+        {bottomMovers.length === 0 ? (
           <p className="mt-4 text-xs text-neutral-400">ⓘ 감지된 감성 변화가 없습니다</p>
         ) : (
           <div className="mt-4">
-            <DataTable columns={mover.filtered} rows={data.bottomMovers} getRowId={(r) => r.id} />
+            <DataTable columns={mover.filtered} rows={bottomMovers} getRowId={(r) => r.id} />
           </div>
         )}
       </Card>
@@ -276,7 +295,7 @@ export function BrandPresenceClient({
           <GearButton onClick={() => insight.setOpen(true)} />
         </div>
         <div className="mt-4">
-          <DataTable columns={insight.filtered} rows={data.dataInsights} getRowId={(r) => r.id} />
+          <DataTable columns={insight.filtered} rows={dataInsights} getRowId={(r) => r.id} />
         </div>
       </Card>
 
