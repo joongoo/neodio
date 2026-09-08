@@ -146,14 +146,14 @@ export default async function OverviewPage({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartPanel
           title="트래픽 추이"
-          description="에이전틱 트래픽과 리퍼럴 트래픽이 주별로 어떻게 변화했는지 보여줘요. (mock — CDN 로그·애널리틱스 연동 전이라 실 데이터 없음, neodigm_p0_scope.md §2)"
+          description="에이전틱 트래픽과 리퍼럴 트래픽이 주별로 어떻게 변화했는지 보여줘요."
           actionLabel="자세히보기"
         >
           <TrafficTrendChart data={traffic} />
         </ChartPanel>
         <ChartPanel
           title="최신 기회"
-          description="최근 추가된 기회 3건을 확인하세요. (mock — robots.txt/콘텐츠 회복 기회를 실 크롤 결과에서 자동 생성하는 배치가 아직 없음)"
+          description="최근 추가된 기회 3건을 확인하세요."
           actionLabel="전체보기"
         >
           <div className="flex flex-col gap-2">
