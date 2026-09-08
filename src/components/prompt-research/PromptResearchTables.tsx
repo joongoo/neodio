@@ -5,6 +5,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TablePanel } from "@/components/ui/TablePanel";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { RelevancyChip } from "@/components/ui/RelevancyChip";
+import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { BrandMentionRow, RelatedTopicRow, RelatedTopicSubPrompt, SourceDomainRow } from "@/lib/db";
@@ -81,7 +82,7 @@ const sourceColumns: DataTableColumn<SourceDomainRow>[] = [
     width: "w-[200px]",
     render: (r) => (
       <span className="flex items-center gap-2 text-neutral-700">
-        <span className="size-4 shrink-0 rounded-full bg-slate-400" aria-hidden />
+        <FaviconIcon domain={r.domain} />
         {r.domain}
       </span>
     ),

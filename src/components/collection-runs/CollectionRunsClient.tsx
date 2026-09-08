@@ -6,6 +6,7 @@ import { TablePanel } from "@/components/ui/TablePanel";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { Button } from "@/components/ui/Button";
 import { CollectionRunForm } from "@/components/collection-runs/CollectionRunForm";
 import { BrandSeed } from "@/lib/db";
@@ -115,6 +116,7 @@ function RunDetail({ file }: { file: CollectedRunFile }) {
             {promptRun.rawMetadata.citations!.map((c) => (
               <div key={c.url} className="flex items-center gap-2 truncate text-neutral-600">
                 <span className={`size-2 shrink-0 rounded-full ${c.isOwnDomain ? "bg-emerald-500" : "bg-neutral-300"}`} aria-hidden />
+                <FaviconIcon domain={c.domain} />
                 <span className="truncate">{c.title}</span>
                 <span className="shrink-0 text-neutral-400">{c.domain}</span>
               </div>

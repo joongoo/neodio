@@ -9,6 +9,7 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
+import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import {
   BrandRankRow,
@@ -107,8 +108,26 @@ const brandColumns: DataTableColumn<BrandRankRow>[] = [
   { key: "mentions", label: "언급 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
 ];
 
+function hostnameOf(url: string) {
+  try {
+    return new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
+  } catch {
+    return url;
+  }
+}
+
 const pageColumns: DataTableColumn<CitedPageRow>[] = [
-  { key: "pageUrl", label: "페이지 URL", width: "w-[360px]", render: (r) => <span className="truncate text-neutral-700">{r.pageUrl}</span> },
+  {
+    key: "pageUrl",
+    label: "페이지 URL",
+    width: "w-[360px]",
+    render: (r) => (
+      <span className="flex items-center gap-2 truncate text-neutral-700">
+        <FaviconIcon domain={hostnameOf(r.pageUrl)} />
+        {r.pageUrl}
+      </span>
+    ),
+  },
   { key: "responses", label: "응답 수", width: "w-[110px]", render: (r) => r.responses },
   {
     key: "market",
@@ -119,7 +138,17 @@ const pageColumns: DataTableColumn<CitedPageRow>[] = [
 ];
 
 const sourceColumns: DataTableColumn<CitedSourceRow>[] = [
-  { key: "domain", label: "도메인", width: "w-[220px]", render: (r) => <span className="text-neutral-700">{r.domain}</span> },
+  {
+    key: "domain",
+    label: "도메인",
+    width: "w-[220px]",
+    render: (r) => (
+      <span className="flex items-center gap-2 text-neutral-700">
+        <FaviconIcon domain={r.domain} />
+        {r.domain}
+      </span>
+    ),
+  },
   {
     key: "market",
     label: "마켓",
