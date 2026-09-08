@@ -1,6 +1,6 @@
 import { getGscToken } from "./gscTokenStore";
 import { refreshAccessToken } from "./googleOAuth";
-import { GscSearchPerformanceResult, GscTrendWeek, GscTopQueryRow } from "@/lib/db/types";
+import { GscSearchPerformanceResult, GscTrendWeek, GscTopQueryRow, PromptStrategyTopicRow } from "@/lib/db/types";
 
 interface SearchAnalyticsRow {
   keys: string[];
@@ -92,4 +92,51 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
   }));
 
   return { brandId, property: token.property, trend, topQueries };
+}
+
+// 프롬프트 전략의 "GSC 커버리지 공백" — 실제로 노출은 있는데 우리 프롬프트
+// 라이브러리엔 없는 검색어를 찾는다. 완전 일치는 기대할 수 없으니(GSC
+// 검색어는 사용자가 실제로 타이핑한 짧은 구절이고 라이브러리는 완성된
+// 질문 문장이라) "이미 추적 중인 프롬프트 문구에 이 검색어가 부분
+// 포함되는지"로 단순 판정한다 — 완벽하진 않지만 완전히 새로운 검색어를
+// 놓치는 일은 없다.
+export async function getRealGscCoverageGaps(
+  brandId: string,
+  trackedPrompts: string[]
+): Promise<PromptStrategyTopicRow[] | null> {
+  const token = await getGscToken(brandId);
+  if (!token) return null;
+
+  const { access_token: accessToken } = await refreshAccessToken(token.refreshToken);
+
+  const end = new Date();
+  end.setDate(end.getDate() - 3);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 27); // 4주치
+
+  const rows = await querySearchAnalytics(accessToken, token.property, {
+    startDate: isoDate(start),
+    endDate: isoDate(end),
+    dimensions: ["query"],
+    rowLimit: 25,
+  });
+
+  const trackedLower = trackedPrompts.map((p) => p.toLowerCase());
+  const gaps = rows
+    .filter((r) => r.impressions >= 5)
+    .filter((r) => {
+      const query = r.keys[0].toLowerCase();
+      return !trackedLower.some((p) => p.includes(query) || query.includes(p));
+    })
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 5);
+
+  return gaps.map((r, i) => ({
+    id: `real-gsc-gap-${i}`,
+    topic: r.keys[0],
+    market: "KR",
+    source: "gsc" as const,
+    gscImpressions: r.impressions,
+    brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+  }));
 }

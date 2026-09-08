@@ -17,6 +17,7 @@ import {
 import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
 import { seedMarkets } from "@/lib/db/data/seed";
 import { isDemoMode } from "@/lib/backend/demoMode";
+import { getGscToken } from "@/lib/backend/gscTokenStore";
 
 function normalizeHostname(hostname: string) {
   return hostname.replace(/^www\./, "");
@@ -86,7 +87,10 @@ export default async function OverviewPage({
   const ownBrand = brandsData?.brands.find(
     (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
   );
-  const gsc = ownBrand ? await db.connections.getGsc(ownBrand.id) : null;
+  // mock(db.connections.getGsc)은 항상 "connected"라 실 OAuth가 생긴
+  // 지금은 체크리스트 판단 근거로 쓰면 안 된다 — Demo 브랜드에서만 mock,
+  // 그 외엔 실 토큰 유무가 유일한 근거 (연결 관리 페이지와 동일 원칙).
+  const gscConnected = ownBrand ? (demo ? (await db.connections.getGsc(ownBrand.id))?.status === "connected" : !!(await getGscToken(ownBrand.id))) : false;
 
   // Real crawl data wins when one exists. No crawl yet but a sitemap is
   // registered → prompt to crawl. No sitemap at all → prompt to register
@@ -142,7 +146,7 @@ export default async function OverviewPage({
   const STEP_DONE: Record<string, boolean> = {
     "connect-traffic": realStats !== null,
     "more-exposure": promptLibraryRows.length > 0,
-    "connect-search-console": gsc?.status === "connected",
+    "connect-search-console": gscConnected,
     "connect-web-analytics": ownBrand?.analyticsConnected ?? false,
     "upload-prompts": hasUploadedPrompt,
   };
