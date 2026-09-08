@@ -1,5 +1,4 @@
-import { ArrowUpRight, Download, Share2 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { ArrowUpRight } from "lucide-react";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MarketComparisonChart } from "@/components/charts/MarketComparisonChart";
 import { TrafficTrendChart } from "@/components/charts/TrafficTrendChart";
@@ -159,14 +158,7 @@ export default async function OverviewPage({
             <FilterDropdown label="마켓" paramKey="market" value={params.market ?? "전체"} options={marketOptions} />
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="detail" icon={<Share2 size={16} />}>
-            공유
-          </Button>
-          <Button variant="detail" icon={<Download size={16} />}>
-            PDF로 내보내기
-          </Button>
-        </div>
+        {/* 공유/PDF 내보내기는 onClick이 없는 placeholder라 실제 기능이 생기기 전까지 숨김 */}
       </div>
 
       {contentVisibility && <ContentVisibilityCard data={contentVisibility} />}
