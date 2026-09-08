@@ -6,7 +6,6 @@ import { gscConnectionByBrand } from "./data/connections";
 import { gscSearchPerformanceByBrand } from "./data/gscSearchPerformance";
 import { promptLibraryByOrg, promptLibraryHealthByOrg } from "./data/promptLibrary";
 import { promptResearchByTopic } from "./data/promptResearch";
-import { searchCollectionByKeyword } from "./data/searchCollection";
 import { searchTrendByKeyword } from "./data/searchTrend";
 import { promptStrategyByOrg } from "./data/promptStrategy";
 import { urlInspectorByOrg } from "./data/urlInspector";
@@ -219,11 +218,6 @@ export const db = {
     // neodigm_screens_documentation.md §3 — one call returns everything the
     // screen needs). Unknown topics resolve to null → empty state.
     search: async (topic: string) => promptResearchByTopic[topic.trim()] ?? null,
-  },
-  searchCollection: {
-    // Single lookup for now, same shape as promptResearch.search — one call
-    // returns everything the screen needs. Unknown keywords → empty state.
-    search: async (keyword: string) => searchCollectionByKeyword[keyword.trim()] ?? null,
   },
   searchTrend: {
     // API 미연동 mock — docs/naver-datalab-search-trend-plan.md. 실 연동 시

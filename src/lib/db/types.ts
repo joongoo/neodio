@@ -393,50 +393,10 @@ export interface PromptResearchResult {
 }
 
 // ---- Search Collection page ----
-
-// Naver has two distinct surfaces per project_naver_p0 memory: an AI-chat
-// surface (reuses the prompt_runs/mentions/citations pipeline, so it lives
-// under Prompt Research's model dropdown) and this traditional ranked
-// integrated-search surface, which needs its own naver_search_results
-// (keyword, block_type, rank, url, snippet) table + adapter. Google is the
-// same ranked shape, just a different provider/block taxonomy.
-export type NaverBlockType = "블로그" | "카페" | "파워링크" | "쇼핑" | "지식iN";
-
-export interface NaverSearchResultRow {
-  id: string;
-  rank: number;
-  blockType: NaverBlockType;
-  title: string;
-  url: string;
-  snippet: string;
-  isOwnBrand: boolean;
-  /** ISO timestamp of the collection run that produced this row. */
-  collectedAt: string;
-}
-
-export interface GoogleSearchResultRow {
-  id: string;
-  rank: number;
-  title: string;
-  url: string;
-  snippet: string;
-  isAiOverview: boolean;
-  isOwnBrand: boolean;
-  /** ISO timestamp of the collection run that produced this row. */
-  collectedAt: string;
-}
-
-export interface SearchCollectionResult {
-  keyword: string;
-  stats: {
-    collectedBlocks: number;
-    rankedUrls: number;
-    ownBrandRanks: number;
-    competitorRanks: number;
-  };
-  naver: NaverSearchResultRow[];
-  google: GoogleSearchResultRow[];
-}
+// P1로 연기 (검색결과 리서치 화면 삭제). 네이버 통합검색/구글 SERP 랭킹 수집은
+// naver_search_results 테이블 설계가 필요한 별도 파이프라인이라 재도입 시 이
+// 자리에 NaverBlockType/NaverSearchResultRow/GoogleSearchResultRow/
+// SearchCollectionResult를 다시 정의하면 된다 (git 히스토리의 이전 버전 참고).
 
 // ---- Search Trend page ----
 // Naver DataLab 통합 검색어 트렌드 API 연동 전 화면 뼈대 (docs/naver-datalab-search-trend-plan.md
