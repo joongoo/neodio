@@ -42,6 +42,12 @@ export interface RealDataFilters {
    *  Brand Management/Prompt Library와 같은 목록). 아직 분류 안 된 실행은
    *  어떤 카테고리를 골라도 매칭되지 않는다. */
   category?: string;
+  /** Overview's "마켓" 필터 — collector scripts already tag every run with a
+   *  real seedMarkets id (--market-id, default market-kr) at collection
+   *  time, and Brand Management's `markets` now uses the same seedMarkets
+   *  labels (brandsManagement.ts), so this applies directly — no post-hoc
+   *  tagging step needed, unlike category. */
+  marketId?: string;
 }
 
 // Shared by every getReal* below — same processed mentions/citations
@@ -55,7 +61,8 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
   const promptRuns = runFiles
     .map((f) => f.promptRun)
     .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
-    .filter((run) => !filters.category || run.rawMetadata.category === filters.category);
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
   const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });

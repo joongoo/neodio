@@ -10,7 +10,7 @@ import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlMo
 import { ManagedBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
 
-const MARKET_OPTIONS = ["한국 (KR)", "미국 (US)", "전세계"];
+const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
 
 type SitemapCrawlStatus = Pick<SitemapCrawlJob, "stage" | "log" | "error" | "result">;
 

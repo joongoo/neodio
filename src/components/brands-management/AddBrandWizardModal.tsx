@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { ManagedBrand } from "@/lib/db";
 
 const STEPS = ["기본 정보", "URL", "상세 정보", "검토"] as const;
-const MARKET_OPTIONS = ["한국 (KR)", "미국 (US)", "전세계"];
+const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
 
 interface WizardState {
   name: string;

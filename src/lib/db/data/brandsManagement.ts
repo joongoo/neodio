@@ -1,6 +1,12 @@
 import { BrandsManagementData } from "../types";
 import { seedCategories, seedPrompts, seedTopics } from "./seed";
 
+// `markets` used to be free-text ("한국 (KR)", "미국 (US)") that didn't match
+// seedMarkets — the market list PromptRunSeed.marketId is actually collected
+// against. Using seedMarkets' own labels here means Overview's market filter
+// can map a selected label straight back to a marketId and filter real
+// collected runs by it, same as the category/platform filters.
+
 // Categories used to be a separate hand-picked list (마케팅/자동화 툴/광고) that
 // didn't line up with the topic categories the real prompt/LLM-run pipeline
 // is actually organized by (seedCategories → seedTopics.categoryId →
@@ -31,7 +37,7 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
         sitemapUrl: "https://neodigm.com/sitemap.xml",
         description: "AI 가시성 대시보드를 만드는 B2B SaaS",
         industry: "B2B SaaS",
-        markets: ["한국 (KR)"],
+        markets: ["한국"],
         status: "active",
         aliases: ["네오다임", "네오디지엠"],
         otherBrands: ["HubSpot", "Salesforce", "Rinda AI"],
@@ -49,7 +55,7 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
         sitemapUrl: "",
         description: "",
         industry: "",
-        markets: ["미국 (US)"],
+        markets: ["미국"],
         status: "pending",
         aliases: [],
         otherBrands: [],

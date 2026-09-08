@@ -16,6 +16,7 @@ import {
   getLatestSitemapCrawl,
 } from "@/lib/backend/sitemapCrawlReader";
 import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
+import { seedMarkets } from "@/lib/db/data/seed";
 
 function normalizeHostname(hostname: string) {
   return hostname.replace(/^www\./, "");
@@ -54,9 +55,8 @@ export default async function OverviewPage({
     ]);
 
   // 카테고리/마켓/도메인 옵션은 Brand Management에 등록된 실제 데이터에서 가져온다
-  // (하드코딩된 "전체"뿐이던 플레이스홀더 대체) — 다만 감성/마켓 비교를 뺀 나머지
-  // 차트·stat 카드는 아직 org 단위로만 집계되고 있어 이 필터들을 바꿔도 값 자체가
-  // 갈리지는 않는다. 실제 필터링은 데이터 파이프라인에 해당 축이 추가돼야 한다.
+  // (하드코딩된 "전체"뿐이던 플레이스홀더 대체). 도메인 필터는 org가 1개뿐이라
+  // 아직 실제로 값을 바꾸진 않는다 — 실 필터링은 플랫폼/카테고리/마켓 3개.
   // 대기 중(pending) 브랜드는 온보딩(도메인 인증 등)이 끝나지 않아 아직 실제로
   // 추적되지 않는 브랜드라, 활성(active) 브랜드가 되기 전까지는 도메인/마켓
   // 필터에 노출하지 않는다 — 활성으로 전환되면 자동으로 옵션에 포함된다.
@@ -82,16 +82,16 @@ export default async function OverviewPage({
       ? buildContentVisibilityFromCrawl(latestCrawl, contentVisibilitySeed)
       : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
 
-  // 플랫폼 필터는 PromptRunSeed.llmModelId와 1:1로 대응돼서 실 데이터에 바로
-  // 적용할 수 있다. 카테고리는 이제 Brand Management/토픽/프롬프트 라이브러리가
-  // 같은 목록을 쓰지만, 실 수집 데이터는 "수집 로그"의 "분석" 모달에서 사후에
-  // 태그해야만(rawMetadata.category) 매칭된다 — 아직 아무도 분류하지 않은
-  // 실행은 카테고리를 골라도 걸러지지 않는다(모두 제외됨). 마켓 필터는 여전히
-  // 브랜드 관리 쪽 id 체계가 따로 있어 미적용.
+  // 플랫폼/마켓 필터는 PromptRunSeed.llmModelId/marketId와 1:1로 대응돼서 실
+  // 데이터에 바로 적용된다. 카테고리는 수집 시점엔 안 받고 "수집 로그"의 "분석"
+  // 모달에서 사후에 태그해야만(rawMetadata.category) 매칭된다 — 아직 아무도
+  // 분류하지 않은 실행은 카테고리를 골라도 걸러지지 않는다(모두 제외됨).
   const selectedLlmModelId = llmModels.find((m) => m.name === params.platform)?.id;
+  const selectedMarketId = seedMarkets.find((m) => m.label === params.market)?.id;
   const realDataFilters = {
     ...(selectedLlmModelId ? { llmModelId: selectedLlmModelId } : {}),
     ...(params.category ? { category: params.category } : {}),
+    ...(selectedMarketId ? { marketId: selectedMarketId } : {}),
   };
 
   // Real collected-run data (mentions/citations/visibility score, sentiment,
