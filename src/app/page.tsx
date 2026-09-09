@@ -10,14 +10,22 @@ import { ContentVisibilityCard } from "@/components/overview/ContentVisibilityCa
 import { StatCard } from "@/components/overview/StatCard";
 import { DateRange, DEFAULT_ORG_ID, db } from "@/lib/db";
 import {
+  buildComplexityOpportunity,
+  buildContentRecoveryFromCrawlHistory,
   buildContentVisibilityFromCrawl,
   buildEmptyContentVisibility,
+  buildFaqOpportunity,
+  buildMultimediaOpportunity,
+  buildTocOpportunity,
   getLatestSitemapCrawl,
+  getSitemapCrawlHistory,
 } from "@/lib/backend/sitemapCrawlReader";
-import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries } from "@/lib/backend/collectionStatsReader";
+import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries, getRealTopicRows } from "@/lib/backend/collectionStatsReader";
 import { seedMarkets } from "@/lib/db/data/seed";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
+import { Opportunity } from "@/lib/db";
+import { getManagedBrands } from "@/lib/backend/brandsManagementStore";
 
 function normalizeHostname(hostname: string) {
   return hostname.replace(/^www\./, "");
@@ -53,7 +61,8 @@ export default async function OverviewPage({
     market,
     traffic,
     opportunities,
-    brandsData,
+    brandsDataSeed,
+    realBrands,
     llmModels,
     promptLibraryRows,
   ] = await Promise.all([
@@ -66,6 +75,7 @@ export default async function OverviewPage({
     db.overview.getTrafficTrends(orgId, range),
     db.overview.getOpportunities(orgId),
     db.brandsManagement.get(orgId),
+    getManagedBrands(orgId),
     db.seed.llmModels(),
     db.promptLibrary.list(orgId),
   ]);
@@ -76,7 +86,8 @@ export default async function OverviewPage({
   // 대기 중(pending) 브랜드는 온보딩(도메인 인증 등)이 끝나지 않아 아직 실제로
   // 추적되지 않는 브랜드라, 활성(active) 브랜드가 되기 전까지는 도메인/마켓
   // 필터에 노출하지 않는다 — 활성으로 전환되면 자동으로 옵션에 포함된다.
-  const activeBrands = (brandsData?.brands ?? []).filter((b) => b.status === "active");
+  const brandsData = brandsDataSeed ? { ...brandsDataSeed, brands: realBrands } : null;
+  const activeBrands = realBrands.filter((b) => b.status === "active");
   const domainOptions = Array.from(
     new Set(activeBrands.map((b) => normalizeHostname(new URL(b.url).hostname)).concat(org.domain))
   );
@@ -138,6 +149,44 @@ export default async function OverviewPage({
   });
   const sentimentData = realSentiment ?? sentiment;
   const marketData = realMarket ?? market;
+
+  // "최신 기회" — 실제 기회 DB(크롤 기록/토픽 수집 기록)에 createdAt이 있는
+  // 것만 모아 최신순 3개를 보여준다. createdAt이 없는 기회(예: robots.txt —
+  // 매번 실시간으로 다시 읽어와서 "발견 시점"이라는 개념 자체가 없다)는
+  // 최신 기회 랭킹에서 제외한다.
+  const crawlHistory = demo ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
+  const topicOpportunities = demo ? null : await getRealTopicRows({}, {}).catch(() => null);
+  const crawlBasedOpportunities: { href: string; title: string; createdAt: string }[] = [
+    { href: "/opportunities/content-recovery", opp: buildContentRecoveryFromCrawlHistory(crawlHistory) },
+    { href: "/opportunities/complexity", opp: buildComplexityOpportunity(crawlHistory) },
+    { href: "/opportunities/faq", opp: buildFaqOpportunity(crawlHistory) },
+    { href: "/opportunities/toc", opp: buildTocOpportunity(crawlHistory) },
+    { href: "/opportunities/multimedia", opp: buildMultimediaOpportunity(crawlHistory) },
+  ]
+    .filter((x) => x.opp !== null)
+    .map(({ href, opp }) => ({ href, title: opp!.title, createdAt: opp!.createdAt }));
+
+  const realOpportunityCards: (Opportunity & { href: string; createdAt: string })[] = [
+    ...crawlBasedOpportunities.map(({ href, title, createdAt }) => ({
+      id: href,
+      category: "기술적 GEO",
+      title,
+      href,
+      createdAt,
+    })),
+    ...(topicOpportunities?.opportunities ?? [])
+      .filter((row): row is typeof row & { createdAt: string } => !!row.createdAt)
+      .map((row) => ({
+        id: row.id,
+        category: "AI 가시성",
+        title: row.topic,
+        href: `/opportunities/topic/${encodeURIComponent(row.topic)}`,
+        createdAt: row.createdAt,
+      })),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const latestOpportunities: { id: string; category: string; title: string; href?: string }[] =
+    realOpportunityCards.length > 0 ? realOpportunityCards.slice(0, 3) : opportunities;
 
   // 체크리스트 단계별 done을 실제 상태에서 계산 (docs/overview-checklists-plan.md).
   // href가 없는 단계는 관련 기능이 아직 없다는 뜻이라 done도 항상 false로 둔다 —
@@ -218,19 +267,33 @@ export default async function OverviewPage({
           actionHref="/opportunities"
         >
           <div className="flex flex-col gap-2">
-            {opportunities.map((opp) => (
-              <button
-                key={opp.id}
-                type="button"
-                className="flex w-full items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-left transition-colors hover:bg-neutral-50 cursor-pointer"
-              >
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <b className="truncate text-sm text-neutral-900">{opp.title}</b>
-                  <span className="text-xs text-slate-500">{opp.category}</span>
-                </div>
-                <ArrowUpRight size={16} className="shrink-0 text-slate-400" />
-              </button>
-            ))}
+            {latestOpportunities.map((opp) =>
+              opp.href ? (
+                <a
+                  key={opp.id}
+                  href={opp.href}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-left transition-colors hover:bg-neutral-50"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <b className="truncate text-sm text-neutral-900">{opp.title}</b>
+                    <span className="text-xs text-slate-500">{opp.category}</span>
+                  </div>
+                  <ArrowUpRight size={16} className="shrink-0 text-slate-400" />
+                </a>
+              ) : (
+                <button
+                  key={opp.id}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-left transition-colors hover:bg-neutral-50 cursor-pointer"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <b className="truncate text-sm text-neutral-900">{opp.title}</b>
+                    <span className="text-xs text-slate-500">{opp.category}</span>
+                  </div>
+                  <ArrowUpRight size={16} className="shrink-0 text-slate-400" />
+                </button>
+              )
+            )}
           </div>
         </ChartPanel>
       </div>

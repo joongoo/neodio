@@ -3,6 +3,7 @@ import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
 import { getRealGscSearchPerformance } from "@/lib/backend/gscSearchAnalyticsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
+import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 
 const DEFAULT_BRAND_ID = "brand-neodigm";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function SearchPerformancePage() {
   const demo = await isDemoMode();
   const [brand, gscMock, performanceMock, gscToken] = await Promise.all([
-    db.brandsManagement.getBrand(DEFAULT_ORG_ID, DEFAULT_BRAND_ID),
+    getManagedBrand(DEFAULT_ORG_ID, DEFAULT_BRAND_ID),
     db.connections.getGsc(DEFAULT_BRAND_ID),
     db.gscSearchPerformance.get(DEFAULT_BRAND_ID),
     getGscToken(DEFAULT_BRAND_ID),

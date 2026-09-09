@@ -40,17 +40,18 @@ export function ContentVisibilityCard({ data }: { data: ContentVisibility }) {
           <p className="text-[17px] font-bold text-neutral-900">{data.headline}</p>
           <p className="text-[13px] text-neutral-500">{data.detail}</p>
         </div>
-        {data.buttonHref ? (
-          <Link href={data.buttonHref}>
+        {data.visiblePercent < 100 &&
+          (data.buttonHref ? (
+            <Link href={data.buttonHref}>
+              <Button variant="detail" size="md" className="self-start">
+                {data.buttonLabel}
+              </Button>
+            </Link>
+          ) : (
             <Button variant="detail" size="md" className="self-start">
               {data.buttonLabel}
             </Button>
-          </Link>
-        ) : (
-          <Button variant="detail" size="md" className="self-start">
-            {data.buttonLabel}
-          </Button>
-        )}
+          ))}
       </div>
 
       <div className="flex w-[220px] shrink-0 flex-col justify-center gap-2 rounded-lg bg-blue-50 px-4 py-6">

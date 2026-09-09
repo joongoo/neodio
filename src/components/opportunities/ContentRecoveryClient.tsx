@@ -15,7 +15,7 @@ const OPTIONAL_COLUMNS: ColumnOption[] = [
 
 const TABS = ["현재 제안", "수정 완료"] as const;
 
-export function ContentRecoveryClient({ data }: { data: ContentRecoveryOpportunity }) {
+export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryOpportunity; domain: string }) {
   const router = useRouter();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
   // url -> job 진행 상태. 재크롤은 URL당 하나씩, 여러 개 동시에 돌려도 되게
@@ -44,7 +44,7 @@ export function ContentRecoveryClient({ data }: { data: ContentRecoveryOpportuni
     const res = await fetch("/api/sitemap-crawl/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domain: new URL(url).hostname, urls: [url] }),
+      body: JSON.stringify({ domain, urls: [url] }),
     });
     const body = await res.json();
     if (!res.ok) {

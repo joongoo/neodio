@@ -240,6 +240,13 @@ export const db = {
     // 교체하면 화면은 그대로 동작한다.
     get: async (brandId: string) => gscSearchPerformanceByBrand[brandId] ?? null,
   },
+  // 실 브랜드 CRUD(추가/편집/삭제)는 이제 파일 저장소를 쓴다
+  // (backend/brandsManagementStore.ts) — 여기(index.ts)는 클라이언트
+  // 컴포넌트도 값으로 import하는 번들이라 node:fs를 쓰는 모듈을 여기서
+  // 끌어오면 클라이언트 빌드가 깨진다(예: SearchTrendClient가 db.searchTrend를
+  // 직접 호출). 그래서 서버 컴포넌트(page.tsx)들은 db.brandsManagement 대신
+  // brandsManagementStore의 getManagedBrands/getManagedBrand를 직접 호출한다 —
+  // 이 두 mock 전용 메서드는 하위 호환을 위해 시드 그대로 남겨둔다.
   brandsManagement: {
     get: async (orgId: string) => brandsManagementByOrg[orgId] ?? null,
     getBrand: async (orgId: string, brandId: string) =>

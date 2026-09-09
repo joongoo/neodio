@@ -317,6 +317,9 @@ export interface TopicRow {
   targetUrl?: string;
   /** targetUrl이 실제로 AI 답변에 인용된 횟수 — 전체 수집 결과 기준 실측치. */
   targetUrlCitations?: number;
+  /** 이 토픽이 처음 수집된 시점 — prompts 중 가장 이른 runAt. Overview의
+   *  "최신 기회" 정렬 기준으로 쓴다. */
+  createdAt?: string;
 }
 
 export interface TopicCategory {
@@ -610,6 +613,9 @@ export interface ContentRecoveryUrl {
 
 export interface ContentRecoveryOpportunity {
   title: string;
+  /** 이 기회가 처음 발견된 시점 — 최초 크롤(baseline)의 crawledAt. Overview의
+   *  "최신 기회" 정렬 기준으로 쓴다. */
+  createdAt: string;
   affectedUrls: number;
   expectedVisibilityMultiplier: number;
   averageContentVisibility: number;
@@ -623,6 +629,45 @@ export interface ContentRecoveryOpportunity {
     baselineAverageContentVisibility: number;
     latestCrawledAt: string;
     latestAverageContentVisibility: number;
+    improvementPercent: number;
+  };
+}
+
+// ---- Opportunity Detail — 온사이트 콘텐츠 최적화(가독성/FAQ/목차/멀티미디어) ----
+// ContentRecoveryOpportunity와 구조는 같지만 지표 이름이 고정돼있지 않은
+// 범용 버전 — crawl-sitemap.mjs가 한 번의 크롤로 raw HTML/렌더링 결과에서
+// 여러 지표(복잡도, FAQ, 목차, 이미지 alt)를 동시에 계산해두므로, 지표별로
+// 이 하나의 모양을 재사용한다.
+export interface ContentAuditUrl {
+  id: string;
+  url: string;
+  status: "not_optimized" | "optimized" | "excluded";
+  score: number;
+  priorityScore: number;
+  previousScore?: number;
+}
+
+export interface ContentAuditOpportunity {
+  /** "complexity" | "faq" | "toc" | "multimedia" — 제외 저장소를 구분하는 키. */
+  metricKey: string;
+  title: string;
+  /** 이 기회가 처음 발견된 시점 — 최초 크롤(baseline)의 crawledAt. Overview의
+   *  "최신 기회" 정렬 기준으로 쓴다. */
+  createdAt: string;
+  metricLabel: string;
+  unit: "%" | "pt";
+  description: string;
+  affectedUrls: number;
+  averageScore: number;
+  optimizedCount: number;
+  excludedCount: number;
+  totalCount: number;
+  urls: ContentAuditUrl[];
+  comparison?: {
+    baselineCrawledAt: string;
+    baselineAverageScore: number;
+    latestCrawledAt: string;
+    latestAverageScore: number;
     improvementPercent: number;
   };
 }
@@ -715,6 +760,14 @@ export interface SitemapCrawlUrlResult {
   rawTextLength: number;
   renderedTextLength: number;
   contentVisibility: number;
+  /** 0~100, 높을수록 읽기 쉬움 — 평균 문장/단어 길이 기반 단순 휴리스틱. */
+  complexityScore?: number;
+  /** FAQ 스키마/텍스트 패턴 탐지 결과. */
+  hasFaq?: boolean;
+  /** 목차(같은 페이지 앵커 링크 다수) 탐지 결과. */
+  hasToc?: boolean;
+  /** alt 속성이 채워진 <img> 비율(0~100%). */
+  imageAltCoverage?: number;
   error: string | null;
 }
 

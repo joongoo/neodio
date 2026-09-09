@@ -26,10 +26,13 @@ export function AddBrandWizardModal({
   open,
   onClose,
   onAdd,
+  saving = false,
 }: {
   open: boolean;
   onClose: () => void;
-  onAdd: (brand: Omit<ManagedBrand, "id">) => void;
+  onAdd: (brand: Omit<ManagedBrand, "id">) => void | Promise<void>;
+  /** true인 동안 "브랜드 추가" 버튼을 비활성화한다 — 서버에 저장하는 동안 중복 제출 방지. */
+  saving?: boolean;
 }) {
   const [step, setStep] = useState(0);
   const [state, setState] = useState<WizardState>(EMPTY_STATE);
@@ -54,8 +57,8 @@ export function AddBrandWizardModal({
     true,
   ][step];
 
-  function submit() {
-    onAdd({
+  async function submit() {
+    await onAdd({
       name: state.name.trim(),
       url: state.url.trim(),
       sitemapUrl: state.sitemapUrl.trim(),
@@ -208,8 +211,8 @@ export function AddBrandWizardModal({
             다음
           </Button>
         ) : (
-          <Button variant="primary" onClick={submit}>
-            브랜드 추가
+          <Button variant="primary" disabled={saving} onClick={submit}>
+            {saving ? "추가하는 중..." : "브랜드 추가"}
           </Button>
         )}
       </div>

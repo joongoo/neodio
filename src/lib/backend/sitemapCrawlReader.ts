@@ -1,6 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { ContentRecoveryOpportunity, ContentVisibility, SitemapCrawlResult } from "@/lib/db/types";
+import {
+  ContentAuditOpportunity,
+  ContentRecoveryOpportunity,
+  ContentVisibility,
+  SitemapCrawlResult,
+  SitemapCrawlUrlResult,
+} from "@/lib/db/types";
 
 // Server-only (node:fs) — reads what scripts/crawl-sitemap.mjs actually
 // wrote to disk. Never import this from a "use client" component; see the
@@ -96,6 +102,7 @@ export function buildContentRecoveryFromCrawlHistory(history: SitemapCrawlResult
 
   return {
     title: "콘텐츠 가시성 회복",
+    createdAt: baseline.crawledAt,
     affectedUrls: urls.filter((u) => u.contentVisibility < 50).length,
     expectedVisibilityMultiplier: latestAverage > 0 ? Number((100 / Math.max(latestAverage, 1)).toFixed(1)) : 0,
     averageContentVisibility: latestAverage,
@@ -190,4 +197,140 @@ export function buildEmptyContentVisibility(
     },
     emptyReason: reason,
   };
+}
+
+// 콘텐츠 가시성 회복과 같은 크롤 기록에서 다른 지표(복잡도/FAQ/목차/이미지
+// alt)를 뽑아 같은 모양의 기회로 만드는 범용 빌더 — crawl-sitemap.mjs가
+// 한 번의 크롤로 이 지표들을 전부 같이 계산해두므로 재크롤 한 번이면
+// 5개 기회가 동시에 갱신된다.
+export interface ContentAuditConfig {
+  metricKey: string;
+  title: string;
+  metricLabel: string;
+  unit: "%" | "pt";
+  description: string;
+  /** 이 값 이상이면 "수정 완료"로 간주. */
+  threshold: number;
+  getScore: (u: SitemapCrawlUrlResult) => number;
+}
+
+export function buildContentAuditFromCrawlHistory(
+  history: SitemapCrawlResult[],
+  config: ContentAuditConfig,
+  excludedUrls: Set<string> = new Set()
+): ContentAuditOpportunity | null {
+  if (history.length === 0) return null;
+  const latest = history[history.length - 1];
+  const baseline = history[0];
+
+  const successUrls = latest.urls.filter((u) => u.status === "success");
+  if (successUrls.length === 0) return null;
+
+  // 평균/전후 비교는 "제외"된 URL도 그대로 포함한다 — 제외는 "수정 필요
+  // 목록에서 안 보이게" 하는 것뿐이지, 실측치 자체를 왜곡하면 안 된다.
+  const average = (urls: SitemapCrawlUrlResult[]) =>
+    urls.length > 0 ? Math.round(urls.reduce((sum, u) => sum + config.getScore(u), 0) / urls.length) : 0;
+  const latestAverage = average(successUrls);
+
+  const baselineByUrl = new Map(baseline.urls.map((u) => [u.url, config.getScore(u)]));
+
+  const urls: ContentAuditOpportunity["urls"] = successUrls
+    .map((u, i) => {
+      const score = config.getScore(u);
+      const status = excludedUrls.has(u.url) ? ("excluded" as const) : score >= config.threshold ? ("optimized" as const) : ("not_optimized" as const);
+      return {
+        id: `real-audit-${i}`,
+        url: u.url,
+        status,
+        score,
+        priorityScore: Number(((100 - score) / 10).toFixed(1)),
+        previousScore: history.length > 1 ? baselineByUrl.get(u.url) : undefined,
+      };
+    })
+    .sort((a, b) => a.score - b.score);
+
+  const comparison =
+    history.length > 1
+      ? (() => {
+          const baselineSuccess = baseline.urls.filter((u) => u.status === "success");
+          const baselineAverage = average(baselineSuccess);
+          return {
+            baselineCrawledAt: baseline.crawledAt,
+            baselineAverageScore: baselineAverage,
+            latestCrawledAt: latest.crawledAt,
+            latestAverageScore: latestAverage,
+            improvementPercent: baselineAverage > 0 ? Math.round(((latestAverage - baselineAverage) / baselineAverage) * 100) : 0,
+          };
+        })()
+      : undefined;
+
+  return {
+    metricKey: config.metricKey,
+    title: config.title,
+    createdAt: baseline.crawledAt,
+    metricLabel: config.metricLabel,
+    unit: config.unit,
+    description: config.description,
+    affectedUrls: urls.filter((u) => u.status === "not_optimized").length,
+    averageScore: latestAverage,
+    optimizedCount: urls.filter((u) => u.status === "optimized").length,
+    excludedCount: urls.filter((u) => u.status === "excluded").length,
+    totalCount: urls.length,
+    urls,
+    comparison,
+  };
+}
+
+const COMPLEXITY_CONFIG: ContentAuditConfig = {
+  metricKey: "complexity",
+  title: "복잡한 콘텐츠 단순화",
+  metricLabel: "가독성 점수",
+  unit: "pt",
+  description:
+    "가독성 점수가 낮으면 사용자가 콘텐츠를 이해하기 어려워집니다. 문장과 단어가 짧을수록 LLM이 콘텐츠를 인용하고 요약하기 쉬워집니다.",
+  threshold: 60,
+  getScore: (u) => u.complexityScore ?? 0,
+};
+
+const FAQ_CONFIG: ContentAuditConfig = {
+  metricKey: "faq",
+  title: "관련 FAQ 추가",
+  metricLabel: "FAQ 포함 여부",
+  unit: "%",
+  description: "FAQ 섹션이 있는 페이지는 LLM이 질문-답변 형태로 바로 인용하기 쉬워, AI 답변 노출 가능성이 높아집니다.",
+  threshold: 50,
+  getScore: (u) => (u.hasFaq ? 100 : 0),
+};
+
+const TOC_CONFIG: ContentAuditConfig = {
+  metricKey: "toc",
+  title: "목차(Table of Content) 추가",
+  metricLabel: "목차 포함 여부",
+  unit: "%",
+  description: "목차가 있으면 LLM이 문서 구조를 파악하고 필요한 부분만 인용하기 쉬워집니다.",
+  threshold: 50,
+  getScore: (u) => (u.hasToc ? 100 : 0),
+};
+
+const MULTIMEDIA_CONFIG: ContentAuditConfig = {
+  metricKey: "multimedia",
+  title: "멀티미디어 가시성 보강",
+  metricLabel: "이미지 alt 커버리지",
+  unit: "%",
+  description: "alt 텍스트가 없는 이미지는 LLM이 내용을 이해할 수 없습니다. alt 텍스트를 채우면 이미지 안 정보도 AI 답변에 반영될 수 있습니다.",
+  threshold: 80,
+  getScore: (u) => u.imageAltCoverage ?? 0,
+};
+
+export function buildComplexityOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
+  return buildContentAuditFromCrawlHistory(history, COMPLEXITY_CONFIG, excludedUrls);
+}
+export function buildFaqOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
+  return buildContentAuditFromCrawlHistory(history, FAQ_CONFIG, excludedUrls);
+}
+export function buildTocOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
+  return buildContentAuditFromCrawlHistory(history, TOC_CONFIG, excludedUrls);
+}
+export function buildMultimediaOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
+  return buildContentAuditFromCrawlHistory(history, MULTIMEDIA_CONFIG, excludedUrls);
 }

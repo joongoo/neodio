@@ -2,6 +2,7 @@ import { Bell, User } from "lucide-react";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { OrgBrandSwitcher } from "@/components/layout/OrgBrandSwitcher";
 import { getSelectedBrandName } from "@/lib/backend/demoMode";
+import { getManagedBrands } from "@/lib/backend/brandsManagementStore";
 
 // Matches Figma "TopBar_ko" (node 646:28920, Korean page). Org/brand
 // switcher restored per Adobe Brand Visibility reference — every page had
@@ -10,11 +11,11 @@ import { getSelectedBrandName } from "@/lib/backend/demoMode";
 // page. Both now live here instead, so every page shares one org/brand
 // context instead of each page inventing its own placement for it.
 export async function TopBar() {
-  const [organizations, brandsData] = await Promise.all([
+  const [organizations, realBrands] = await Promise.all([
     db.organizations.list(),
-    db.brandsManagement.get(DEFAULT_ORG_ID),
+    getManagedBrands(DEFAULT_ORG_ID),
   ]);
-  const activeBrandNames = (brandsData?.brands ?? []).filter((b) => b.status === "active").map((b) => b.name);
+  const activeBrandNames = realBrands.filter((b) => b.status === "active").map((b) => b.name);
   const selectedBrand = await getSelectedBrandName(activeBrandNames[0] ?? "");
 
   return (

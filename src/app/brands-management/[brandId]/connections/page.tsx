@@ -1,8 +1,10 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Cloud, LineChart } from "lucide-react";
 import { GscConnectionCard } from "@/components/brands-management/GscConnectionCard";
+import { ComingSoonConnectionCard } from "@/components/brands-management/ComingSoonConnectionCard";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
 import { isDemoMode } from "@/lib/backend/demoMode";
+import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 
 // GSC 토큰이 방금 연결/해제됐을 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
@@ -18,7 +20,7 @@ export default async function BrandConnectionsPage({
   const query = await searchParams;
   const demo = await isDemoMode();
   const [brand, gscMock, gscToken] = await Promise.all([
-    db.brandsManagement.getBrand(DEFAULT_ORG_ID, brandId),
+    getManagedBrand(DEFAULT_ORG_ID, brandId),
     db.connections.getGsc(brandId),
     getGscToken(brandId),
   ]);
@@ -54,7 +56,7 @@ export default async function BrandConnectionsPage({
       <div>
         <h1 className="text-2xl font-semibold text-neutral-900">연결 관리</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          <b>{brand.name}</b>의 Google Search Console 연동 상태를 확인하세요.
+          <b>{brand.name}</b>의 데이터 연동 상태를 확인하세요.
         </p>
       </div>
 
@@ -68,6 +70,16 @@ export default async function BrandConnectionsPage({
       )}
 
       <GscConnectionCard gsc={gsc} brandId={brandId} />
+      <ComingSoonConnectionCard
+        title="CDN"
+        description="Edge/CDN 로그를 연결해 AI 에이전트 트래픽을 추적할 수 있습니다."
+        icon={<Cloud size={18} className="text-neutral-500" />}
+      />
+      <ComingSoonConnectionCard
+        title="Analytics"
+        description="웹 분석 도구를 연결해 유입/전환 데이터를 함께 볼 수 있습니다."
+        icon={<LineChart size={18} className="text-neutral-500" />}
+      />
     </div>
   );
 }

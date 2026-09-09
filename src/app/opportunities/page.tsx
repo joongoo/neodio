@@ -1,12 +1,26 @@
-import { AlertTriangle, FileWarning, Target } from "lucide-react";
+import { AlertTriangle, FileWarning, ListTree, MessageCircleQuestion, Target, Type, Images } from "lucide-react";
 import { getRealTopicRows } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getRealRobotsTxtOpportunity } from "@/lib/backend/robotsTxtReader";
-import { buildContentRecoveryFromCrawlHistory, getSitemapCrawlHistory } from "@/lib/backend/sitemapCrawlReader";
+import {
+  buildComplexityOpportunity,
+  buildContentRecoveryFromCrawlHistory,
+  buildFaqOpportunity,
+  buildMultimediaOpportunity,
+  buildTocOpportunity,
+  getSitemapCrawlHistory,
+} from "@/lib/backend/sitemapCrawlReader";
+import { ContentAuditOpportunity } from "@/lib/db";
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
+import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
+
+function auditStatus(data: ContentAuditOpportunity | null): OpportunityCard["status"] {
+  if (data === null) return { text: "크롤 안 함", tone: "neutral" };
+  return data.affectedUrls > 0 ? { text: `${data.affectedUrls}개 URL 수정 필요`, tone: "warn" } : { text: "모두 수정 완료", tone: "ok" };
+}
 
 // 실 수집 데이터(.tmp/*-ai, .tmp/sitemap-crawl)가 새로 생길 수 있으므로
 // 캐시하지 않는다 — 카드별 상태값이 최신을 반영해야 한다.
@@ -32,8 +46,8 @@ export default async function OpportunitiesPage() {
   const demo = await isDemoMode();
   const org = await db.organizations.get(DEFAULT_ORG_ID);
 
-  const [robotsTxt, crawlHistory, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls] = demo
-    ? [null, [], [], [], new Set<string>(), {}]
+  const [robotsTxt, crawlHistory, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, excludedByMetric] = demo
+    ? [null, [], [], [], new Set<string>(), {}, { complexity: new Set<string>(), faq: new Set<string>(), toc: new Set<string>(), multimedia: new Set<string>() }]
     : await Promise.all([
         org ? getRealRobotsTxtOpportunity(org.domain).catch(() => null) : Promise.resolve(null),
         org ? getSitemapCrawlHistory(org.domain).catch(() => []) : Promise.resolve([]),
@@ -41,16 +55,55 @@ export default async function OpportunitiesPage() {
         listTrackedTopics(),
         getDeletedLibraryRowIds(),
         getTopicOpportunityTargets(),
+        Promise.all([getExcludedUrls("complexity"), getExcludedUrls("faq"), getExcludedUrls("toc"), getExcludedUrls("multimedia")]).then(
+          ([complexity, faq, toc, multimedia]) => ({ complexity, faq, toc, multimedia })
+        ),
       ]);
 
   const libraryPrompts = [...promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id)), ...trackedRows].map((r) => r.prompt);
   const contentRecovery = buildContentRecoveryFromCrawlHistory(crawlHistory);
+  const complexity = buildComplexityOpportunity(crawlHistory, excludedByMetric.complexity);
+  const faq = buildFaqOpportunity(crawlHistory, excludedByMetric.faq);
+  const toc = buildTocOpportunity(crawlHistory, excludedByMetric.toc);
+  const multimedia = buildMultimediaOpportunity(crawlHistory, excludedByMetric.multimedia);
 
   const topicOpportunitiesReal = demo
     ? []
     : ((await getRealTopicRows({}, { libraryPrompts, targetUrls }).catch(() => null))?.opportunities ?? []);
 
   const contentCards: OpportunityCard[] = [
+    {
+      href: "/opportunities/complexity",
+      icon: Type,
+      title: "복잡한 콘텐츠 단순화",
+      description: "문장/단어 길이가 짧을수록 LLM이 이해하고 인용하기 쉬워집니다.",
+      category: "콘텐츠 최적화",
+      status: auditStatus(complexity),
+    },
+    {
+      href: "/opportunities/faq",
+      icon: MessageCircleQuestion,
+      title: "관련 FAQ 추가",
+      description: "FAQ 섹션이 있으면 LLM이 질문-답변 형태로 바로 인용하기 쉬워집니다.",
+      category: "콘텐츠 최적화",
+      status: auditStatus(faq),
+    },
+    {
+      href: "/opportunities/multimedia",
+      icon: Images,
+      title: "멀티미디어 가시성 보강",
+      description: "이미지 alt 텍스트가 없으면 LLM이 이미지 속 정보를 이해할 수 없습니다.",
+      category: "콘텐츠 최적화",
+      status: auditStatus(multimedia),
+    },
+    {
+      href: "/opportunities/toc",
+      icon: ListTree,
+      title: "목차(Table of Content) 추가",
+      description: "목차가 있으면 LLM이 문서 구조를 파악하고 필요한 부분만 인용하기 쉬워집니다.",
+      category: "기술적 SEO",
+      status: auditStatus(toc),
+    },
     ...topicOpportunitiesReal.map(
       (row): OpportunityCard => ({
         href: `/opportunities/topic/${encodeURIComponent(row.topic)}`,

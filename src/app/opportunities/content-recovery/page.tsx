@@ -24,5 +24,5 @@ export default async function ContentRecoveryOpportunityPage() {
   const data = real ?? mockData;
   if (!data) return null;
 
-  return <ContentRecoveryClient data={data} />;
+  return <ContentRecoveryClient data={data} domain={org?.domain ?? ""} />;
 }

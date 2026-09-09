@@ -44,6 +44,7 @@ export const robotsTxtOpportunityByOrg: Record<string, RobotsTxtOpportunity> = {
 export const contentRecoveryOpportunityByOrg: Record<string, ContentRecoveryOpportunity> = {
   neodigm: {
     title: "콘텐츠 가시성 회복",
+    createdAt: "2026-08-01T00:00:00.000Z",
     affectedUrls: 9,
     expectedVisibilityMultiplier: 5.9,
     averageContentVisibility: 22,

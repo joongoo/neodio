@@ -69,6 +69,47 @@ function stripHtmlToText(html) {
   return withoutTags.replace(/\s+/g, " ").trim();
 }
 
+// 복잡도 점수(0~100, 높을수록 읽기 쉬움) — 평균 문장 길이(단어 수)와 평균
+// 단어 길이(글자 수)가 짧을수록 LLM/사용자 모두 이해하기 쉽다는 단순
+// 휴리스틱. 정확한 언어학적 가독성 지수(Flesch 등)는 아니지만, 같은
+// 사이트를 반복 크롤링했을 때 상대적인 전/후 비교에는 충분하다.
+function computeComplexityScore(text) {
+  const sentences = text.split(/[.!?。\n]+/).map((s) => s.trim()).filter((s) => s.length > 0);
+  const words = text.split(/\s+/).filter((w) => w.length > 0);
+  if (sentences.length === 0 || words.length === 0) return 100;
+
+  const avgWordsPerSentence = words.length / sentences.length;
+  const avgCharsPerWord = words.reduce((sum, w) => sum + w.length, 0) / words.length;
+  const penalty = avgWordsPerSentence * 1.2 + avgCharsPerWord * 4;
+  return Math.max(0, Math.min(100, Math.round(100 - penalty)));
+}
+
+// FAQ 스키마(schema.org FAQPage) 또는 "자주 묻는 질문"/FAQ 텍스트, 물음표로
+// 끝나는 제목이 여러 개 있는지로 FAQ 섹션 존재 여부를 추정한다.
+function detectFaq(html, text) {
+  if (/"@type"\s*:\s*"FAQPage"/i.test(html)) return true;
+  if (/자주\s*묻는\s*질문|frequently\s+asked\s+questions|\bFAQ\b/i.test(text)) return true;
+  const questionHeadings = html.match(/<h[2-4][^>]*>[^<]*\?[^<]*<\/h[2-4]>/gi) ?? [];
+  return questionHeadings.length >= 2;
+}
+
+// 목차(TOC) — "목차"/"Table of Contents" 텍스트, 또는 같은 페이지 앵커
+// (href="#...")로만 이루어진 nav/list가 여러 개 있는지로 추정한다.
+function detectToc(html, text) {
+  if (/목차|table\s+of\s+contents/i.test(text)) return true;
+  const anchorLinks = html.match(/href=["']#[^"']+["']/gi) ?? [];
+  return anchorLinks.length >= 3;
+}
+
+// 이미지 alt 커버리지(0~100%) — alt 속성이 비어있지 않은 <img> 비율.
+// 이미지가 아예 없는 페이지는 감점 요인이 없다는 뜻으로 100%.
+function computeImageAltCoverage(html) {
+  const imgTags = html.match(/<img\b[^>]*>/gi) ?? [];
+  if (imgTags.length === 0) return 100;
+  const withAlt = imgTags.filter((tag) => /\balt=["'][^"']+["']/i.test(tag)).length;
+  return Math.round((withAlt / imgTags.length) * 100);
+}
+
 async function crawlUrl(page, url, timeoutMs) {
   let rawTextLength = 0;
   try {
@@ -83,11 +124,24 @@ async function crawlUrl(page, url, timeoutMs) {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForLoadState("networkidle", { timeout: Math.min(timeoutMs, 8_000) }).catch(() => {});
     const renderedTextLength = await page.evaluate(() => document.body.innerText.length);
+    const renderedText = await page.evaluate(() => document.body.innerText);
+    const renderedHtml = await page.content();
 
     const contentVisibility =
       renderedTextLength > 0 ? Math.min(100, Math.round((rawTextLength / renderedTextLength) * 100)) : 0;
 
-    return { url, status: "success", rawTextLength, renderedTextLength, contentVisibility, error: null };
+    return {
+      url,
+      status: "success",
+      rawTextLength,
+      renderedTextLength,
+      contentVisibility,
+      complexityScore: computeComplexityScore(renderedText),
+      hasFaq: detectFaq(renderedHtml, renderedText),
+      hasToc: detectToc(renderedHtml, renderedText),
+      imageAltCoverage: computeImageAltCoverage(renderedHtml),
+      error: null,
+    };
   } catch (error) {
     return {
       url,
@@ -95,6 +149,10 @@ async function crawlUrl(page, url, timeoutMs) {
       rawTextLength,
       renderedTextLength: 0,
       contentVisibility: 0,
+      complexityScore: 0,
+      hasFaq: false,
+      hasToc: false,
+      imageAltCoverage: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }

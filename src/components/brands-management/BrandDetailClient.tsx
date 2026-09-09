@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, X, Link2, Share2, FileText, Tag, Radar } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -14,14 +15,17 @@ const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
 
 type SitemapCrawlStatus = Pick<SitemapCrawlJob, "stage" | "log" | "error" | "result">;
 
-// Matches Figma "브랜드 상세 (Brand Detail)" (doc §22). Save is local-only
-// (no PUT /brands/{id} yet) — same mock stage as the rest of Brands
-// Management.
+// Matches Figma "브랜드 상세 (Brand Detail)" (doc §22). 저장/상태 전환은
+// PATCH /api/brands-management/brands/[brandId]로 실 파일 저장소
+// (brandsManagementStore.ts)에 반영된다.
 export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
+  const router = useRouter();
   const [brand, setBrand] = useState(initial);
   const [draft, setDraft] = useState(initial);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [moveToPendingOpen, setMoveToPendingOpen] = useState(false);
+  const [movingToActive, setMovingToActive] = useState(false);
   const [addAliasOpen, setAddAliasOpen] = useState(false);
   const [addOtherBrandOpen, setAddOtherBrandOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
@@ -30,6 +34,20 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
   const [crawlJobId, setCrawlJobId] = useState<string | null>(null);
   const [crawlStatus, setCrawlStatus] = useState<SitemapCrawlStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 2500);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!crawlJobId) return;
@@ -71,9 +89,33 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
     setDirty(true);
   }
 
-  function save() {
-    setBrand(draft);
-    setDirty(false);
+  async function persist(patch: Partial<ManagedBrand>) {
+    await fetch(`/api/brands-management/brands/${brand.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    router.refresh();
+  }
+
+  // 목록형 필드(URL/소셜/소스/별칭/기타 브랜드) 추가·삭제는 즉시 반영 —
+  // "변경사항 저장" 버튼과 별개로 그 자리에서 바로 실 저장소에 반영한다.
+  function applyListChange(patch: Partial<ManagedBrand>) {
+    setBrand((b) => ({ ...b, ...patch }));
+    setDraft((d) => ({ ...d, ...patch }));
+    persist(patch);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await persist(draft);
+      setBrand(draft);
+      setDirty(false);
+      showToast("변경사항을 저장했습니다.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function toggleMarket(market: string) {
@@ -100,12 +142,30 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
               연결 관리
             </Button>
           </a>
-          <Button variant="primary" disabled={!dirty} onClick={save}>
-            변경사항 저장
+          <Button variant="primary" disabled={!dirty || saving} onClick={save}>
+            {saving ? "저장하는 중..." : "변경사항 저장"}
           </Button>
-          {brand.status === "active" && (
+          {brand.status === "active" ? (
             <Button variant="secondary" onClick={() => setMoveToPendingOpen(true)}>
               대기 상태로 전환
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              disabled={movingToActive}
+              onClick={async () => {
+                setMovingToActive(true);
+                try {
+                  await persist({ status: "active" });
+                  setBrand((b) => ({ ...b, status: "active" }));
+                  setDraft((d) => ({ ...d, status: "active" }));
+                  showToast("활성 상태로 전환했습니다.");
+                } finally {
+                  setMovingToActive(false);
+                }
+              }}
+            >
+              {movingToActive ? "전환하는 중..." : "활성 상태로 전환"}
             </Button>
           )}
         </div>
@@ -187,7 +247,7 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         description="이 브랜드와 연결된 추가 URL입니다."
         items={brand.urls}
         onAdd={() => setAddUrlOpen(true)}
-        onRemove={(i) => setBrand((b) => ({ ...b, urls: b.urls.filter((_, idx) => idx !== i) }))}
+        onRemove={(i) => applyListChange({ urls: brand.urls.filter((_, idx) => idx !== i) })}
       />
       <ListSection
         icon={Share2}
@@ -195,7 +255,7 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         description="이 브랜드의 공식 소셜 미디어 계정입니다."
         items={brand.socialAccounts.map((s) => `${s.platform}: ${s.handle}`)}
         onAdd={() => setAddSocialOpen(true)}
-        onRemove={(i) => setBrand((b) => ({ ...b, socialAccounts: b.socialAccounts.filter((_, idx) => idx !== i) }))}
+        onRemove={(i) => applyListChange({ socialAccounts: brand.socialAccounts.filter((_, idx) => idx !== i) })}
       />
       <ListSection
         icon={FileText}
@@ -203,7 +263,7 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         description="이 브랜드가 자주 언급되는 외부 소스입니다."
         items={brand.earnedContentSources}
         onAdd={() => setAddSourceOpen(true)}
-        onRemove={(i) => setBrand((b) => ({ ...b, earnedContentSources: b.earnedContentSources.filter((_, idx) => idx !== i) }))}
+        onRemove={(i) => applyListChange({ earnedContentSources: brand.earnedContentSources.filter((_, idx) => idx !== i) })}
       />
       <ListSection
         icon={Tag}
@@ -211,7 +271,7 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         description="AI 답변에서 이 브랜드를 지칭하는 다른 이름입니다."
         items={brand.aliases}
         onAdd={() => setAddAliasOpen(true)}
-        onRemove={(i) => setBrand((b) => ({ ...b, aliases: b.aliases.filter((_, idx) => idx !== i) }))}
+        onRemove={(i) => applyListChange({ aliases: brand.aliases.filter((_, idx) => idx !== i) })}
       />
 
       <Card className="flex flex-col gap-3">
@@ -234,7 +294,7 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
                 <button
                   type="button"
                   aria-label={`${b} 삭제`}
-                  onClick={() => setBrand((br) => ({ ...br, otherBrands: br.otherBrands.filter((_, idx) => idx !== i) }))}
+                  onClick={() => applyListChange({ otherBrands: brand.otherBrands.filter((_, idx) => idx !== i) })}
                   className="cursor-pointer text-neutral-400 hover:text-red-600"
                 >
                   <X size={12} />
@@ -245,21 +305,21 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         )}
       </Card>
 
-      <SimpleAddModal open={addAliasOpen} title="별칭 추가" label="별칭" onClose={() => setAddAliasOpen(false)} onAdd={(v) => setBrand((b) => ({ ...b, aliases: [...b.aliases, v] }))} />
+      <SimpleAddModal open={addAliasOpen} title="별칭 추가" label="별칭" onClose={() => setAddAliasOpen(false)} onAdd={(v) => applyListChange({ aliases: [...brand.aliases, v] })} />
       <SimpleAddModal
         open={addOtherBrandOpen}
         title="기타 브랜드 추가"
         label="브랜드 이름"
         onClose={() => setAddOtherBrandOpen(false)}
-        onAdd={(v) => setBrand((b) => ({ ...b, otherBrands: [...b.otherBrands, v] }))}
+        onAdd={(v) => applyListChange({ otherBrands: [...brand.otherBrands, v] })}
       />
-      <SimpleAddModal open={addUrlOpen} title="URL 추가" label="URL" onClose={() => setAddUrlOpen(false)} onAdd={(v) => setBrand((b) => ({ ...b, urls: [...b.urls, v] }))} />
+      <SimpleAddModal open={addUrlOpen} title="URL 추가" label="URL" onClose={() => setAddUrlOpen(false)} onAdd={(v) => applyListChange({ urls: [...brand.urls, v] })} />
       <SimpleAddModal
         open={addSourceOpen}
         title="획득 콘텐츠 소스 추가"
         label="도메인"
         onClose={() => setAddSourceOpen(false)}
-        onAdd={(v) => setBrand((b) => ({ ...b, earnedContentSources: [...b.earnedContentSources, v] }))}
+        onAdd={(v) => applyListChange({ earnedContentSources: [...brand.earnedContentSources, v] })}
       />
       <SimpleAddModal
         open={addSocialOpen}
@@ -269,7 +329,7 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         onClose={() => setAddSocialOpen(false)}
         onAdd={(v) => {
           const [platform, handle] = v.split(":").map((s) => s.trim());
-          setBrand((b) => ({ ...b, socialAccounts: [...b.socialAccounts, { platform: platform || v, handle: handle || "" }] }));
+          applyListChange({ socialAccounts: [...brand.socialAccounts, { platform: platform || v, handle: handle || "" }] });
         }}
       />
 
@@ -277,9 +337,12 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         <MoveToPendingForm
           brand={brand}
           onClose={() => setMoveToPendingOpen(false)}
-          onConfirm={() => {
+          onConfirm={async () => {
+            await persist({ status: "pending" });
             setBrand((b) => ({ ...b, status: "pending" }));
+            setDraft((d) => ({ ...d, status: "pending" }));
             setMoveToPendingOpen(false);
+            showToast("대기 상태로 전환했습니다.");
           }}
         />
       </Modal>
@@ -292,6 +355,12 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
           setCrawlStatus(null);
         }}
       />
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
@@ -411,7 +480,7 @@ function SimpleAddModal({
   );
 }
 
-function MoveToPendingForm({ brand, onClose, onConfirm }: { brand: ManagedBrand; onClose: () => void; onConfirm: () => void }) {
+function MoveToPendingForm({ brand, onClose, onConfirm }: { brand: ManagedBrand; onClose: () => void; onConfirm: () => void | Promise<void> }) {
   const [understood, setUnderstood] = useState(false);
   return (
     <>

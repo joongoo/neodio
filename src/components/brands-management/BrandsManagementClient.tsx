@@ -1,23 +1,68 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, CheckCircle2, XCircle } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { CreateCategoryModal, EditCategoryModal, DeleteCategoryModal } from "@/components/brands-management/CategoryModals";
 import { AddBrandWizardModal } from "@/components/brands-management/AddBrandWizardModal";
 import { BrandsManagementData, ManagedBrand, ManagedCategory } from "@/lib/db";
 
+// 브랜드 추가/삭제는 실 파일 저장소(brandsManagementStore.ts)에 반영된다 —
+// 상태 전환(활성 ↔ 대기)과 편집은 브랜드 상세 페이지(BrandDetailClient)에서
+// 처리하므로 여기서는 목록 새로고침(router.refresh)만 하면 최신 상태가
+// 그대로 반영된다.
 export function BrandsManagementClient({ initial }: { initial: BrandsManagementData }) {
-  const [brands, setBrands] = useState(initial.brands);
+  const router = useRouter();
   const [categories, setCategories] = useState(initial.categories);
   const [addBrandOpen, setAddBrandOpen] = useState(false);
+  const [addBrandSaving, setAddBrandSaving] = useState(false);
+  const [deletingBrand, setDeletingBrand] = useState<ManagedBrand | null>(null);
+  const [deletingBrandBusy, setDeletingBrandBusy] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<ManagedCategory | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<ManagedCategory | null>(null);
 
+  const brands = initial.brands;
   const activeBrands = brands.filter((b) => b.status === "active");
   const pendingBrands = brands.filter((b) => b.status === "pending");
+
+  async function addBrand(brand: Omit<ManagedBrand, "id">) {
+    setAddBrandSaving(true);
+    try {
+      const res = await fetch("/api/brands-management/brands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(brand),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        window.alert(body?.error ?? "브랜드를 추가하지 못했습니다.");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setAddBrandSaving(false);
+    }
+  }
+
+  async function confirmDeleteBrand() {
+    if (!deletingBrand) return;
+    setDeletingBrandBusy(true);
+    try {
+      const res = await fetch(`/api/brands-management/brands/${deletingBrand.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        window.alert("브랜드를 삭제하지 못했습니다.");
+        return;
+      }
+      setDeletingBrand(null);
+      router.refresh();
+    } finally {
+      setDeletingBrandBusy(false);
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
@@ -35,7 +80,7 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
         <h2 className="text-base font-bold text-neutral-900">활성 브랜드</h2>
         <div className="mt-3 flex flex-col gap-3">
           {activeBrands.map((brand) => (
-            <BrandCard key={brand.id} brand={brand} />
+            <BrandCard key={brand.id} brand={brand} onDelete={() => setDeletingBrand(brand)} />
           ))}
         </div>
       </section>
@@ -44,9 +89,15 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
         <h2 className="text-base font-bold text-neutral-900">대기 중인 브랜드</h2>
         <p className="mt-0.5 text-xs text-neutral-500">도메인 온보딩이 완료되면 자동으로 활성 브랜드로 전환됩니다.</p>
         <div className="mt-3 flex flex-col gap-3">
-          {pendingBrands.map((brand) => (
-            <BrandCard key={brand.id} brand={brand} />
-          ))}
+          {pendingBrands.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-neutral-200 p-5 text-center text-xs text-neutral-400">
+              대기 중인 브랜드가 없습니다.
+            </p>
+          ) : (
+            pendingBrands.map((brand) => (
+              <BrandCard key={brand.id} brand={brand} onDelete={() => setDeletingBrand(brand)} />
+            ))
+          )}
         </div>
       </section>
 
@@ -92,11 +143,33 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
         </div>
       </section>
 
-      <AddBrandWizardModal
-        open={addBrandOpen}
-        onClose={() => setAddBrandOpen(false)}
-        onAdd={(brand) => setBrands((prev) => [...prev, { id: `brand-${Date.now()}`, ...brand }])}
-      />
+      <AddBrandWizardModal open={addBrandOpen} onClose={() => setAddBrandOpen(false)} onAdd={addBrand} saving={addBrandSaving} />
+      <Modal open={deletingBrand !== null} onClose={() => setDeletingBrand(null)}>
+        {deletingBrand && (
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-neutral-900">브랜드 삭제</h2>
+              <ModalCloseButton onClose={() => setDeletingBrand(null)} />
+            </div>
+            <p className="mt-3 text-sm text-neutral-600">
+              <b>{deletingBrand.name}</b>을(를) 삭제하면 되돌릴 수 없습니다. 계속하시겠습니까?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setDeletingBrand(null)}>
+                취소
+              </Button>
+              <button
+                type="button"
+                disabled={deletingBrandBusy}
+                onClick={confirmDeleteBrand}
+                className="rounded-md bg-red-600 px-3.5 py-2 text-sm font-medium text-white cursor-pointer hover:bg-red-700 disabled:cursor-default disabled:bg-neutral-300"
+              >
+                삭제
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
       <CreateCategoryModal
         open={createCategoryOpen}
         onClose={() => setCreateCategoryOpen(false)}
@@ -118,7 +191,7 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
   );
 }
 
-function BrandCard({ brand }: { brand: ManagedBrand }) {
+function BrandCard({ brand, onDelete }: { brand: ManagedBrand; onDelete: () => void }) {
   return (
     <a href={`/brands-management/${brand.id}`} className="block">
       <Card className="flex flex-col gap-3 p-5 transition-colors hover:bg-neutral-50">
@@ -127,13 +200,27 @@ function BrandCard({ brand }: { brand: ManagedBrand }) {
             <h3 className="text-sm font-bold text-neutral-900">{brand.name}</h3>
             <p className="text-xs text-neutral-500">{brand.url}</p>
           </div>
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-              brand.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-            }`}
-          >
-            {brand.status === "active" ? "활성" : "대기 중"}
-          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                brand.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+              }`}
+            >
+              {brand.status === "active" ? "활성" : "대기 중"}
+            </span>
+            <button
+              type="button"
+              aria-label={`${brand.name} 삭제`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="text-neutral-400 hover:text-red-600 cursor-pointer"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         </div>
 
         {(brand.aliases.length > 0 || brand.otherBrands.length > 0) && (

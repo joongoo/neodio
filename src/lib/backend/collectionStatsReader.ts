@@ -413,6 +413,7 @@ export async function getRealTopicRows(
       addedToLibrary: libraryPromptSet.size > 0 ? libraryPromptSet.has(query.trim().toLowerCase()) : undefined,
       targetUrl,
       targetUrlCitations: targetUrl ? (citationCountByPageUrl.get(targetUrl) ?? 0) : undefined,
+      createdAt: prompts[0]?.runAt,
     };
 
     (mentionCount > 0 ? topPrompts : opportunities).push(row);
