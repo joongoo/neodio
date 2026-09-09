@@ -44,7 +44,7 @@ export function startSitemapCrawlJob(domain: string, sitemapUrl: string): Sitema
   };
   jobs.set(id, job);
 
-  runJob(job).catch((error) => {
+  runJob(job, ["--sitemap", sitemapUrl, "--domain", domain]).catch((error) => {
     job.stage = "error";
     job.error = error instanceof Error ? error.message : String(error);
     job.finishedAt = Date.now();
@@ -53,7 +53,34 @@ export function startSitemapCrawlJob(domain: string, sitemapUrl: string): Sitema
   return job;
 }
 
-async function runJob(job: SitemapCrawlJob) {
+// "기회"의 "수정 완료" 재검토 — 사이트맵 전체가 아니라 특정 URL 몇 개만
+// 다시 크롤링한다. 배포 없이 재크롤만으로 전/후를 비교하는 용도라, 결과는
+// 사이트맵 크롤과 똑같은 파일 포맷(.tmp/sitemap-crawl)에 쌓인다.
+export function startUrlRecrawlJob(domain: string, urls: string[]): SitemapCrawlJob {
+  const id = `sitemap-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const job: SitemapCrawlJob = {
+    id,
+    domain,
+    sitemapUrl: "manual-recheck",
+    stage: "install",
+    log: [],
+    error: null,
+    result: null,
+    startedAt: Date.now(),
+    finishedAt: null,
+  };
+  jobs.set(id, job);
+
+  runJob(job, ["--urls", urls.join(","), "--domain", domain]).catch((error) => {
+    job.stage = "error";
+    job.error = error instanceof Error ? error.message : String(error);
+    job.finishedAt = Date.now();
+  });
+
+  return job;
+}
+
+async function runJob(job: SitemapCrawlJob, crawlArgs: string[]) {
   job.stage = "install";
   appendLog(job, "Playwright 브라우저 설치 확인 중...");
   const npx = isWindows ? "npx.cmd" : "npx";
@@ -66,10 +93,7 @@ async function runJob(job: SitemapCrawlJob) {
   let outputPath: string | null = null;
 
   const npm = isWindows ? "npm.cmd" : "npm";
-  const code = await runCommand(
-    npm,
-    ["run", "crawl:sitemap", "--", "--sitemap", job.sitemapUrl, "--domain", job.domain],
-    (line) => {
+  const code = await runCommand(npm, ["run", "crawl:sitemap", "--", ...crawlArgs], (line) => {
       for (const raw of line.split("\n")) {
         const trimmed = raw.trim();
         if (!trimmed) continue;

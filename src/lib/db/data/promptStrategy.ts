@@ -73,10 +73,35 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
           "ChatGPT(GPT-5.6)로 Marketo 관련 5개 고의도 프롬프트를 실측한 결과 Mention·Recommendation·Top Pick 전부 100%였습니다. 반면 \"마케팅 자동화 도입 시 고려사항\", \"국내 B2B 마케팅 자동화 플랫폼\"처럼 넓은 토픽에서는 0%였습니다 — 네오다임은 넓은 토픽보다 \"Marketo + 국내 + 구축/운영/파트너\"처럼 구매 의도가 좁아질수록 강하게 등장합니다. 다음 측정은 이 5개보다 한 단계 넓은 질문(국내 B2B MarTech 에이전시 → Adobe 파트너 → 디지털 마케팅 에이전시 → GEO 컨설팅)으로 내려가며 경계선을 찾는 것을 제안합니다.",
         stat: "고의도 프롬프트 5/5 100% · 광의 토픽 0%",
       },
+      // Citation Attempt: 이미 만들어둔 콘텐츠가 실제로 AI 답변의 출처로
+      // 인용되는지 테스트하는 프롬프트. 실제 GSC "내 콘텐츠" 상위 페이지
+      // (2026-09 사용자 제공 실측: 노출은 높은데 클릭은 낮은 페이지가
+      // "인용 잠재력은 있는데 실제로는 잘 안 읽히는" 콘텐츠라 우선 타겟)를
+      // 그대로 사용한다 — getRealGscTopPages가 연동되면 이 두 항목을
+      // 자동으로 대체/확장할 수 있다.
+      {
+        id: "sug-8",
+        tag: "coverage_gap",
+        source: "citation_attempt",
+        title: "\"디맨드젠 vs 리드젠\" 콘텐츠 인용 테스트",
+        summary:
+          "GSC 실측: 노출 1,122회 대비 클릭 9회로 노출 대비 클릭이 낮은 페이지입니다. AI 답변에서 출처로 인용되는지 확인하는 프롬프트입니다. Targeting URL: https://www.neodigm.com/news/?bmode=view&idx=166846352",
+        stat: "GSC 노출 1,122회 · 클릭 9회 · 인용 테스트 프롬프트 3개",
+      },
+      {
+        id: "sug-9",
+        tag: "coverage_gap",
+        source: "citation_attempt",
+        title: "\"Databricks CIO Forum 사례\" 콘텐츠 인용 테스트",
+        summary:
+          "GSC 실측: 클릭 5회 · 노출 31회의 케이스 스터디 페이지입니다. AI 답변에서 출처로 인용되는지 확인하는 프롬프트입니다. Targeting URL: https://www.neodigm.com/case_study_experiential/?bmode=view&idx=153076609",
+        stat: "GSC 클릭 5회 · 노출 31회 · 인용 테스트 프롬프트 3개",
+      },
     ],
     topics: [
       {
         id: "st-1",
+        groupId: "sug-1",
         topic: "마케팅 자동화 ROI 계산",
         market: "KR",
         source: "gsc",
@@ -89,6 +114,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-2",
+        groupId: "sug-1",
         topic: "이메일 마케팅 자동화 비교",
         market: "KR",
         source: "gsc",
@@ -100,6 +126,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-3",
+        groupId: "sug-2",
         topic: "HubSpot 온보딩 파트너 후속 토픽",
         market: "KR",
         source: "llm_brainstorm",
@@ -112,6 +139,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-4",
+        groupId: "sug-3",
         topic: "AI 검색 최적화 대행사 추천",
         market: "KR",
         source: "llm_brainstorm",
@@ -150,6 +178,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       // 국내 GEO 컨설팅 업체. 실제로 측정되면 그 값으로 교체해야 한다.
       {
         id: "st-6",
+        groupId: "sug-4",
         topic: "국내 Adobe Marketo 구축 파트너 추천해줘",
         market: "KR",
         source: "llm_brainstorm",
@@ -158,6 +187,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-7",
+        groupId: "sug-4",
         topic: "Adobe Marketo Engage 도입 컨설팅 업체 어디가 좋아?",
         market: "KR",
         source: "llm_brainstorm",
@@ -166,6 +196,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-8",
+        groupId: "sug-4",
         topic: "AEM과 Marketo 연동 가능한 구축 업체 추천해줘",
         market: "KR",
         source: "llm_brainstorm",
@@ -174,6 +205,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-9",
+        groupId: "sug-4",
         topic: "B2B 기업 마케팅 자동화 전문 업체 알려줘",
         market: "KR",
         source: "llm_brainstorm",
@@ -187,6 +219,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-14",
+        groupId: "sug-4",
         topic: "한국에서 Marketo 운영 대행해주는 업체 알려줘",
         market: "KR",
         source: "llm_brainstorm",
@@ -195,6 +228,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-10",
+        groupId: "sug-5",
         topic: "국내 GEO(생성형 AI 검색 최적화) 컨설팅 업체 추천해줘",
         market: "KR",
         source: "llm_brainstorm",
@@ -203,6 +237,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-11",
+        groupId: "sug-6",
         topic: "우리 회사가 B2B IT 회사인데 마케팅 자동화를 도입하려고 해. 국내에서 구축부터 운영까지 맡길 수 있는 업체 5곳 추천해줘.",
         market: "KR",
         source: "llm_brainstorm",
@@ -211,6 +246,7 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-12",
+        groupId: "sug-6",
         topic: "B2B 기업에서 리드 너처링을 자동화하려면 어떤 업체에 맡겨야 해?",
         market: "KR",
         source: "llm_brainstorm",
@@ -219,11 +255,92 @@ export const promptStrategyByOrg: Record<string, PromptStrategyData> = {
       },
       {
         id: "st-13",
+        groupId: "sug-5",
         topic: "국내 B2B 마케팅 자동화 업체 5곳을 구축 경험, Adobe 전문성, 운영 지원 기준으로 비교해줘",
         market: "KR",
         source: "llm_brainstorm",
         gscImpressions: null,
         brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+      },
+      // Citation Attempt: 2026-09 사용자가 GSC "내 콘텐츠"에서 직접 캡처해
+      // 준 실제 상위 페이지 2개를 타겟으로 잡는다 — 노출 대비 클릭이 낮아
+      // "인용 잠재력은 있는데 실제로는 잘 안 읽히는" 콘텐츠 우선순위.
+      // st-15~17: /news/166846352 "B2B 마케터를 위한 '진짜 리드'를 얻는
+      // 방법: 디맨드젠 vs 리드젠" — GSC 코버리지 공백 키워드 "리드젠"(sug-1
+      // 그룹, 노출 342회)과 주제가 정확히 겹친다.
+      {
+        id: "st-15",
+        groupId: "sug-8",
+        topic: "디맨드젠과 리드젠은 어떻게 다른가요?",
+        market: "KR",
+        source: "citation_attempt",
+        gscImpressions: null,
+        brandMentions: [],
+        intent: "정보 탐색",
+        branded: false,
+        reasoning: "/news/166846352 인용 테스트 — 글의 핵심 주제(디맨드젠 vs 리드젠)를 그대로 묻는 정보 탐색형 질문",
+      },
+      {
+        id: "st-16",
+        groupId: "sug-8",
+        topic: "B2B 마케팅에서 '진짜 리드'를 얻으려면 어떤 방법이 효과적인가요?",
+        market: "KR",
+        source: "citation_attempt",
+        gscImpressions: null,
+        brandMentions: [],
+        intent: "정보 탐색",
+        branded: false,
+        reasoning: "/news/166846352 인용 테스트 — 글 제목의 표현('진짜 리드')을 그대로 쓰는 질문",
+      },
+      {
+        id: "st-17",
+        groupId: "sug-8",
+        topic: "리드의 질을 높이려면 디맨드젠과 리드젠 전략을 어떻게 병행해야 하나요?",
+        market: "KR",
+        source: "citation_attempt",
+        gscImpressions: null,
+        brandMentions: [],
+        intent: "도입 검토",
+        branded: false,
+        reasoning: "/news/166846352 인용 테스트 — 두 전략의 병행을 묻는 도입 검토형 질문",
+      },
+      // st-18~20: /case_study_experiential/153076609 "Databricks CIO Forum
+      // 2024" 사례 페이지.
+      {
+        id: "st-18",
+        groupId: "sug-9",
+        topic: "대기업 대상 CIO 포럼 같은 B2B 이벤트 마케팅은 어떻게 기획하나요?",
+        market: "KR",
+        source: "citation_attempt",
+        gscImpressions: null,
+        brandMentions: [],
+        intent: "정보 탐색",
+        branded: false,
+        reasoning: "/case_study_experiential/153076609 인용 테스트 — 이벤트 기획 방법을 묻는 정보 탐색형 질문",
+      },
+      {
+        id: "st-19",
+        groupId: "sug-9",
+        topic: "테크 기업이 CIO 대상 오프라인 포럼을 성공적으로 운영한 사례가 있나요?",
+        market: "KR",
+        source: "citation_attempt",
+        gscImpressions: null,
+        brandMentions: [],
+        intent: "업체 비교",
+        branded: false,
+        reasoning: "/case_study_experiential/153076609 인용 테스트 — 실제 사례를 찾는 비교형 질문",
+      },
+      {
+        id: "st-20",
+        groupId: "sug-9",
+        topic: "대기업 고객 대상 경험 마케팅은 어떤 효과가 있나요?",
+        market: "KR",
+        source: "citation_attempt",
+        gscImpressions: null,
+        brandMentions: [],
+        intent: "도입 검토",
+        branded: false,
+        reasoning: "/case_study_experiential/153076609 인용 테스트 — 도입 효과를 묻는 도입 검토형 질문",
       },
     ],
   },

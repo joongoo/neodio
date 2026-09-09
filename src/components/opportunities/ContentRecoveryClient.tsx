@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, FileCheck2, Send, Settings2, BarChart3, Settings } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, FileCheck2, Loader2, RefreshCw, Settings, Sparkles } from "lucide-react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
@@ -12,74 +13,118 @@ const OPTIONAL_COLUMNS: ColumnOption[] = [
   { key: "priorityScore", label: "우선순위 점수" },
 ];
 
-const STEPS = [
-  { icon: FileCheck2, title: "페이지 선택", desc: "가시성 낮은 URL 필터를 사용하세요" },
-  { icon: Send, title: "몇 분 안에 최적화", desc: "AI 에이전트만 최적화된 경험을 보게 됩니다" },
-  { icon: Settings2, title: "임팩트 측정", desc: "성과를 자동으로 측정해 드립니다" },
-  { icon: BarChart3, title: "결과 확인", desc: "약 2주 후 기회 워크스페이스에서 확인하세요" },
-];
-
-const TABS = ["현재 제안", "수정 완료", "무시됨"] as const;
+const TABS = ["현재 제안", "수정 완료"] as const;
 
 export function ContentRecoveryClient({ data }: { data: ContentRecoveryOpportunity }) {
+  const router = useRouter();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // url -> job 진행 상태. 재크롤은 URL당 하나씩, 여러 개 동시에 돌려도 되게
+  // id별로 관리한다.
+  const [recheckJobs, setRecheckJobs] = useState<Record<string, { jobId: string; stage: string; done: boolean; error: string | null }>>({});
+  const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+
+  useEffect(() => {
+    return () => {
+      Object.values(pollRefs.current).forEach(clearInterval);
+    };
+  }, []);
 
   const rowsByTab: Record<(typeof TABS)[number], ContentRecoveryUrl[]> = {
-    "현재 제안": data.urls,
-    "수정 완료": [],
-    무시됨: [],
+    "현재 제안": data.urls.filter((u) => u.status !== "optimized"),
+    "수정 완료": data.urls.filter((u) => u.status === "optimized"),
   };
   const rows = rowsByTab[tab];
 
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  // "수정 완료" 확인 — 배포는 하지 않는다. 이 URL 하나만 다시 크롤링해서
+  // raw HTML 대비 렌더링 비율(콘텐츠 가시성)이 기준을 넘었는지만 검토한다.
+  // 넘었으면 다음 로드부터 자동으로 "수정 완료" 탭으로 옮겨가고, 못 넘었으면
+  // "현재 제안"에 그대로 남는다 — 사람이 직접 완료 처리하는 버튼이 아니라
+  // 실측으로 판정한다.
+  async function recheckUrl(url: string) {
+    const res = await fetch("/api/sitemap-crawl/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: new URL(url).hostname, urls: [url] }),
     });
+    const body = await res.json();
+    if (!res.ok) {
+      window.alert(body.error ?? "재크롤을 시작하지 못했습니다.");
+      return;
+    }
+    setRecheckJobs((prev) => ({ ...prev, [url]: { jobId: body.jobId, stage: "install", done: false, error: null } }));
+
+    const poll = async () => {
+      const statusRes = await fetch(`/api/sitemap-crawl/status?jobId=${body.jobId}`);
+      if (!statusRes.ok) return;
+      const statusBody = await statusRes.json();
+      setRecheckJobs((prev) => ({
+        ...prev,
+        [url]: { jobId: body.jobId, stage: statusBody.stage, done: statusBody.done, error: statusBody.error },
+      }));
+      if (statusBody.done) {
+        clearInterval(pollRefs.current[url]);
+        delete pollRefs.current[url];
+        if (!statusBody.error) router.refresh();
+      }
+    };
+    poll();
+    pollRefs.current[url] = setInterval(poll, 1500);
   }
 
   const columns: DataTableColumn<ContentRecoveryUrl>[] = [
-    {
-      key: "select",
-      label: "",
-      width: "w-[24px]",
-      render: (r) => (
-        <input
-          type="checkbox"
-          checked={selected.has(r.id)}
-          onClick={(e) => e.stopPropagation()}
-          onChange={() => toggle(r.id)}
-          className="size-4 cursor-pointer accent-slate-800"
-        />
-      ),
-    },
     { key: "url", label: "전체 도메인 URL", render: (r) => <span className="text-blue-600">{r.url}</span> },
-    { key: "contentVisibility", label: "가시성 %", width: "w-[100px]", render: (r) => `${r.contentVisibility}%` },
+    {
+      key: "contentVisibility",
+      label: "가시성 %",
+      width: "w-[140px]",
+      render: (r) =>
+        r.previousContentVisibility !== undefined ? (
+          <span className="flex items-center gap-1 text-xs">
+            <span className="text-neutral-400">{r.previousContentVisibility}%</span>
+            <span className="text-neutral-300">→</span>
+            <span className="font-bold text-neutral-800">{r.contentVisibility}%</span>
+          </span>
+        ) : (
+          `${r.contentVisibility}%`
+        ),
+    },
     { key: "priorityScore", label: "우선순위 점수", width: "w-[110px]", render: (r) => r.priorityScore.toFixed(1) },
     {
       key: "action",
       label: "액션",
       width: "w-[160px]",
-      render: () => (
-        <div className="flex gap-2">
-          <button className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200">
-            미리보기
+      render: (r) => {
+        const job = recheckJobs[r.url];
+        if (r.status === "optimized") {
+          return <span className="text-[11px] font-bold text-emerald-600">기준 통과 (70% 이상)</span>;
+        }
+        if (job && !job.done) {
+          return (
+            <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+              <Loader2 size={12} className="animate-spin" /> 재크롤 중...
+            </span>
+          );
+        }
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              recheckUrl(r.url);
+            }}
+            className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+          >
+            <RefreshCw size={12} />
+            수정 완료 확인
           </button>
-          <button className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200">
-            상세
-          </button>
-        </div>
-      ),
+        );
+      },
     },
   ];
 
   const cols = useColumnVisibility(columns, OPTIONAL_COLUMNS);
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6 pb-24">
+    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6 pb-10">
       <a href="/opportunities" className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         기회 목록으로 돌아가기
@@ -106,54 +151,47 @@ export function ContentRecoveryClient({ data }: { data: ContentRecoveryOpportuni
         <p className="mt-3 rounded-lg bg-white p-5 text-[13px] leading-relaxed text-neutral-700">{data.description}</p>
       </section>
 
-      <section className="rounded-xl bg-blue-50/60 px-6 py-5">
-        <h2 className="text-[17px] font-bold text-neutral-900">가이드</h2>
-        <p className="mt-3 rounded-lg bg-blue-100/60 p-3 text-xs text-blue-900">
-          완전한 효과를 보려면 우선순위 필터에서 20개 이상의 페이지를 포함하세요. 선택된 모든 페이지가 최적화되며, 적격 배포는 임팩트 분석을 받습니다.
-        </p>
-        <div className="mt-5 flex items-start justify-center gap-4">
-          {STEPS.map((step, i) => (
-            <div key={step.title} className="flex items-start gap-4">
-              <div className="flex w-[170px] flex-col items-center gap-2 text-center">
-                <div className="grid size-10 place-items-center rounded-full bg-emerald-100">
-                  <step.icon size={18} className="text-emerald-700" />
-                </div>
-                <p className="text-[13px] font-bold text-neutral-900">{step.title}</p>
-                <p className="text-[11px] text-neutral-500">{step.desc}</p>
-              </div>
-              {i < STEPS.length - 1 && <div className="mt-5 h-px w-[60px] shrink-0 bg-neutral-300" />}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl bg-blue-50/60 px-6 py-5">
-        <div className="flex items-center justify-between">
-          <p className="text-[13px] text-neutral-600">
-            위에서 제안된 대로 Optimize on Edge 솔루션을 사용해 콘텐츠를 안전하게 최적화해 보세요.
+      {data.comparison && (
+        <section className="rounded-xl border border-neutral-200 bg-white px-6 py-5">
+          <h2 className="text-[17px] font-bold text-neutral-900">전/후 비교</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            같은 사이트맵을 다시 크롤링해서 얻은 실측 비교입니다. 배포 없이 재크롤만 반복해서 측정합니다.
           </p>
-          <div className="flex flex-col items-end gap-1">
-            <button className="rounded-md bg-slate-800 px-3 py-2 text-sm font-bold text-white cursor-pointer hover:opacity-90">
-              최적화 배포
-            </button>
-            <span className="text-[11px] text-neutral-400">배포할 제안을 선택하세요</span>
+          <div className="mt-4 flex items-center gap-6">
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[11px] text-neutral-400">
+                {new Date(data.comparison.baselineCrawledAt).toLocaleDateString("ko-KR")} (최초)
+              </span>
+              <span className="text-2xl font-bold text-neutral-500">{data.comparison.baselineAverageContentVisibility}%</span>
+            </div>
+            <span className="text-xl text-neutral-300">→</span>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[11px] text-neutral-400">
+                {new Date(data.comparison.latestCrawledAt).toLocaleDateString("ko-KR")} (최신)
+              </span>
+              <span className="text-2xl font-bold text-neutral-900">{data.comparison.latestAverageContentVisibility}%</span>
+            </div>
+            <span
+              className={`rounded-full px-3 py-1 text-sm font-bold ${
+                data.comparison.improvementPercent >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
+              }`}
+            >
+              {data.comparison.improvementPercent >= 0 ? "+" : ""}
+              {data.comparison.improvementPercent}%
+            </span>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      <section className="rounded-xl border border-neutral-200 bg-white px-6 py-5">
-        <p className="text-[11px] font-bold text-neutral-500">최적화 진행률</p>
-        <div className="mt-2 flex items-center gap-3">
-          <div className="h-2 w-[300px] rounded bg-neutral-200">
-            <div
-              className="h-2 rounded bg-emerald-600"
-              style={{ width: `${(data.optimizedCount / data.totalCount) * 100}%` }}
-            />
-          </div>
-          <span className="text-xs text-neutral-700">
-            {data.totalCount}개 URL 중 {data.optimizedCount}개 최적화됨
-          </span>
+      <section className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-5">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-neutral-400" />
+          <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 수정 가이드</h2>
+          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-bold text-neutral-600">준비 중</span>
         </div>
+        <p className="mt-2 text-xs text-neutral-500">
+          LLM API 연동 후, 가시성이 낮은 각 페이지를 어떻게 수정하면 좋을지(콘텐츠 단순화, 요약 추가, FAQ 보강 등) 구체적인 가이드를 자동으로 제안할 예정입니다.
+        </p>
       </section>
 
       <section className="rounded-xl bg-blue-50/60 px-6 py-5">
@@ -168,8 +206,9 @@ export function ContentRecoveryClient({ data }: { data: ContentRecoveryOpportuni
             <Settings size={16} />
           </button>
         </div>
-        <p className="mt-3 rounded-lg bg-blue-100/60 p-3 text-xs text-blue-900">
-          임팩트 분석을 원하시면 각 배포에 우선순위가 높은 URL 20개 이상을 포함하세요. AI 에이전트가 자주 방문하지만 읽기 어려워하는 페이지들이 가장 강력한 최적화 후보입니다.
+        <p className="mt-3 flex items-start gap-2 rounded-lg bg-blue-100/60 p-3 text-xs text-blue-900">
+          <FileCheck2 size={14} className="mt-0.5 shrink-0" />
+          콘텐츠를 수정한 뒤 "수정 완료 확인"을 누르면 그 URL만 다시 크롤링해서 콘텐츠 가시성이 70% 이상인지 실측으로 검토합니다. 기준을 넘으면 자동으로 "수정 완료"로 이동하고, 못 넘으면 계속 "현재 제안"에 남습니다.
         </p>
 
         <div className="mt-4 flex gap-6 border-b border-neutral-200">
@@ -195,19 +234,6 @@ export function ContentRecoveryClient({ data }: { data: ContentRecoveryOpportuni
         </div>
         <ConfigureColumnsModal open={cols.open} onClose={() => cols.setOpen(false)} columns={OPTIONAL_COLUMNS} visible={cols.visible} onApply={cols.setVisible} />
       </section>
-
-      <div className="fixed bottom-0 left-[260px] right-0 flex items-center justify-end gap-4 border-t border-neutral-200 bg-white px-8 py-3.5">
-        <span className="text-[13px] text-neutral-500">배포할 제안을 선택하세요</span>
-        <button className="rounded-md bg-slate-100 px-3 py-2 text-sm font-bold text-slate-800 cursor-pointer hover:bg-slate-200" disabled={selected.size === 0}>
-          수정 완료로 표시
-        </button>
-        <button className="rounded-md bg-slate-100 px-3 py-2 text-sm font-bold text-slate-800 cursor-pointer hover:bg-slate-200" disabled={selected.size === 0}>
-          제안 무시
-        </button>
-        <button className="rounded-md bg-slate-800 px-3 py-2 text-sm font-bold text-white cursor-pointer hover:opacity-90" disabled={selected.size === 0}>
-          최적화 배포
-        </button>
-      </div>
     </div>
   );
 }

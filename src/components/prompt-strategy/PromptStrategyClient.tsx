@@ -1,26 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Settings } from "lucide-react";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Tabs } from "@/components/ui/Tabs";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
-import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
-import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
 
-const OPTIONAL_COLUMNS: ColumnOption[] = [
-  { key: "market", label: "마켓" },
-  { key: "gscImpressions", label: "GSC 노출 수" },
-  { key: "source", label: "출처" },
-  { key: "brandMentions", label: "브랜드별 언급 수" },
-];
-
 const SOURCE_LABEL: Record<StrategySource, string> = {
-  gsc: "GSC",
-  llm_brainstorm: "LLM 브레인스토밍",
+  gsc: "구글서치콘솔",
+  llm_brainstorm: "가상 사용자 질문",
+  citation_attempt: "인용 테스트",
 };
 
 const TAG_LABEL: Record<PromptStrategySuggestion["tag"], { text: string; className: string }> = {
@@ -28,50 +19,266 @@ const TAG_LABEL: Record<PromptStrategySuggestion["tag"], { text: string; classNa
   strength: { text: "우위를 점한 토픽", className: "bg-emerald-50 text-emerald-700" },
 };
 
-export function PromptStrategyClient({ initial }: { initial: PromptStrategyData }) {
+export function PromptStrategyClient({
+  initial,
+  preTrackedIds = [],
+}: {
+  initial: PromptStrategyData;
+  /** 이미 프롬프트 라이브러리에 있는 프롬프트 id — 서버가 매 로드마다 계산해서 넘긴다. */
+  preTrackedIds?: string[];
+}) {
   const router = useRouter();
   const topics = initial.topics;
-  const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
+  const [trackedIds, setTrackedIds] = useState<Set<string>>(() => new Set(preTrackedIds));
+  // 그룹 전체가 추적돼도 배너를 자동으로 숨기지 않는다 — "전체 추적 중"
+  // 상태 자체가 유용한 정보라 계속 보여주고, 숨기고 싶으면 "닫기"를 직접
+  // 누르게 한다.
+  const [dismissedGroups, setDismissedGroups] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | StrategySource>("all");
   const [trackingTopic, setTrackingTopic] = useState<PromptStrategyTopicRow | null>(null);
+  const [bulkGroupTopics, setBulkGroupTopics] = useState<PromptStrategyTopicRow[] | null>(null);
+  const [selectedByGroup, setSelectedByGroup] = useState<Record<string, Set<string>>>({});
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
+  // 계속 프롬프트를 골라 추적하려는 사람 입장에서 매번 라이브러리로
+  // 튕겨나가는 게 불편하다는 피드백 — 추적 성공 시 이 페이지에 남은 채
+  // 토스트로 알리고, "라이브러리 확인"을 눌러야만 실제로 이동한다.
+  const [trackSuccessCount, setTrackSuccessCount] = useState<number | null>(null);
+  // 상단 요약 카드는 전부 추적된 항목까지 계속 보여주면 "다음에 뭘 해야
+  // 하지"라는 신호가 희석되니 기본적으로 숨기고, 토글로 다시 볼 수 있게 한다.
+  const [showFullyTrackedCards, setShowFullyTrackedCards] = useState(false);
+
+  // 상단 배너를 누르면 "전체" 탭으로 전환한 뒤 해당 그룹으로 스크롤 —
+  // 필터가 바뀌어 DOM이 다시 그려진 다음에 스크롤해야 하므로 필터 변경과
+  // 분리된 effect에서 처리한다.
+  useEffect(() => {
+    if (!pendingScrollId) return;
+    const el = document.getElementById(`prompt-strategy-group-${pendingScrollId}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setPendingScrollId(null);
+  }, [pendingScrollId, filter]);
+
+  function jumpToGroup(groupId: string) {
+    setFilter("all");
+    setPendingScrollId(groupId);
+  }
+
+  function toggleSelected(groupId: string, id: string) {
+    setSelectedByGroup((prev) => {
+      const next = new Set(prev[groupId] ?? []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { ...prev, [groupId]: next };
+    });
+  }
+
+  // 프롬프트 라이브러리의 "서브카테고리" 컬럼에 어떤 토픽(키워드/제안)에서
+  // 추적됐는지 남기기 위한 라벨. 이전엔 이 값을 안 넘겨서 모든 프롬프트
+  // 전략발 항목이 전부 "프롬프트 전략에서 추적"으로만 뭉뚱그려 보였다(어느
+  // 키워드/토픽에서 왔는지 알 수 없었음). 그렇다고 제안 카드 제목을 그대로
+  // 쓰면 큰따옴표가 섞인 문장(예: '"디맨드젠 vs 리드젠" 콘텐츠 인용
+  // 테스트')이 그대로 서브카테고리에 들어가 다른 값들("GSC 커버리지 공백",
+  // "Marketo"처럼 짧은 태그)과 형식이 안 맞는다 — 제목에서 따옴표 안 핵심
+  // 키워드만 뽑아 "출처: 키워드" 형태의 짧은 라벨로 만든다.
+  function groupTopicLabel(groupId: string | undefined): string | undefined {
+    const s = initial.suggestions.find((x) => x.id === groupId);
+    if (!s) return undefined;
+    const keyword = s.title.match(/"([^"]+)"/)?.[1] ?? s.title;
+    return `${SOURCE_LABEL[s.source]}: ${keyword}`;
+  }
 
   // 가시성 개요의 "추적" 버튼과 동일하게 실제로 .tmp/tracked-topics에
   // 저장하고 프롬프트 라이브러리로 이동한다 — 이전엔 로컬 state만 바뀌고
   // 새로고침하면 사라졌고, 프롬프트 라이브러리에도 반영되지 않았다.
-  async function handleTrack(id: string, topic: string, category: string) {
+  async function handleTrack(id: string, promptText: string, category: string) {
+    const groupId = topics.find((t) => t.id === id)?.groupId;
     setTrackedIds((prev) => new Set(prev).add(id));
-    await fetch("/api/tracked-topics", {
+    const res = await fetch("/api/tracked-topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: topic, category, source: "프롬프트 전략" }),
+      body: JSON.stringify({ prompt: promptText, category, subcategory: groupTopicLabel(groupId), source: "프롬프트 전략" }),
     });
-    router.push("/prompt-library");
+    if (res.ok) setTrackSuccessCount(1);
+  }
+
+  async function handleTrackAll(rows: PromptStrategyTopicRow[], category: string, groupId?: string) {
+    setTrackedIds((prev) => {
+      const next = new Set(prev);
+      rows.forEach((r) => next.add(r.id));
+      return next;
+    });
+    if (groupId) {
+      setSelectedByGroup((prev) => ({ ...prev, [groupId]: new Set() }));
+    }
+    const subcategoryLabel = groupTopicLabel(groupId);
+    const results = await Promise.all(
+      rows.map((r) =>
+        fetch("/api/tracked-topics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: r.topic, category, subcategory: subcategoryLabel, source: "프롬프트 전략" }),
+        })
+      )
+    );
+    if (results.some((res) => !res.ok)) {
+      // eslint-disable-next-line no-console
+      console.error("일부 프롬프트를 프롬프트 라이브러리에 추가하지 못했습니다.");
+      return;
+    }
+    setTrackSuccessCount(rows.length);
   }
 
   const tabs = [
     { id: "all", label: "전체", badge: topics.length },
-    { id: "gsc", label: "GSC", badge: topics.filter((t) => t.source === "gsc").length },
-    { id: "llm_brainstorm", label: "LLM 브레인스토밍", badge: topics.filter((t) => t.source === "llm_brainstorm").length },
+    { id: "gsc", label: "구글서치콘솔", badge: topics.filter((t) => t.source === "gsc").length },
+    { id: "llm_brainstorm", label: "가상 사용자 질문", badge: topics.filter((t) => t.source === "llm_brainstorm").length },
+    { id: "citation_attempt", label: "인용 테스트", badge: topics.filter((t) => t.source === "citation_attempt").length },
   ];
 
-  const filteredTopics = filter === "all" ? topics : topics.filter((t) => t.source === filter);
+  const filteredSuggestions = initial.suggestions.filter((s) => filter === "all" || s.source === filter);
 
-  const columns: DataTableColumn<PromptStrategyTopicRow>[] = useMemo(
-    () => [
+  function buildColumns(groupId: string, rows: PromptStrategyTopicRow[]): DataTableColumn<PromptStrategyTopicRow>[] {
+    const selected = selectedByGroup[groupId] ?? new Set<string>();
+    // LLM이 만든 프롬프트 문장(intent/branded/reasoning이 채워진 행)은
+    // "노출 수 · 브랜드별 언급 수" 대신 Prompt/Market/Intent/Branded/Reasoning
+    // 형식으로 보여준다 — 실제 검색어 클러스터 볼륨이 아니라 개별 프롬프트
+    // 문장을 다루는 표라서 형식이 다르다.
+    const isPromptFormat = rows.some((r) => r.intent !== undefined || r.branded !== undefined || r.reasoning !== undefined);
+
+    const selectableRows = rows.filter((r) => !trackedIds.has(r.id));
+
+    const selectColumn: DataTableColumn<PromptStrategyTopicRow> = {
+      key: "select",
+      label:
+        selectableRows.length > 0 ? (
+          <input
+            type="checkbox"
+            aria-label="이 그룹 전체 선택"
+            checked={selectableRows.every((r) => selected.has(r.id))}
+            ref={(el) => {
+              if (el) el.indeterminate = selectableRows.some((r) => selected.has(r.id)) && !selectableRows.every((r) => selected.has(r.id));
+            }}
+            onChange={(e) => {
+              setSelectedByGroup((prev) => {
+                const next = new Set(prev[groupId] ?? []);
+                selectableRows.forEach((r) => (e.target.checked ? next.add(r.id) : next.delete(r.id)));
+                return { ...prev, [groupId]: next };
+              });
+            }}
+            className="size-3.5 cursor-pointer accent-slate-800"
+          />
+        ) : null,
+      width: "w-[32px]",
+      render: (r) =>
+        trackedIds.has(r.id) ? null : (
+          <input
+            type="checkbox"
+            checked={selected.has(r.id)}
+            onChange={(e) => {
+              e.stopPropagation();
+              toggleSelected(groupId, r.id);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="size-3.5 cursor-pointer accent-slate-800"
+          />
+        ),
+    };
+
+    const actionColumn: DataTableColumn<PromptStrategyTopicRow> = {
+      key: "action",
+      label: "액션",
+      width: "w-[90px]",
+      render: (r) =>
+        trackedIds.has(r.id) ? (
+          <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setTrackingTopic(r);
+            }}
+            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-50"
+          >
+            추적
+          </button>
+        ),
+    };
+
+    const marketColumn: DataTableColumn<PromptStrategyTopicRow> = {
+      key: "market",
+      label: "마켓",
+      width: "w-[70px]",
+      render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
+    };
+
+    if (isPromptFormat) {
+      return [
+        selectColumn,
+        { key: "topic", label: "프롬프트", width: "w-[320px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
+        marketColumn,
+        {
+          key: "intent",
+          label: "Intent",
+          width: "w-[100px]",
+          render: (r) =>
+            r.intent ? (
+              <span className="rounded bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">{r.intent}</span>
+            ) : (
+              <span className="text-neutral-300">—</span>
+            ),
+        },
+        {
+          key: "branded",
+          label: "Branded",
+          width: "w-[80px]",
+          render: (r) =>
+            r.branded === undefined ? (
+              <span className="text-neutral-300">—</span>
+            ) : (
+              <span
+                className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                  r.branded ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500"
+                }`}
+              >
+                {r.branded ? "Yes" : "No"}
+              </span>
+            ),
+        },
+        {
+          key: "reasoning",
+          label: "Reasoning",
+          width: "w-[200px]",
+          render: (r) =>
+            r.reasoning ? (
+              <span title={r.reasoning} className="line-clamp-2 text-[11px] text-neutral-500">
+                {r.reasoning}
+              </span>
+            ) : (
+              <span className="text-neutral-300">—</span>
+            ),
+        },
+        actionColumn,
+      ];
+    }
+
+    // 브레인스토밍 그룹에는 GSC 노출 수가 애초에 없으므로(gscImpressions가
+    // 항상 null) "—"만 반복되는 빈 컬럼을 보여주지 않고 아예 뺀다.
+    const hasGscRows = rows.some((r) => r.source === "gsc");
+
+    return [
+      selectColumn,
       { key: "topic", label: "토픽", width: "w-[240px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
-      { key: "market", label: "마켓", width: "w-[70px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
-      {
-        key: "gscImpressions",
-        label: "GSC 노출 수",
-        width: "w-[100px]",
-        render: (r) => (r.gscImpressions === null ? <span className="text-neutral-300">—</span> : r.gscImpressions.toLocaleString("ko-KR")),
-      },
-      {
-        key: "source",
-        label: "출처",
-        width: "w-[130px]",
-        render: (r) => <span className="text-xs text-neutral-500">{SOURCE_LABEL[r.source]}</span>,
-      },
+      marketColumn,
+      ...(hasGscRows
+        ? [
+            {
+              key: "gscImpressions",
+              label: "검색 노출 수",
+              width: "w-[100px]",
+              render: (r: PromptStrategyTopicRow) =>
+                r.gscImpressions === null ? <span className="text-neutral-300">—</span> : r.gscImpressions.toLocaleString("ko-KR"),
+            } as DataTableColumn<PromptStrategyTopicRow>,
+          ]
+        : []),
       {
         key: "brandMentions",
         label: "브랜드별 언급 수",
@@ -87,30 +294,9 @@ export function PromptStrategyClient({ initial }: { initial: PromptStrategyData 
           </span>
         ),
       },
-      {
-        key: "action",
-        label: "액션",
-        width: "w-[90px]",
-        render: (r) =>
-          trackedIds.has(r.id) ? (
-            <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
-          ) : (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setTrackingTopic(r);
-              }}
-              className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-50"
-            >
-              추적
-            </button>
-          ),
-      },
-    ],
-    [trackedIds]
-  );
-
-  const { filtered, visible, open, setOpen, setVisible } = useColumnVisibility(columns, OPTIONAL_COLUMNS);
+      actionColumn,
+    ];
+  }
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
@@ -124,38 +310,127 @@ export function PromptStrategyClient({ initial }: { initial: PromptStrategyData 
         description="Google Search Console(자사 실측 노출)과 매주 LLM에게 현재 데이터를 기반으로 요청하는 인사이트 브레인스토밍, 두 소스에서 프롬프트를 추천합니다."
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {initial.suggestions.map((s) => (
-          <div key={s.id} className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-4">
-            <div className="flex items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TAG_LABEL[s.tag].className}`}>
-                {TAG_LABEL[s.tag].text}
-              </span>
-              <span className="text-[11px] text-neutral-400">{SOURCE_LABEL[s.source]}</span>
-            </div>
-            <h3 className="text-sm font-bold text-neutral-900">{s.title}</h3>
-            <p className="text-xs text-neutral-500">{s.summary}</p>
-            <p className="mt-1 text-[11px] font-medium text-neutral-600">{s.stat}</p>
-          </div>
-        ))}
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-xs font-medium text-neutral-500">모두 추적된 카드 표시</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={showFullyTrackedCards}
+          onClick={() => setShowFullyTrackedCards((v) => !v)}
+          className={`flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors ${
+            showFullyTrackedCards ? "justify-end bg-slate-800" : "justify-start bg-neutral-300"
+          }`}
+        >
+          <span className="size-4 rounded-full bg-white" />
+        </button>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
-        <div className="flex items-start justify-between gap-3">
-          <Tabs variant="badge" items={tabs} value={filter} onChange={(id) => setFilter(id as typeof filter)} />
-          <button
-            type="button"
-            aria-label="컬럼 설정"
-            onClick={() => setOpen(true)}
-            className="grid size-9 shrink-0 place-items-center rounded-md text-neutral-500 hover:bg-neutral-100 cursor-pointer"
-          >
-            <Settings size={16} />
-          </button>
-        </div>
-        <div className="mt-4">
-          <DataTable columns={filtered} rows={filteredTopics} getRowId={(r) => r.id} />
-        </div>
-        <ConfigureColumnsModal open={open} onClose={() => setOpen(false)} columns={OPTIONAL_COLUMNS} visible={visible} onApply={setVisible} />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {initial.suggestions
+          .filter((s) => !dismissedGroups.has(s.id))
+          .filter((s) => {
+            if (showFullyTrackedCards) return true;
+            const groupTopics = topics.filter((t) => t.groupId === s.id);
+            return !(groupTopics.length > 0 && groupTopics.every((t) => trackedIds.has(t.id)));
+          })
+          .map((s) => {
+          const groupTopics = topics.filter((t) => t.groupId === s.id);
+          const trackedCount = groupTopics.filter((t) => trackedIds.has(t.id)).length;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => jumpToGroup(s.id)}
+              className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-4 text-left cursor-pointer hover:border-neutral-300 hover:shadow-sm"
+            >
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TAG_LABEL[s.tag].className}`}>
+                  {TAG_LABEL[s.tag].text}
+                </span>
+                <span className="text-[11px] text-neutral-400">{SOURCE_LABEL[s.source]}</span>
+              </div>
+              <h3 className="text-sm font-bold text-neutral-900">{s.title}</h3>
+              <p className="text-xs text-neutral-500">{s.summary}</p>
+              <div className="mt-1 flex items-center justify-between">
+                <p className="text-[11px] font-medium text-neutral-600">{s.stat}</p>
+                {groupTopics.length > 0 && (
+                  <span className="text-[11px] font-medium text-neutral-400">
+                    {trackedCount}/{groupTopics.length} 추적중
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-start justify-between gap-3">
+        <Tabs variant="badge" items={tabs} value={filter} onChange={(id) => setFilter(id as typeof filter)} />
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {filteredSuggestions.map((s) => {
+          const groupTopics = topics.filter((t) => t.groupId === s.id);
+          const isDismissed = dismissedGroups.has(s.id);
+          if (isDismissed) return null;
+          const isEmpty = groupTopics.length === 0;
+          const allTracked = !isEmpty && groupTopics.every((t) => trackedIds.has(t.id));
+          const selectedIds = selectedByGroup[s.id] ?? new Set<string>();
+          const selectedRows = groupTopics.filter((t) => selectedIds.has(t.id));
+          const untrackedRows = groupTopics.filter((t) => !trackedIds.has(t.id));
+          // 체크된 항목이 없으면 그룹 전체(아직 추적 안 한 것만)를 대상으로 한다 —
+          // 사용자가 굳이 하나씩 체크하지 않아도 "전체 추적"이 기본 동작이 되도록.
+          const trackTargetRows = selectedRows.length > 0 ? selectedRows : untrackedRows;
+
+          return (
+            <div key={s.id} id={`prompt-strategy-group-${s.id}`} className="scroll-mt-24 rounded-xl border border-neutral-200 bg-white p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TAG_LABEL[s.tag].className}`}>
+                      {TAG_LABEL[s.tag].text}
+                    </span>
+                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-600">
+                      {SOURCE_LABEL[s.source]}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-neutral-900">{s.title}</h3>
+                  <p className="max-w-3xl text-xs text-neutral-500">{s.summary}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDismissedGroups((prev) => new Set(prev).add(s.id))}
+                    className="rounded-md bg-neutral-100 px-3 py-1.5 text-[11px] font-bold text-neutral-600 cursor-pointer hover:bg-neutral-200"
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="button"
+                    disabled={allTracked || isEmpty}
+                    onClick={() => setBulkGroupTopics(trackTargetRows)}
+                    className="rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
+                  >
+                    {allTracked
+                      ? "모두 추적 중"
+                      : selectedRows.length > 0
+                        ? `선택 추적 (${selectedRows.length}) →`
+                        : "전체 추적 →"}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4">
+                {isEmpty ? (
+                  <div className="rounded-lg border border-dashed border-neutral-200 px-5 py-6 text-center text-xs text-neutral-400">
+                    아직 이 키워드로 만든 프롬프트가 없습니다.
+                  </div>
+                ) : (
+                  <DataTable columns={buildColumns(s.id, groupTopics)} rows={groupTopics} getRowId={(r) => r.id} />
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <TrackTopicModal
@@ -167,6 +442,40 @@ export function PromptStrategyClient({ initial }: { initial: PromptStrategyData 
         onClose={() => setTrackingTopic(null)}
         onTrack={(target, category) => handleTrack(target.id, trackingTopic?.topic ?? target.id, category)}
       />
+
+      <TrackTopicModal
+        target={bulkGroupTopics && bulkGroupTopics.length > 0 ? { kind: "topic", id: "bulk", topic: bulkGroupTopics[0].topic, market: bulkGroupTopics[0].market } : null}
+        onClose={() => setBulkGroupTopics(null)}
+        onTrack={(_target, category) =>
+          bulkGroupTopics && handleTrackAll(bulkGroupTopics, category, bulkGroupTopics[0]?.groupId)
+        }
+      />
+
+      {trackSuccessCount !== null && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(92vw,420px)] -translate-x-1/2 items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg">
+          <div className="flex-1">
+            <p className="text-sm font-bold text-neutral-900">
+              프롬프트 {trackSuccessCount}개를 프롬프트 라이브러리에 성공적으로 추가했습니다.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => router.push("/prompt-library")}
+                className="rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700"
+              >
+                라이브러리 확인
+              </button>
+              <button
+                type="button"
+                onClick={() => setTrackSuccessCount(null)}
+                className="rounded-md bg-neutral-100 px-3 py-1.5 text-[11px] font-bold text-neutral-600 cursor-pointer hover:bg-neutral-200"
+              >
+                전략 계속 탐색
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

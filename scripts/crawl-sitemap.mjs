@@ -102,22 +102,33 @@ async function crawlUrl(page, url, timeoutMs) {
 
 async function main() {
   const sitemapUrl = argValue("sitemap");
+  // --urls는 사이트맵 전체 대신 특정 URL 몇 개만 다시 크롤링할 때 쓴다 —
+  // "기회" 화면의 "수정 완료" 재검토(단일 URL) 같은 경우. 결과 파일 포맷은
+  // 사이트맵 크롤과 완전히 같아서(.tmp/sitemap-crawl에 같이 쌓임) 전/후
+  // 비교 로직이 그대로 재사용된다.
+  const urlsArg = argValue("urls");
   const domain = argValue("domain", "");
   const limit = Number(argValue("limit", String(DEFAULT_LIMIT)));
   const timeoutMs = Number(argValue("timeout-ms", String(DEFAULT_TIMEOUT_MS)));
   const outputDir = argValue("out", ".tmp/sitemap-crawl");
 
-  if (!sitemapUrl) {
-    console.error(JSON.stringify({ status: "failed", error: "--sitemap is required" }));
+  if (!sitemapUrl && !urlsArg) {
+    console.error(JSON.stringify({ status: "failed", error: "--sitemap or --urls is required" }));
     process.exitCode = 1;
     return;
   }
 
   await mkdir(outputDir, { recursive: true });
 
-  console.log("STAGE:parse_sitemap");
-  const pageUrls = await resolvePageUrls(sitemapUrl, limit);
-  console.log(`사이트맵에서 ${pageUrls.length}개 URL 발견`);
+  let pageUrls;
+  if (urlsArg) {
+    pageUrls = urlsArg.split(",").map((u) => u.trim()).filter(Boolean);
+    console.log(`재크롤 대상 ${pageUrls.length}개 URL`);
+  } else {
+    console.log("STAGE:parse_sitemap");
+    pageUrls = await resolvePageUrls(sitemapUrl, limit);
+    console.log(`사이트맵에서 ${pageUrls.length}개 URL 발견`);
+  }
 
   console.log("STAGE:crawl_pages");
   const browser = await chromium.launch({ headless: true });
@@ -134,7 +145,7 @@ async function main() {
   await browser.close();
 
   const crawledAt = new Date().toISOString();
-  const result = { domain, sitemapUrl, crawledAt, urls };
+  const result = { domain, sitemapUrl: sitemapUrl ?? "manual-recheck", crawledAt, urls };
   const outputPath = path.join(outputDir, `sitemap-crawl-${crawledAt.replaceAll(":", "-")}.json`);
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 

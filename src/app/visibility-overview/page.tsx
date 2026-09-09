@@ -1,12 +1,20 @@
 import { VisibilityOverviewClient } from "@/components/visibility-overview/VisibilityOverviewClient";
 import { DateRange, DEFAULT_ORG_ID, db, VisibilityTableRow } from "@/lib/db";
 import {
+  getRealCitedPages,
+  getRealCitedSources,
   getRealMentionsByMarket,
   getRealMentionsByModel,
+  getRealSourceOpportunities,
   getRealStatSeries,
+  getRealTopBrands,
   getRealTopicRows,
 } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
+import { sourceOpportunityRecommendations } from "@/lib/db/data/sourceOpportunityRecommendations";
+import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
+import { listTrackedTopics } from "@/lib/backend/trackedTopics";
+import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 
@@ -26,20 +34,34 @@ export default async function VisibilityOverviewPage({
     : "4w";
   const demo = await isDemoMode();
 
-  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories] = await Promise.all([
-    db.organizations.get(orgId),
-    db.visibilityOverview.getStatCards(orgId, range),
-    db.visibilityOverview.getMentionsByModel(orgId),
-    db.visibilityOverview.getMentionsByMarket(orgId),
-    db.visibilityOverview.getTopicCategories(orgId),
-  ]);
-  const [realStats, realMentionsByModel, realMentionsByMarket, realTopicRows] = demo
-    ? [null, null, null, null]
+  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls] =
+    await Promise.all([
+      db.organizations.get(orgId),
+      db.visibilityOverview.getStatCards(orgId, range),
+      db.visibilityOverview.getMentionsByModel(orgId),
+      db.visibilityOverview.getMentionsByMarket(orgId),
+      db.visibilityOverview.getTopicCategories(orgId),
+      db.promptLibrary.list(orgId),
+      listTrackedTopics(),
+      getDeletedLibraryRowIds(),
+      getTopicOpportunityTargets(),
+    ]);
+  // 토픽 기회에 "이미 프롬프트 라이브러리에 추가됐는지" 배지를 달기 위한
+  // 실제 라이브러리 프롬프트 문장 전체 — 프롬프트 전략 페이지와 동일한
+  // 삭제된 시드 필터링을 적용한다.
+  const libraryPrompts = [...promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id)), ...trackedRows].map((r) => r.prompt);
+
+  const [realStats, realMentionsByModel, realMentionsByMarket, realTopicRows, realTopBrands, realCitedPages, realCitedSources, realSourceOpportunities] = demo
+    ? [null, null, null, null, null, null, null, null]
     : await Promise.all([
         getRealStatSeries(range),
         getRealMentionsByModel(range),
         getRealMentionsByMarket(range),
-        getRealTopicRows(),
+        getRealTopicRows({}, { libraryPrompts, targetUrls }),
+        getRealTopBrands(),
+        getRealCitedPages(),
+        getRealCitedSources(),
+        getRealSourceOpportunities(),
       ]);
 
   // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
@@ -59,13 +81,25 @@ export default async function VisibilityOverviewPage({
       topicsByCategory[c.id] = await db.visibilityOverview.getTopics(orgId, c.id);
     })
   );
-  // "top-prompts"/"topic-opportunities"만 실 데이터로 교체 — 수집 로그에
-  // 입력한 키워드(rawMetadata.query)를 토픽처럼 묶은 것. 나머지 4개 카테고리
-  // (상위 브랜드/인용 페이지·소스)는 아직 실 파이프라인이 계산하지 않는
-  // 별도 지표라 mock 유지.
+  // "top-prompts"/"topic-opportunities"는 수집 로그에 입력한 키워드
+  // (rawMetadata.query)를 토픽처럼 묶은 것. 나머지 4개(상위 브랜드/인용
+  // 페이지·소스/소스 기회)는 citations/mentions를 브랜드·URL·도메인 단위로
+  // 집계 — 전부 URL 인스펙터와 같은 실 인용 파이프라인을 쓴다.
   if (realTopicRows) {
     topicsByCategory["top-prompts"] = realTopicRows.topPrompts;
     topicsByCategory["topic-opportunities"] = realTopicRows.opportunities;
+  }
+  if (realTopBrands) topicsByCategory["latest-top-brands"] = realTopBrands;
+  if (realCitedPages) topicsByCategory["cited-pages"] = realCitedPages;
+  if (realCitedSources) topicsByCategory["cited-sources"] = realCitedSources;
+  // 도메인별 LLM 추천(sourceOpportunityRecommendations.ts)이 채워져 있으면
+  // 실측 집계 행에 recommendation/reasoning을 덧붙인다 — LLM API 연동 전까지
+  // 사람이 채운 값을 그대로 붙이는 다리 역할.
+  if (realSourceOpportunities) {
+    topicsByCategory["source-opportunities"] = realSourceOpportunities.map((row) => ({
+      ...row,
+      ...sourceOpportunityRecommendations[row.domain],
+    }));
   }
 
   return (

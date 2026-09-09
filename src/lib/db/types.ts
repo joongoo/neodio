@@ -297,6 +297,8 @@ export interface TopicPromptRow {
   brand: string;
   source: string;
   market: string;
+  /** 이 실행이 수집된 시각(ISO) — 토픽 상세의 "수집 로그별 변화" 표에 씀. */
+  runAt?: string;
 }
 
 // searchVolume/difficulty dropped for P0 (neodigm_p0_scope.md §2) — those
@@ -309,6 +311,12 @@ export interface TopicRow {
   visibility: number;
   market: string;
   prompts: TopicPromptRow[];
+  /** "토픽 기회"에서 만든 콘텐츠가 이미 프롬프트 라이브러리에 추가됐는지. */
+  addedToLibrary?: boolean;
+  /** 이 토픽을 위해 만든 콘텐츠 페이지 — 사용자가 직접 입력(옵션). */
+  targetUrl?: string;
+  /** targetUrl이 실제로 AI 답변에 인용된 횟수 — 전체 수집 결과 기준 실측치. */
+  targetUrlCitations?: number;
 }
 
 export interface TopicCategory {
@@ -340,6 +348,9 @@ export interface CitedSourceRow {
   myBrandMentions: number;
   citedPages: number;
   prompts: number;
+  /** LLM이 이 소스를 어떻게 공략할지 제안한 액션 — LLM API 연동 전엔 수동으로 채운다. */
+  recommendation?: string;
+  reasoning?: string;
 }
 
 export type VisibilityTableRow = TopicRow | BrandRankRow | CitedPageRow | CitedSourceRow;
@@ -593,6 +604,8 @@ export interface ContentRecoveryUrl {
   status: "not_optimized" | "optimized";
   contentVisibility: number;
   priorityScore: number;
+  /** 배포 없이 "다시 크롤링"만 반복해서 얻는 전/후 비교 — 이전 크롤의 같은 URL 값. */
+  previousContentVisibility?: number;
 }
 
 export interface ContentRecoveryOpportunity {
@@ -604,6 +617,14 @@ export interface ContentRecoveryOpportunity {
   optimizedCount: number;
   totalCount: number;
   urls: ContentRecoveryUrl[];
+  /** 배포 전/후 비교 — 실 크롤 기록이 2회 이상 쌓였을 때만 채워진다. */
+  comparison?: {
+    baselineCrawledAt: string;
+    baselineAverageContentVisibility: number;
+    latestCrawledAt: string;
+    latestAverageContentVisibility: number;
+    improvementPercent: number;
+  };
 }
 
 // ---- URL Inspector page ----
@@ -617,7 +638,8 @@ export interface OwnCitedUrlRow {
   url: string;
   citations: number;
   citedPrompts: number;
-  contentVisibility: number;
+  /** null when there's no real source for this yet (실 인용 집계엔 없고 사이트맵 크롤과 별도 매칭이 필요) */
+  contentVisibility: number | null;
   category: string;
   market: string;
 }
@@ -722,7 +744,7 @@ export interface BrandsManagementData {
 // original design's other two sources) are dropped. Both sources land in
 // this exact shape so the future batch job can write into it unchanged.
 
-export type StrategySource = "gsc" | "llm_brainstorm";
+export type StrategySource = "gsc" | "llm_brainstorm" | "citation_attempt";
 
 export interface PromptStrategySuggestion {
   id: string;
@@ -746,9 +768,29 @@ export interface PromptStrategyTopicRow {
   source: StrategySource;
   gscImpressions: number | null;
   brandMentions: StrategyBrandMention[];
+  /** Groups this topic under a PromptStrategySuggestion card (same id). */
+  groupId?: string;
+  /** 검색 의도(예: Planning/Informational/Transactional) — LLM이 프롬프트 문장을 만들 때 함께 분류한 값. */
+  intent?: string;
+  /** 이 프롬프트 문장 자체가 브랜드명을 직접 언급하는지 여부. */
+  branded?: boolean;
+  /** 왜 이 프롬프트를 추천하는지에 대한 짧은 근거. */
+  reasoning?: string;
 }
 
 export interface PromptStrategyData {
   suggestions: PromptStrategySuggestion[];
   topics: PromptStrategyTopicRow[];
+}
+
+// 사용자가 실 GSC 키워드를 LLM(ChatGPT 등)에 직접 물어봐서 얻은 실제 프롬프트
+// 문장. LLM API가 아직 연동되지 않아 수동으로 붙여넣는 다리 역할 — 나중에
+// 실 스케줄러가 붙으면 이 값을 자동으로 채우도록 같은 모양을 유지한다.
+export interface GscCraftedPrompt {
+  prompt: string;
+  market?: string;
+  brandMentions?: StrategyBrandMention[];
+  intent?: string;
+  branded?: boolean;
+  reasoning?: string;
 }

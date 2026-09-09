@@ -6,7 +6,8 @@ import { cn } from "@/lib/cn";
 
 export interface DataTableColumn<T> {
   key: string;
-  label: string;
+  /** Usually plain text, but can be a node (e.g. a "select all" checkbox in the select column). */
+  label: ReactNode;
   /** Tailwind width class, e.g. "w-[260px]". Defaults to flex-1. */
   width?: string;
   align?: "left" | "right";

@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Settings, Download } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Settings, Download, Sparkles } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -69,9 +69,63 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
   ],
 };
 
-function buildTopicColumns(trackedIds: Set<string>, onTrack: (row: TopicRow) => void): DataTableColumn<TopicRow>[] {
-  return [
-    { key: "topic", label: "토픽", width: "w-[280px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
+// "토픽 기회" 전용 — 이 토픽으로 만든 콘텐츠 URL을 입력해두면 실제로
+// 인용되는지(targetUrlCitations) 다음 로드부터 실측으로 보여준다.
+function TargetUrlCell({ row, onSaved }: { row: TopicRow; onSaved: () => void }) {
+  const [value, setValue] = useState(row.targetUrl ?? "");
+  const [saving, setSaving] = useState(false);
+
+  if (row.targetUrl) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <a href={row.targetUrl} target="_blank" rel="noopener noreferrer" className="max-w-[220px] truncate text-xs text-blue-600 hover:underline">
+          {row.targetUrl}
+        </a>
+        <span className="text-[11px] text-neutral-500">
+          인용 {row.targetUrlCitations ?? 0}회
+          {(row.targetUrlCitations ?? 0) > 0 ? " ✅" : ""}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="콘텐츠 URL (옵션)"
+        className="h-7 w-[180px] rounded border border-neutral-300 px-2 text-[11px]"
+      />
+      <button
+        type="button"
+        disabled={!value.trim() || saving}
+        onClick={async () => {
+          setSaving(true);
+          await fetch("/api/topic-opportunity-target", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ topic: row.topic, targetUrl: value.trim() }),
+          });
+          setSaving(false);
+          onSaved();
+        }}
+        className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200 disabled:cursor-default disabled:opacity-40"
+      >
+        저장
+      </button>
+    </div>
+  );
+}
+
+function buildTopicColumns(
+  trackedIds: Set<string>,
+  onTrack: (row: TopicRow) => void,
+  isOpportunity: boolean,
+  onTargetUrlSaved: () => void
+): DataTableColumn<TopicRow>[] {
+  const base: DataTableColumn<TopicRow>[] = [
+    { key: "topic", label: "토픽", width: "w-[240px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
     { key: "mentions", label: "언급 수", width: "w-[100px]", render: (r) => r.mentions },
     { key: "visibility", label: "가시성", width: "w-[100px]", render: (r) => `${r.visibility}%` },
     {
@@ -80,27 +134,52 @@ function buildTopicColumns(trackedIds: Set<string>, onTrack: (row: TopicRow) => 
       width: "w-[90px]",
       render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
     },
-    {
-      key: "action",
-      width: "w-[100px]",
-      label: "액션",
-      render: (r) =>
-        trackedIds.has(r.id) ? (
-          <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onTrack(r);
-            }}
-            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
-          >
-            추적
-          </button>
-        ),
-    },
   ];
+
+  if (isOpportunity) {
+    base.push(
+      {
+        key: "addedToLibrary",
+        label: "라이브러리",
+        width: "w-[90px]",
+        render: (r) =>
+          r.addedToLibrary ? (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">추가됨</span>
+          ) : (
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500">미추가</span>
+          ),
+      },
+      {
+        key: "targetUrl",
+        label: "콘텐츠 인용 트래킹",
+        width: "w-[220px]",
+        render: (r) => <TargetUrlCell row={r} onSaved={onTargetUrlSaved} />,
+      }
+    );
+  }
+
+  base.push({
+    key: "action",
+    width: "w-[100px]",
+    label: "액션",
+    render: (r) =>
+      trackedIds.has(r.id) ? (
+        <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onTrack(r);
+          }}
+          className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+        >
+          추적
+        </button>
+      ),
+  });
+
+  return base;
 }
 
 const brandColumns: DataTableColumn<BrandRankRow>[] = [
@@ -158,6 +237,18 @@ const sourceColumns: DataTableColumn<CitedSourceRow>[] = [
   { key: "myBrandMentions", label: "내 브랜드 언급 수", width: "w-[130px]", render: (r) => r.myBrandMentions },
   { key: "citedPages", label: "인용된 페이지 수", width: "w-[130px]", render: (r) => r.citedPages },
   { key: "prompts", label: "프롬프트 수", width: "w-[110px]", render: (r) => r.prompts },
+  {
+    key: "recommendation",
+    label: "추천 액션",
+    render: (r) =>
+      r.recommendation ? (
+        <span title={r.reasoning} className="line-clamp-2 text-[11px] text-neutral-600">
+          {r.recommendation}
+        </span>
+      ) : (
+        <span className="text-neutral-300">—</span>
+      ),
+  },
 ];
 
 function isTopicRow(row: VisibilityTableRow): row is TopicRow {
@@ -176,7 +267,13 @@ export function TopicsTableSection({
   topicsByCategory: Record<string, VisibilityTableRow[]>;
 }) {
   const router = useRouter();
-  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
+  // "기회" 페이지의 "토픽 기회" 카드처럼 ?category=topic-opportunities로
+  // 바로 들어와서 해당 탭이 열리게 한다 — 없으면 기존처럼 첫 카테고리.
+  const searchParams = useSearchParams();
+  const initialCategoryId = searchParams.get("category");
+  const [categoryId, setCategoryId] = useState(
+    (initialCategoryId && categories.some((c) => c.id === initialCategoryId) ? initialCategoryId : categories[0]?.id) ?? ""
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [columnsOpen, setColumnsOpen] = useState(false);
@@ -230,18 +327,23 @@ export function TopicsTableSection({
   const isSourceFamily = family === "source";
   const visible = visibleByFamily[family];
 
+  const isTopicOpportunities = categoryId === "topic-opportunities";
   const topicColumns = useMemo(
     () =>
-      buildTopicColumns(trackedIds, (row) =>
-        setTrackTarget({
-          kind: "topic",
-          id: row.id,
-          topic: row.topic,
-          market: row.market,
-          prompts: row.prompts.map((p) => ({ id: p.id, prompt: p.prompt })),
-        })
+      buildTopicColumns(
+        trackedIds,
+        (row) =>
+          setTrackTarget({
+            kind: "topic",
+            id: row.id,
+            topic: row.topic,
+            market: row.market,
+            prompts: row.prompts.map((p) => ({ id: p.id, prompt: p.prompt })),
+          }),
+        isTopicOpportunities,
+        () => router.refresh()
       ),
-    [trackedIds]
+    [trackedIds, isTopicOpportunities, router]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
   const visibleBrandColumns = brandColumns.filter((c) => c.key !== "mentions" || visible.has(c.key));
@@ -276,6 +378,16 @@ export function TopicsTableSection({
           내보내기
         </Button>
       </div>
+
+      {isTopicOpportunities && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-4 py-3">
+          <Sparkles size={16} className="shrink-0 text-neutral-400" />
+          <p className="text-xs text-neutral-500">
+            <span className="mr-1.5 rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-bold text-neutral-600">준비 중</span>
+            LLM API 연동 후, 이 토픽에 어떤 콘텐츠를 만들면 좋을지 구체적인 생성 가이드를 자동으로 제안할 예정입니다.
+          </p>
+        </div>
+      )}
 
       <div className="mt-3 flex items-center justify-end gap-2.5">
         {isTopicFamily && <Dropdown label="" value="AI 가시성: 전체" bold options={["AI 가시성: 전체"]} />}

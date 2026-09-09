@@ -3,10 +3,15 @@ import { processPromptRuns } from "./processing";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { seedBrands, seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
 import {
+  BrandRankRow,
   BrandWeeklyPoint,
+  CitedDomainRow,
+  CitedPageRow,
+  CitedSourceRow,
   DataInsightRow,
   DateRange,
   MarketComparisonRow,
+  OwnCitedUrlRow,
   PromptMetricsPoint,
   RankedRow,
   Sentiment,
@@ -14,8 +19,10 @@ import {
   SentimentWeek,
   ShareOfVoiceRow,
   StatCard,
+  ThirdPartyUrlRow,
   TopicPromptRow,
   TopicRow,
+  UrlInspectorData,
 } from "@/lib/db/types";
 
 // Server-only (pulls in collectionRuns.ts, which uses node:fs) — call only
@@ -311,7 +318,17 @@ export interface RealTopicRows {
 // 그대로 쓸 수 있다 — 수동 키워드 수집이든 향후 배치 수집이든 같은 필드
 // (rawMetadata.query)만 채우면 자동으로 여기 반영된다. 주(week) 단위로
 // 거르지 않는 전체 기간 집계 — 토픽 테이블 자체가 range 필터를 안 받는다.
-export async function getRealTopicRows(filters: RealDataFilters = {}): Promise<RealTopicRows | null> {
+export interface TopicOpportunityExtras {
+  /** 이미 프롬프트 라이브러리에 있는 프롬프트 문장 전체 — addedToLibrary 판정용. */
+  libraryPrompts?: string[];
+  /** 토픽 텍스트 → 그 토픽용으로 만든 콘텐츠 URL. */
+  targetUrls?: Record<string, string>;
+}
+
+export async function getRealTopicRows(
+  filters: RealDataFilters = {},
+  extras: TopicOpportunityExtras = {}
+): Promise<RealTopicRows | null> {
   const runFiles = await listCollectedRuns();
   if (runFiles.length === 0) return null;
 
@@ -350,6 +367,16 @@ export async function getRealTopicRows(filters: RealDataFilters = {}): Promise<R
   }
   if (runIdsByQuery.size === 0) return null;
 
+  // targetUrl 인용 트래킹용 — 이 필터 범위 안의 전체 수집(이 토픽의 실행뿐
+  // 아니라 전부) 기준으로 그 URL이 실제로 몇 번 인용됐는지 센다. "이
+  // 콘텐츠가 AI 답변에 인용되는가"는 원래 프롬프트가 아니라 다른
+  // 프롬프트에서도 인용될 수 있어서 전체 집합에서 세는 게 맞다.
+  const citationCountByPageUrl = new Map<string, number>();
+  for (const c of processed.citations) {
+    citationCountByPageUrl.set(c.pageUrl, (citationCountByPageUrl.get(c.pageUrl) ?? 0) + 1);
+  }
+  const libraryPromptSet = new Set((extras.libraryPrompts ?? []).map((p) => p.trim().toLowerCase()));
+
   const topPrompts: TopicRow[] = [];
   const opportunities: TopicRow[] = [];
 
@@ -358,18 +385,23 @@ export async function getRealTopicRows(filters: RealDataFilters = {}): Promise<R
     const firstRun = runsById.get(runIds[0])!;
     const market = seedMarkets.find((m) => m.id === firstRun.marketId)?.label ?? firstRun.marketId;
 
-    const prompts: TopicPromptRow[] = runIds.map((id) => {
-      const run = runsById.get(id)!;
-      return {
-        id,
-        prompt: query,
-        model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId,
-        myBrand: ownMentionByRun.get(id) ? "노출" : "미노출",
-        brand: String(otherMentionCountByRun.get(id) ?? 0),
-        source: String(citationCountByRun.get(id) ?? 0),
-        market: seedMarkets.find((m) => m.id === run.marketId)?.label ?? run.marketId,
-      };
-    });
+    const prompts: TopicPromptRow[] = runIds
+      .map((id) => {
+        const run = runsById.get(id)!;
+        return {
+          id,
+          prompt: query,
+          model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId,
+          myBrand: ownMentionByRun.get(id) ? "노출" : "미노출",
+          brand: String(otherMentionCountByRun.get(id) ?? 0),
+          source: String(citationCountByRun.get(id) ?? 0),
+          market: seedMarkets.find((m) => m.id === run.marketId)?.label ?? run.marketId,
+          runAt: run.runAt,
+        };
+      })
+      .sort((a, b) => (a.runAt ?? "").localeCompare(b.runAt ?? ""));
+
+    const targetUrl = extras.targetUrls?.[query];
 
     const row: TopicRow = {
       id: `real-${query}`,
@@ -378,6 +410,9 @@ export async function getRealTopicRows(filters: RealDataFilters = {}): Promise<R
       visibility: Math.round((mentionCount / runIds.length) * 100),
       market,
       prompts,
+      addedToLibrary: libraryPromptSet.size > 0 ? libraryPromptSet.has(query.trim().toLowerCase()) : undefined,
+      targetUrl,
+      targetUrlCitations: targetUrl ? (citationCountByPageUrl.get(targetUrl) ?? 0) : undefined,
     };
 
     (mentionCount > 0 ? topPrompts : opportunities).push(row);
@@ -671,4 +706,257 @@ export async function getRealSentimentMovers(
   topMovers.sort((a, b) => b.popularity - a.popularity);
   bottomMovers.sort((a, b) => b.popularity - a.popularity);
   return { topMovers, bottomMovers };
+}
+
+// URL 인스펙터 — 수집된 실행들의 인용(citations)을 URL/도메인 단위로
+// 집계한다. "콘텐츠 가시성"(사이트맵 크롤과 별도로 매칭해야 함)과
+// "카테고리"/"콘텐츠 유형"(분류할 실 소스가 없음)은 계산할 수 없어 각각
+// null/"미분류"로 남긴다 — 나머지(인용 횟수, 인용된 프롬프트 수, 마켓)는
+// 전부 실측치다.
+export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Promise<UrlInspectorData | null> {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => run.status === "success")
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  if (promptRuns.length === 0) return null;
+
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  if (processed.citations.length === 0) return null;
+
+  const runsById = new Map(promptRuns.map((r) => [r.id, r]));
+  const marketOf = (runId: string) => {
+    const run = runsById.get(runId);
+    return seedMarkets.find((m) => m.id === run?.marketId)?.code ?? "GLOBAL";
+  };
+
+  interface UrlAgg {
+    isOwnDomain: boolean;
+    domain: string;
+    title: string;
+    citations: number;
+    promptRunIds: Set<string>;
+    markets: Map<string, number>;
+  }
+  const byUrl = new Map<string, UrlAgg>();
+  for (const c of processed.citations) {
+    const agg = byUrl.get(c.pageUrl) ?? {
+      isOwnDomain: c.isOwnDomain,
+      domain: c.domain,
+      title: c.title,
+      citations: 0,
+      promptRunIds: new Set<string>(),
+      markets: new Map<string, number>(),
+    };
+    agg.citations += 1;
+    agg.promptRunIds.add(c.promptRunId);
+    const market = marketOf(c.promptRunId);
+    agg.markets.set(market, (agg.markets.get(market) ?? 0) + 1);
+    byUrl.set(c.pageUrl, agg);
+  }
+
+  function topMarket(agg: UrlAgg) {
+    return [...agg.markets.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  const ownUrls: OwnCitedUrlRow[] = [];
+  const thirdPartyUrls: ThirdPartyUrlRow[] = [];
+  let i = 0;
+  for (const [url, agg] of byUrl) {
+    if (agg.isOwnDomain) {
+      ownUrls.push({
+        id: `real-own-${i++}`,
+        url,
+        citations: agg.citations,
+        citedPrompts: agg.promptRunIds.size,
+        contentVisibility: null,
+        category: "미분류",
+        market: topMarket(agg),
+      });
+    } else {
+      thirdPartyUrls.push({
+        id: `real-tp-${i++}`,
+        url,
+        contentType: "미분류",
+        citations: agg.citations,
+        citedPrompts: agg.promptRunIds.size,
+        category: "미분류",
+        market: topMarket(agg),
+      });
+    }
+  }
+  ownUrls.sort((a, b) => b.citations - a.citations);
+  thirdPartyUrls.sort((a, b) => b.citations - a.citations);
+
+  interface DomainAgg {
+    citations: number;
+    urls: Set<string>;
+    promptRunIds: Set<string>;
+    isOwnDomain: boolean;
+  }
+  const byDomain = new Map<string, DomainAgg>();
+  for (const c of processed.citations) {
+    const agg = byDomain.get(c.domain) ?? { citations: 0, urls: new Set<string>(), promptRunIds: new Set<string>(), isOwnDomain: c.isOwnDomain };
+    agg.citations += 1;
+    agg.urls.add(c.pageUrl);
+    agg.promptRunIds.add(c.promptRunId);
+    byDomain.set(c.domain, agg);
+  }
+  const citedDomains: CitedDomainRow[] = [...byDomain.entries()]
+    .map(([domain, agg], idx) => ({
+      id: `real-domain-${idx}`,
+      domain,
+      citations: agg.citations,
+      uniqueUrls: agg.urls.size,
+      citationsPerUrl: Number((agg.citations / agg.urls.size).toFixed(1)),
+      citedPrompts: agg.promptRunIds.size,
+      contentType: agg.isOwnDomain ? "자사" : "미분류",
+    }))
+    .sort((a, b) => b.citations - a.citations);
+
+  const distinctPromptRunIds = new Set(processed.citations.map((c) => c.promptRunId));
+  const ownPromptRunIds = new Set(processed.citations.filter((c) => c.isOwnDomain).map((c) => c.promptRunId));
+
+  return {
+    ownCitedPrompts: ownPromptRunIds.size,
+    totalCitedPrompts: distinctPromptRunIds.size,
+    uniqueCitedUrls: byUrl.size,
+    totalCitations: processed.citations.length,
+    ownUrls,
+    thirdPartyUrls,
+    citedDomains,
+  };
+}
+
+// 가시성 개요의 "최신 상위 브랜드" — 전체 기간 언급 수 기준 브랜드 랭킹.
+// 우리 브랜드도 포함해서 실제 언급 순위 그대로 보여준다 (share-of-voice와
+// 달리 여기는 순위표라 자사 제외 안 함).
+export async function getRealTopBrands(filters: RealDataFilters = {}): Promise<BrandRankRow[] | null> {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => run.status === "success")
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  if (promptRuns.length === 0) return null;
+
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  if (processed.mentions.length === 0) return null;
+
+  const mentionsByBrand = new Map<string, number>();
+  for (const m of processed.mentions) {
+    if (!m.isPresent) continue;
+    mentionsByBrand.set(m.brandId, (mentionsByBrand.get(m.brandId) ?? 0) + 1);
+  }
+  if (mentionsByBrand.size === 0) return null;
+
+  return [...mentionsByBrand.entries()]
+    .map(([brandId, mentions]) => ({
+      id: `real-brand-${brandId}`,
+      brand: seedBrands.find((b) => b.id === brandId)?.name ?? brandId,
+      mentions,
+    }))
+    .sort((a, b) => b.mentions - a.mentions);
+}
+
+// 가시성 개요의 "인용된 페이지" — 자사 도메인 URL별로 응답 수(그 URL을
+// 인용한 서로 다른 실행 수)와, 그 응답들 중 우리 브랜드가 함께 언급된
+// 실행 수(myBrand)를 집계한다.
+export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<CitedPageRow[] | null> {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => run.status === "success")
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  if (promptRuns.length === 0) return null;
+
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
+  if (ownCitations.length === 0) return null;
+
+  const ownMentionRuns = new Set(processed.mentions.filter((m) => m.brandId === OWN_BRAND_ID && m.isPresent).map((m) => m.promptRunId));
+  const runsById = new Map(promptRuns.map((r) => [r.id, r]));
+  const marketOf = (runId: string) => seedMarkets.find((m) => m.id === runsById.get(runId)?.marketId)?.code ?? "GLOBAL";
+
+  const byUrl = new Map<string, { promptRunIds: Set<string>; markets: Map<string, number> }>();
+  for (const c of ownCitations) {
+    const agg = byUrl.get(c.pageUrl) ?? { promptRunIds: new Set<string>(), markets: new Map<string, number>() };
+    agg.promptRunIds.add(c.promptRunId);
+    const market = marketOf(c.promptRunId);
+    agg.markets.set(market, (agg.markets.get(market) ?? 0) + 1);
+    byUrl.set(c.pageUrl, agg);
+  }
+
+  return [...byUrl.entries()]
+    .map(([pageUrl, agg], i) => ({
+      id: `real-page-${i}`,
+      pageUrl,
+      responses: agg.promptRunIds.size,
+      market: [...agg.markets.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      myBrand: String([...agg.promptRunIds].filter((id) => ownMentionRuns.has(id)).length),
+    }))
+    .sort((a, b) => b.responses - a.responses);
+}
+
+// 가시성 개요의 "인용된 소스"/"소스 기회" — 제3자(자사 제외) 도메인별
+// 집계. myBrandMentions === 0인 도메인만 따로 뽑으면 "소스 기회"(경쟁
+// 토픽에서 자주 인용되지만 아직 우리 브랜드는 안 잡히는 소스)가 된다.
+export async function getRealCitedSources(filters: RealDataFilters = {}): Promise<CitedSourceRow[] | null> {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => run.status === "success")
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  if (promptRuns.length === 0) return null;
+
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const thirdPartyCitations = processed.citations.filter((c) => !c.isOwnDomain);
+  if (thirdPartyCitations.length === 0) return null;
+
+  const ownMentionRuns = new Set(processed.mentions.filter((m) => m.brandId === OWN_BRAND_ID && m.isPresent).map((m) => m.promptRunId));
+  const runsById = new Map(promptRuns.map((r) => [r.id, r]));
+  const marketOf = (runId: string) => seedMarkets.find((m) => m.id === runsById.get(runId)?.marketId)?.code ?? "GLOBAL";
+
+  const byDomain = new Map<string, { pageUrls: Set<string>; promptRunIds: Set<string>; markets: Map<string, number> }>();
+  for (const c of thirdPartyCitations) {
+    const agg = byDomain.get(c.domain) ?? { pageUrls: new Set<string>(), promptRunIds: new Set<string>(), markets: new Map<string, number>() };
+    agg.pageUrls.add(c.pageUrl);
+    agg.promptRunIds.add(c.promptRunId);
+    const market = marketOf(c.promptRunId);
+    agg.markets.set(market, (agg.markets.get(market) ?? 0) + 1);
+    byDomain.set(c.domain, agg);
+  }
+
+  return [...byDomain.entries()]
+    .map(([domain, agg], i) => ({
+      id: `real-source-${i}`,
+      domain,
+      market: [...agg.markets.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      myBrandMentions: [...agg.promptRunIds].filter((id) => ownMentionRuns.has(id)).length,
+      citedPages: agg.pageUrls.size,
+      prompts: agg.promptRunIds.size,
+    }))
+    .sort((a, b) => b.prompts - a.prompts);
+}
+
+export async function getRealSourceOpportunities(filters: RealDataFilters = {}): Promise<CitedSourceRow[] | null> {
+  const sources = await getRealCitedSources(filters);
+  if (!sources) return null;
+  const opportunities = sources.filter((s) => s.myBrandMentions === 0);
+  return opportunities.length > 0 ? opportunities : null;
 }

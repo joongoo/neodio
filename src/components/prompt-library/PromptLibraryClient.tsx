@@ -28,6 +28,10 @@ export function PromptLibraryClient({
   health: PromptLibraryHealth | null;
 }) {
   const [rows, setRows] = useState(initialRows);
+  // 오늘 추가/수정된 항목을 "NEW"로 표시 — 프롬프트 전략/가시성 개요에서
+  // 방금 추적했거나, 방금 CSV로 가져왔거나, 방금 직접 추가한 프롬프트가
+  // 오늘 날짜로 lastModifiedAt이 찍히므로 이걸로 판별한다.
+  const today = new Date().toISOString().slice(0, 10);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("전체");
   const [subcategory, setSubcategory] = useState("전체");
@@ -70,17 +74,19 @@ export function PromptLibraryClient({
     );
   }
 
-  function importCsv(imported: ImportedPromptRow[]) {
-    const today = new Date().toISOString().slice(0, 10);
-    const newRows: PromptLibraryRow[] = imported.map((r, i) => ({
-      id: `pl-import-${Date.now()}-${i}`,
-      prompt: r.prompt,
-      origin: "csv_import",
-      category: r.category,
-      subcategory: r.subcategory || "—",
-      lastModifiedAt: today,
-      lastModifiedBy: "나",
-    }));
+  // CSV로 가져온 행도 실제로 .tmp에 저장한다 — 이전엔 로컬 state에만 남아서
+  // 새로고침하면 통째로 사라졌다.
+  async function importCsv(imported: ImportedPromptRow[]) {
+    const results = await Promise.all(
+      imported.map((r) =>
+        fetch("/api/tracked-topics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: r.prompt, category: r.category, subcategory: r.subcategory, origin: "csv_import" }),
+        }).then((res) => res.json())
+      )
+    );
+    const newRows = results.filter((r) => r.ok).map((r) => r.row as PromptLibraryRow);
     setRows((prev) => [...newRows, ...prev]);
   }
 
@@ -93,8 +99,19 @@ export function PromptLibraryClient({
     });
   }
 
+  // 추적/수동 추가/CSV로 들어온 프롬프트(id가 "tracked-"로 시작)는 실제
+  // .tmp 파일을 지운다. mock 시드 행(pl-*)은 지울 파일이 없는 대신 "삭제된
+  // id 목록"에 기록한다 — 이전엔 이 기록이 없어서 새로고침하면 시드 데이터가
+  // 그대로 부활했다. 둘 다 서버 API를 호출해 실제로 영구 반영한다.
+  function deleteRows(ids: Set<string>) {
+    setRows((prev) => prev.filter((r) => !ids.has(r.id)));
+    ids.forEach((id) => {
+      fetch(`/api/tracked-topics?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+    });
+  }
+
   function deleteSelected() {
-    setRows((prev) => prev.filter((r) => !selected.has(r.id)));
+    deleteRows(selected);
     setSelected(new Set());
   }
 
@@ -109,7 +126,24 @@ export function PromptLibraryClient({
   const allColumns: DataTableColumn<PromptLibraryRow>[] = [
     {
       key: "select",
-      label: "",
+      label: (
+        <input
+          type="checkbox"
+          aria-label="현재 페이지 전체 선택"
+          checked={pageRows.length > 0 && pageRows.every((r) => selected.has(r.id))}
+          ref={(el) => {
+            if (el) el.indeterminate = pageRows.some((r) => selected.has(r.id)) && !pageRows.every((r) => selected.has(r.id));
+          }}
+          onChange={(e) => {
+            setSelected((prev) => {
+              const next = new Set(prev);
+              pageRows.forEach((r) => (e.target.checked ? next.add(r.id) : next.delete(r.id)));
+              return next;
+            });
+          }}
+          className="size-4 cursor-pointer accent-slate-800"
+        />
+      ),
       width: "w-[24px]",
       render: (r) => (
         <input
@@ -121,7 +155,19 @@ export function PromptLibraryClient({
         />
       ),
     },
-    { key: "prompt", label: "프롬프트", width: "w-[360px]", render: (r) => <span className="truncate text-neutral-700">{r.prompt}</span> },
+    {
+      key: "prompt",
+      label: "프롬프트",
+      width: "w-[360px]",
+      render: (r) => (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-neutral-700">{r.prompt}</span>
+          {r.lastModifiedAt === today && (
+            <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">NEW</span>
+          )}
+        </span>
+      ),
+    },
     {
       key: "origin",
       label: "출처",
@@ -154,7 +200,7 @@ export function PromptLibraryClient({
             aria-label="삭제"
             onClick={(e) => {
               e.stopPropagation();
-              setRows((prev) => prev.filter((row) => row.id !== r.id));
+              deleteRows(new Set([r.id]));
             }}
             className="text-neutral-400 hover:text-red-600 cursor-pointer"
           >
@@ -171,7 +217,11 @@ export function PromptLibraryClient({
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-neutral-900">프롬프트 라이브러리</h1>
-        <Dropdown variant="solid" label="마켓" value="US-en" options={["US-en", "KR-ko"]} />
+        {/* 프롬프트 라이브러리는 마켓별로 프롬프트를 나누지 않는다(PromptLibraryRow에
+            market 필드 자체가 없음) — 실제로 필터링되지 않던 장식용
+            드롭다운(US-en/KR-ko, 클릭해도 아무 동작 안 함) 대신 실제 서비스
+            시장(KR)을 있는 그대로 보여준다. */}
+        <span className="rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600">마켓: KR</span>
       </div>
 
       <InfoBanner
@@ -287,22 +337,50 @@ export function PromptLibraryClient({
       <AddPromptModal
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onAdd={(row) => setRows((prev) => [{ id: `pl-${Date.now()}`, origin: "manual", ...row }, ...prev])}
+        onAdd={async (row) => {
+          // 실제로 .tmp에 저장한다 — 이전엔 로컬 state에만 남아서 새로고침하면
+          // 사라졌다.
+          const res = await fetch("/api/tracked-topics", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: row.prompt, category: row.category, subcategory: row.subcategory, origin: "manual" }),
+          });
+          const data = await res.json();
+          if (data.ok) setRows((prev) => [data.row as PromptLibraryRow, ...prev]);
+        }}
+        existingPrompts={rows.map((r) => r.prompt)}
       />
       <EditPromptModal
         row={editingRow}
         onClose={() => setEditingRow(null)}
-        onSave={(id, patch) =>
+        onSave={async (id, patch) => {
+          // tracked-*(추적/수동 추가/CSV 가져오기로 실 파일이 있는 행)는
+          // 서버에도 반영한다 — mock 시드 행(pl-*)은 저장할 파일이 없으니
+          // 로컬 state만 바뀐다(새로고침하면 원래 시드 값으로 돌아감, 기존
+          // 동작 그대로 유지).
+          if (id.startsWith("tracked-")) {
+            const res = await fetch(`/api/tracked-topics?id=${encodeURIComponent(id)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patch),
+            });
+            const data = await res.json();
+            if (data.ok) {
+              setRows((prev) => prev.map((r) => (r.id === id ? (data.row as PromptLibraryRow) : r)));
+              return;
+            }
+          }
           setRows((prev) =>
             prev.map((r) =>
               r.id === id
                 ? { ...r, ...patch, lastModifiedAt: new Date().toISOString().slice(0, 10), lastModifiedBy: "나" }
                 : r
             )
-          )
-        }
+          );
+        }}
+        existingPrompts={rows.filter((r) => r.id !== editingRow?.id).map((r) => r.prompt)}
       />
-      <ImportPromptsModal open={importOpen} onClose={() => setImportOpen(false)} onImport={importCsv} />
+      <ImportPromptsModal open={importOpen} onClose={() => setImportOpen(false)} onImport={importCsv} existingPrompts={rows.map((r) => r.prompt)} />
       <ConfigureColumnsModal
         open={columnsOpen}
         onClose={() => setColumnsOpen(false)}

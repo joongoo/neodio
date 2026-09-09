@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { ContentVisibility, SitemapCrawlResult } from "@/lib/db/types";
+import { ContentRecoveryOpportunity, ContentVisibility, SitemapCrawlResult } from "@/lib/db/types";
 
 // Server-only (node:fs) — reads what scripts/crawl-sitemap.mjs actually
 // wrote to disk. Never import this from a "use client" component; see the
@@ -24,6 +24,88 @@ export async function getLatestSitemapCrawl(domain: string): Promise<SitemapCraw
     }
   }
   return latest;
+}
+
+// 배포 없이 "다시 크롤링"만 반복해서 전/후를 비교하려면 크롤 기록 전체가
+// 필요하다 — 매번 새 파일로 저장되므로(scripts/crawl-sitemap.mjs) 그냥 전부
+// 모아서 시간순 정렬하면 된다. 새 저장소를 따로 만들 필요가 없다.
+export async function getSitemapCrawlHistory(domain: string): Promise<SitemapCrawlResult[]> {
+  const dir = path.join(process.cwd(), CRAWL_DIR);
+  const filenames = await readdir(dir).catch(() => []);
+  const jsonFiles = filenames.filter((f) => f.endsWith(".json"));
+
+  const results: SitemapCrawlResult[] = [];
+  for (const filename of jsonFiles) {
+    try {
+      const raw = await readFile(path.join(dir, filename), "utf8");
+      const parsed = JSON.parse(raw) as SitemapCrawlResult;
+      if (parsed.domain === domain) results.push(parsed);
+    } catch {
+      // skip an unreadable/partial file rather than failing the whole page
+    }
+  }
+  return results.sort((a, b) => a.crawledAt.localeCompare(b.crawledAt));
+}
+
+// "콘텐츠 가시성 회복" 기회를 실 크롤 기록으로 채운다. 크롤이 1회뿐이면
+// 현재 값만, 2회 이상이면 최초(baseline) 대비 최신 크롤의 전/후 비교까지
+// 채운다 — 배포 없이 재크롤만 반복해서 얻는 비교라 새 인프라가 필요 없다.
+export function buildContentRecoveryFromCrawlHistory(history: SitemapCrawlResult[]): ContentRecoveryOpportunity | null {
+  if (history.length === 0) return null;
+  const latest = history[history.length - 1];
+  const baseline = history[0];
+
+  const successUrls = latest.urls.filter((u) => u.status === "success");
+  if (successUrls.length === 0) return null;
+
+  const average = (urls: typeof successUrls) =>
+    urls.length > 0 ? Math.round(urls.reduce((sum, u) => sum + u.contentVisibility, 0) / urls.length) : 0;
+  const latestAverage = average(successUrls);
+
+  const baselineByUrl = new Map(baseline.urls.map((u) => [u.url, u.contentVisibility]));
+
+  // 배포 없이 재크롤만으로 판단 — 콘텐츠 가시성이 임계치 이상이면 "수정
+  // 완료"로 간주한다. "수정 완료" 버튼을 누르면 그 URL만 다시 크롤링해서
+  // 이 값을 갱신하고, 임계치를 못 넘기면 자동으로 "현재 제안"에 남는다.
+  const OPTIMIZED_THRESHOLD = 70;
+  const urls: ContentRecoveryOpportunity["urls"] = successUrls
+    .map((u, i) => ({
+      id: `real-cr-${i}`,
+      url: u.url,
+      status: u.contentVisibility >= OPTIMIZED_THRESHOLD ? ("optimized" as const) : ("not_optimized" as const),
+      contentVisibility: u.contentVisibility,
+      priorityScore: Number(((100 - u.contentVisibility) / 10).toFixed(1)),
+      previousContentVisibility: history.length > 1 ? baselineByUrl.get(u.url) : undefined,
+    }))
+    .sort((a, b) => a.contentVisibility - b.contentVisibility);
+
+  const comparison =
+    history.length > 1
+      ? (() => {
+          const baselineSuccess = baseline.urls.filter((u) => u.status === "success");
+          const baselineAverage = average(baselineSuccess);
+          return {
+            baselineCrawledAt: baseline.crawledAt,
+            baselineAverageContentVisibility: baselineAverage,
+            latestCrawledAt: latest.crawledAt,
+            latestAverageContentVisibility: latestAverage,
+            improvementPercent: baselineAverage > 0 ? Math.round(((latestAverage - baselineAverage) / baselineAverage) * 100) : 0,
+          };
+        })()
+      : undefined;
+
+  return {
+    title: "콘텐츠 가시성 회복",
+    affectedUrls: urls.filter((u) => u.contentVisibility < 50).length,
+    expectedVisibilityMultiplier: latestAverage > 0 ? Number((100 / Math.max(latestAverage, 1)).toFixed(1)) : 0,
+    averageContentVisibility: latestAverage,
+    description:
+      "AI 에이전트는 접근 가능한 콘텐츠만 읽고 인용할 수 있습니다. 이 기회는 실제 사이트맵 크롤(raw HTML 대비 렌더링 비교)로 측정한 콘텐츠 가시성이 낮은 페이지를 찾아줍니다.",
+    optimizedCount: urls.filter((u) => u.status === "optimized").length,
+    totalCount: urls.length,
+    urls,
+    comparison,
+  };
 }
 
 // Turns a real crawl into the same shape ContentVisibilityCard already

@@ -1,6 +1,7 @@
 import { getGscToken } from "./gscTokenStore";
 import { refreshAccessToken } from "./googleOAuth";
 import { GscSearchPerformanceResult, GscTrendWeek, GscTopQueryRow, PromptStrategyTopicRow } from "@/lib/db/types";
+import { classifyGscQuery, gscOpportunityScore } from "./gscQueryClassifier";
 
 interface SearchAnalyticsRow {
   keys: string[];
@@ -122,21 +123,60 @@ export async function getRealGscCoverageGaps(
   });
 
   const trackedLower = trackedPrompts.map((p) => p.toLowerCase());
+  // 노출 수만으로 정렬하면 브랜드 검색어("네오다임"/"neodigm")가 항상 상위를
+  // 차지한다 — 이건 브랜드 인지도 모니터링 영역이지 GEO 기회가 아니다.
+  // Query 유형(브랜드/카테고리/업체 비교 등)별 가중치와 "노출 대비 클릭이
+  // 낮음" 신호를 함께 써서 실제 GEO 기회에 가까운 쿼리를 우선한다.
   const gaps = rows
     .filter((r) => r.impressions >= 5)
     .filter((r) => {
       const query = r.keys[0].toLowerCase();
       return !trackedLower.some((p) => p.includes(query) || query.includes(p));
     })
-    .sort((a, b) => b.impressions - a.impressions)
+    .sort((a, b) => {
+      const scoreA = gscOpportunityScore(a.impressions, a.ctr, classifyGscQuery(a.keys[0]));
+      const scoreB = gscOpportunityScore(b.impressions, b.ctr, classifyGscQuery(b.keys[0]));
+      return scoreB - scoreA;
+    })
     .slice(0, 5);
 
   return gaps.map((r, i) => ({
     id: `real-gsc-gap-${i}`,
+    groupId: "sug-gsc-real",
     topic: r.keys[0],
     market: "KR",
     source: "gsc" as const,
     gscImpressions: r.impressions,
     brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
   }));
+}
+
+export interface GscTopPage {
+  url: string;
+  clicks: number;
+  impressions: number;
+}
+
+// "Citation Attempt" 타겟 URL을 고를 때 쓰는 실제 상위 페이지 목록 —
+// 노출은 많은데 클릭이 적은 페이지가 "AI 답변에 인용될 잠재력은 있는데
+// 실제로는 잘 안 읽히는" 콘텐츠일 가능성이 높아 우선 후보가 된다.
+export async function getRealGscTopPages(brandId: string, limit = 10): Promise<GscTopPage[] | null> {
+  const token = await getGscToken(brandId);
+  if (!token) return null;
+
+  const { access_token: accessToken } = await refreshAccessToken(token.refreshToken);
+
+  const end = new Date();
+  end.setDate(end.getDate() - 3);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 27); // 4주치
+
+  const rows = await querySearchAnalytics(accessToken, token.property, {
+    startDate: isoDate(start),
+    endDate: isoDate(end),
+    dimensions: ["page"],
+    rowLimit: limit,
+  });
+
+  return rows.map((r) => ({ url: r.keys[0], clicks: r.clicks, impressions: r.impressions }));
 }
