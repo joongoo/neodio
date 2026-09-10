@@ -89,13 +89,22 @@ export function BrainstormWizardModal({
       return;
     }
 
+    // LLM에게 고유 id까지 만들게 하면 중복/누락 위험만 커진다 — 저장 시
+    // 여기서 직접 부여한다. 카드 인용 토픽의 groupId로도 쓰이므로 배치
+    // 시각+순번으로 매번 고유하게 만든다.
+    const batchId = Date.now();
+    const withIds = (parsed as { tag: string; title: string; summary: string; stat: string; topics: string[] }[]).map((card, i) => ({
+      id: `brainstorm-${batchId}-${i}`,
+      ...card,
+    }));
+
     setSaving(true);
     setError(null);
     try {
       const res = await fetch("/api/llm-bridge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope: "llm-brainstorm", key: "current", data: parsed }),
+        body: JSON.stringify({ scope: "llm-brainstorm", key: "current", data: withIds }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);

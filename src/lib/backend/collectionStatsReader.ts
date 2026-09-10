@@ -1047,8 +1047,19 @@ export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): 
 }
 
 // 위 실측 표를 LLM 프롬프트에 그대로 붙여넣을 텍스트로 포맷한다.
+// 수집이 쌓일수록 토픽 수가 늘어나 프롬프트가 무한정 길어질 수 있으므로,
+// "이야깃거리가 될 만한" 토픽(총 언급이 많거나 브랜드 간 격차가 큰 토픽)을
+// 우선해 상위 N개만 넣는다.
+const DIGEST_MAX_TOPICS = 40;
+
 export function formatTopicBrandMentionsDigest(rows: TopicBrandMentionRow[]): string {
-  return rows
+  const ranked = [...rows].sort((a, b) => {
+    const totalA = a.brandMentions.reduce((sum, bm) => sum + bm.mentions, 0);
+    const totalB = b.brandMentions.reduce((sum, bm) => sum + bm.mentions, 0);
+    return totalB - totalA;
+  });
+  return ranked
+    .slice(0, DIGEST_MAX_TOPICS)
     .map((r) => {
       const brandsText = r.brandMentions.map((bm) => `${bm.brand} ${bm.mentions}회${bm.isOwnBrand ? "(자사)" : ""}`).join(", ");
       return `- "${r.topic}" (마켓 ${r.market}): ${brandsText}`;
