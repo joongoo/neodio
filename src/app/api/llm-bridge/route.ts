@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setLlmBridgeEntry } from "@/lib/backend/llmBridgeStore";
+import { setLlmBridgeEntries, setLlmBridgeEntry } from "@/lib/backend/llmBridgeStore";
+
+const PROMPT_ARRAY_SCOPES = new Set(["gsc-keyword-prompts", "citation-test-prompts"]);
+
+function isValidPromptArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item?.prompt === "string" && item.prompt.trim());
+}
 
 // LLM API 연결 전 우회 저장소용 공용 엔드포인트. scope별로 사람이 붙여넣은
 // 값이 기대하는 모양이 다르므로 여기서 최소한의 형태 검증만 한다 —
@@ -17,6 +23,27 @@ const GUIDE_SCOPES = new Set([
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const scope = typeof body?.scope === "string" ? body.scope : "";
+
+  // 최상단 "한 번에 등록" 마법사 — 여러 key(검색어/URL)를 한 번의 LLM
+  // 답변으로 동시에 채운다. scope당 값 형태 검증은 개별 등록과 동일하게 한다.
+  if (body?.bulk === true) {
+    const entries = body?.entries;
+    if (!entries || typeof entries !== "object" || Array.isArray(entries) || Object.keys(entries).length === 0) {
+      return NextResponse.json({ error: "entries가 필요합니다." }, { status: 400 });
+    }
+    if (!PROMPT_ARRAY_SCOPES.has(scope)) {
+      return NextResponse.json({ error: "이 scope는 일괄 등록을 지원하지 않습니다." }, { status: 400 });
+    }
+    if (!Object.values(entries).every(isValidPromptArray)) {
+      return NextResponse.json(
+        { error: "각 항목은 prompt 필드를 가진 항목들의 배열이어야 합니다. LLM 응답 형식을 확인해주세요." },
+        { status: 400 }
+      );
+    }
+    await setLlmBridgeEntries(scope, entries as Record<string, unknown>);
+    return NextResponse.json({ ok: true });
+  }
+
   const key = typeof body?.key === "string" ? body.key.trim() : "";
   const data = body?.data;
 
@@ -43,8 +70,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (scope === "gsc-keyword-prompts") {
-    if (!Array.isArray(data) || data.length === 0 || data.some((item) => typeof item?.prompt !== "string" || !item.prompt.trim())) {
+  if (PROMPT_ARRAY_SCOPES.has(scope)) {
+    if (!isValidPromptArray(data)) {
       return NextResponse.json({ error: "prompt 필드를 가진 항목들의 배열이어야 합니다. LLM 응답 형식을 확인해주세요." }, { status: 400 });
     }
     await setLlmBridgeEntry(scope, key, data);

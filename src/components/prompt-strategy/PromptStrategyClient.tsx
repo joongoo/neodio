@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Tabs } from "@/components/ui/Tabs";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
+import { Search, Users, Quote } from "lucide-react";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
-import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { LlmBulkBridgeModal } from "@/components/ui/LlmBulkBridgeModal";
 import { BrainstormWizardModal } from "@/components/prompt-strategy/BrainstormWizardModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
 
@@ -25,12 +26,18 @@ export function PromptStrategyClient({
   initial,
   preTrackedIds = [],
   brainstormDigest = "",
+  gscKeywordTargets = [],
+  citationTargets = [],
 }: {
   initial: PromptStrategyData;
   /** 이미 프롬프트 라이브러리에 있는 프롬프트 id — 서버가 매 로드마다 계산해서 넘긴다. */
   preTrackedIds?: string[];
   /** 브레인스토밍 마법사 1단계 프롬프트에 넣을 실측 토픽×브랜드 언급 표. */
   brainstormDigest?: string;
+  /** "구글서치콘솔 분석" 마법사가 한 번에 등록할 실측 키워드 공백 목록. */
+  gscKeywordTargets?: { keyword: string; impressions: number }[];
+  /** "인용 테스트 분석" 마법사가 한 번에 등록할 실측 저클릭 페이지 목록. */
+  citationTargets?: { url: string; impressions: number; clicks: number }[];
 }) {
   const router = useRouter();
   const topics = initial.topics;
@@ -52,7 +59,8 @@ export function PromptStrategyClient({
   // 상단 요약 카드는 전부 추적된 항목까지 계속 보여주면 "다음에 뭘 해야
   // 하지"라는 신호가 희석되니 기본적으로 숨기고, 토글로 다시 볼 수 있게 한다.
   const [showFullyTrackedCards, setShowFullyTrackedCards] = useState(false);
-  const [craftingKeyword, setCraftingKeyword] = useState<PromptStrategySuggestion | null>(null);
+  const [gscWizardOpen, setGscWizardOpen] = useState(false);
+  const [citationWizardOpen, setCitationWizardOpen] = useState(false);
 
   // 상단 배너를 누르면 "전체" 탭으로 전환한 뒤 해당 그룹으로 스크롤 —
   // 필터가 바뀌어 DOM이 다시 그려진 다음에 스크롤해야 하므로 필터 변경과
@@ -317,14 +325,40 @@ export function PromptStrategyClient({
         description="Google Search Console(자사 실측 노출)과 매주 LLM에게 현재 데이터를 기반으로 요청하는 인사이트 브레인스토밍, 두 소스에서 프롬프트를 추천합니다."
       />
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        <button
+          type="button"
+          onClick={() => setGscWizardOpen(true)}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+        >
+          <div className="grid size-10 place-items-center rounded-lg bg-blue-50 text-blue-600">
+            <Search size={20} />
+          </div>
+          <span className="text-[13px] font-bold text-neutral-900">구글서치콘솔 분석</span>
+        </button>
         <button
           type="button"
           onClick={() => setBrainstormOpen(true)}
-          className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
         >
-          LLM 브레인스토밍 등록
+          <div className="grid size-10 place-items-center rounded-lg bg-violet-50 text-violet-600">
+            <Users size={20} />
+          </div>
+          <span className="text-[13px] font-bold text-neutral-900">가상 사용자 질문 분석</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setCitationWizardOpen(true)}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+        >
+          <div className="grid size-10 place-items-center rounded-lg bg-amber-50 text-amber-600">
+            <Quote size={20} />
+          </div>
+          <span className="text-[13px] font-bold text-neutral-900">인용 테스트 분석</span>
+        </button>
+      </div>
+
+      <div className="flex items-center justify-end gap-3">
         <span className="text-xs font-medium text-neutral-500">모두 추적된 카드 표시</span>
         <button
           type="button"
@@ -441,16 +475,10 @@ export function PromptStrategyClient({
               <div className="mt-4">
                 {isEmpty ? (
                   <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-neutral-200 px-5 py-6 text-center text-xs text-neutral-400">
-                    <p>아직 이 키워드로 만든 프롬프트가 없습니다.</p>
-                    {s.gscKeyword && (
-                      <button
-                        type="button"
-                        onClick={() => setCraftingKeyword(s)}
-                        className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-                      >
-                        DB 등록
-                      </button>
-                    )}
+                    <p>
+                      아직 이 키워드로 만든 프롬프트가 없습니다. 위 "
+                      {s.source === "citation_attempt" ? "인용 테스트 분석" : "구글서치콘솔 분석"}" 버튼으로 한 번에 등록하세요.
+                    </p>
                   </div>
                 ) : (
                   <DataTable columns={buildColumns(s.id, groupTopics)} rows={groupTopics} getRowId={(r) => r.id} />
@@ -479,34 +507,65 @@ export function PromptStrategyClient({
         }
       />
 
-      {craftingKeyword && craftingKeyword.gscKeyword && (
-        <LlmBridgeModal
-          open={craftingKeyword !== null}
-          onClose={() => setCraftingKeyword(null)}
-          title={`"${craftingKeyword.gscKeyword}" 프롬프트 등록`}
-          instructions="LLM API 연동 전까지, 이 검색어로 실제 사람이 AI 챗봇에게 물어볼 법한 자연어 질문을 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
-          scope="gsc-keyword-prompts"
-          itemKey={craftingKeyword.gscKeyword}
-          promptText={`Google Search Console에서 우리 사이트가 실제로 검색 노출을 받고 있는 검색어는 "${craftingKeyword.gscKeyword}"입니다.\n이 검색어로 검색하는 사람이 ChatGPT 같은 AI 챗봇에게 실제로 물어볼 법한 자연어 질문을 5개 만들어주세요. 브랜드명을 직접 언급하지 않는 카테고리/업체 추천형 질문 위주로 작성해주세요.\n\n반드시 아래 JSON 배열 형식으로만 답변하세요:\n[{"prompt": "질문 문장", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "이 질문을 제안하는 근거"}]`}
-          parse={(raw) => {
-            try {
-              const parsed = JSON.parse(raw);
-              if (!Array.isArray(parsed) || parsed.length === 0) {
-                return { error: "JSON 배열 형식이 아닙니다. 형식을 확인해주세요." };
-              }
-              for (const item of parsed) {
-                if (typeof item?.prompt !== "string" || !item.prompt.trim()) {
-                  return { error: "각 항목에 prompt 필드가 필요합니다." };
-                }
-              }
-              return { data: parsed };
-            } catch {
-              return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
+      <LlmBulkBridgeModal
+        open={gscWizardOpen}
+        onClose={() => setGscWizardOpen(false)}
+        title="구글서치콘솔 분석 — 프롬프트 일괄 등록"
+        instructions="LLM API 연동 전까지, 아래 실측 검색어 전체에 대해 한 번에 자연어 질문을 만들어달라고 LLM에 물어본 뒤 답변을 붙여넣어 등록합니다."
+        scope="gsc-keyword-prompts"
+        promptText={
+          gscKeywordTargets.length === 0
+            ? "아직 GSC 커버리지 공백 검색어가 없습니다."
+            : `Google Search Console에서 우리 사이트가 실제로 검색 노출을 받고 있지만 아직 프롬프트로 추적하지 않은 검색어들입니다:\n\n${gscKeywordTargets.map((t) => `- "${t.keyword}" (노출 ${t.impressions.toLocaleString("ko-KR")}회)`).join("\n")}\n\n각 검색어마다, 그 검색어로 검색하는 사람이 ChatGPT 같은 AI 챗봇에게 실제로 물어볼 법한 자연어 질문을 5개씩 만들어주세요. 브랜드명을 직접 언급하지 않는 카테고리/업체 추천형 질문 위주로 작성해주세요.\n\n반드시 아래 JSON 형식으로만, 검색어 전체에 대해 한 번에 답변하세요:\n{\n  "검색어1": [{"prompt": "질문 문장", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "근거"}],\n  "검색어2": [...]\n}`
+        }
+        parse={(raw) => {
+          try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+              return { error: "검색어를 key로 갖는 JSON 객체 형식이어야 합니다." };
             }
-          }}
-          onSaved={() => router.refresh()}
-        />
-      )}
+            for (const value of Object.values(parsed)) {
+              if (!Array.isArray(value) || value.length === 0 || value.some((item: unknown) => typeof (item as { prompt?: unknown })?.prompt !== "string")) {
+                return { error: "각 검색어 값은 prompt 필드를 가진 항목들의 배열이어야 합니다." };
+              }
+            }
+            return { entries: parsed };
+          } catch {
+            return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
+          }
+        }}
+        onSaved={() => router.refresh()}
+      />
+
+      <LlmBulkBridgeModal
+        open={citationWizardOpen}
+        onClose={() => setCitationWizardOpen(false)}
+        title="인용 테스트 분석 — 프롬프트 일괄 등록"
+        instructions="LLM API 연동 전까지, 아래 실측 저클릭 페이지 전체에 대해 한 번에 인용 테스트 질문을 만들어달라고 LLM에 물어본 뒤 답변을 붙여넣어 등록합니다."
+        scope="citation-test-prompts"
+        promptText={
+          citationTargets.length === 0
+            ? "아직 인용 테스트 대상 페이지가 없습니다."
+            : `다음은 Google Search Console 실측으로 노출은 많은데 클릭이 적은 우리 페이지들입니다:\n\n${citationTargets.map((t) => `- ${t.url} (노출 ${t.impressions.toLocaleString("ko-KR")}회, 클릭 ${t.clicks.toLocaleString("ko-KR")}회)`).join("\n")}\n\n각 URL마다, 그 페이지가 다룰 법한 주제를 URL로 추측해서 AI 챗봇(ChatGPT 등)이 답변의 출처로 이 페이지를 인용할 만한 자연어 질문을 3개씩 만들어주세요.\n\n반드시 아래 JSON 형식으로만, URL 전체에 대해 한 번에 답변하세요:\n{\n  "URL1": [{"prompt": "질문 문장", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "근거"}],\n  "URL2": [...]\n}`
+        }
+        parse={(raw) => {
+          try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.keys(parsed).length === 0) {
+              return { error: "URL을 key로 갖는 JSON 객체 형식이어야 합니다." };
+            }
+            for (const value of Object.values(parsed)) {
+              if (!Array.isArray(value) || value.length === 0 || value.some((item: unknown) => typeof (item as { prompt?: unknown })?.prompt !== "string")) {
+                return { error: "각 URL 값은 prompt 필드를 가진 항목들의 배열이어야 합니다." };
+              }
+            }
+            return { entries: parsed };
+          } catch {
+            return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
+          }
+        }}
+        onSaved={() => router.refresh()}
+      />
 
       <BrainstormWizardModal
         open={brainstormOpen}

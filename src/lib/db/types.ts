@@ -912,6 +912,10 @@ export interface PromptStrategySuggestion {
   /** searchAnalytics.query를 ["query","page"] 결합 차원으로 조회해 찾은,
    *  이 검색어로 이미 노출되고 있는 우리 페이지 — 있으면 타겟 URL 추천 근거로 쓴다. */
   gscTopPage?: string;
+  /** source === "citation_attempt"인 실측 그룹에서만 채워지는 타겟 URL(노출은
+   *  많은데 클릭이 적은 우리 페이지) — 이 URL로 LLM에게 인용 테스트용
+   *  자연어 질문을 만들어달라고 물어볼 때 쓴다. */
+  citationTestUrl?: string;
 }
 
 export interface StrategyBrandMention {

@@ -210,7 +210,9 @@ export interface GscTopPage {
 
 // "Citation Attempt" 타겟 URL을 고를 때 쓰는 실제 상위 페이지 목록 —
 // 노출은 많은데 클릭이 적은 페이지가 "AI 답변에 인용될 잠재력은 있는데
-// 실제로는 잘 안 읽히는" 콘텐츠일 가능성이 높아 우선 후보가 된다.
+// 실제로는 잘 안 읽히는" 콘텐츠일 가능성이 높아 우선 후보가 된다. GSC API
+// 자체는 기본적으로 클릭 수 기준으로 정렬해서 주므로, 넉넉히 받아온 뒤
+// 우리가 직접 "노출 대비 클릭이 낮은" 순으로 다시 정렬한다.
 export async function getRealGscTopPages(brandId: string, limit = 10): Promise<GscTopPage[] | null> {
   const token = await getGscToken(brandId);
   if (!token) return null;
@@ -226,10 +228,15 @@ export async function getRealGscTopPages(brandId: string, limit = 10): Promise<G
     startDate: isoDate(start),
     endDate: isoDate(end),
     dimensions: ["page"],
-    rowLimit: limit,
+    rowLimit: 200,
   });
 
-  return rows.map((r) => ({ url: r.keys[0], clicks: r.clicks, impressions: r.impressions }));
+  const MIN_IMPRESSIONS = 20;
+  return rows
+    .filter((r) => r.impressions >= MIN_IMPRESSIONS)
+    .sort((a, b) => a.ctr - b.ctr)
+    .slice(0, limit)
+    .map((r) => ({ url: r.keys[0], clicks: r.clicks, impressions: r.impressions }));
 }
 
 // URL Inspection API — 우리 자체 크롤 콘텐츠 가시성 점수와 별개로, 구글이

@@ -1,6 +1,6 @@
 import { PromptStrategyClient } from "@/components/prompt-strategy/PromptStrategyClient";
 import { DEFAULT_ORG_ID, db, GscCraftedPrompt, LlmBrainstormCard, PromptStrategySuggestion, PromptStrategyTopicRow } from "@/lib/db";
-import { getRealGscCoverageGaps } from "@/lib/backend/gscSearchAnalyticsReader";
+import { getRealGscCoverageGaps, getRealGscTopPages } from "@/lib/backend/gscSearchAnalyticsReader";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
@@ -14,16 +14,27 @@ export const dynamic = "force-dynamic";
 
 export default async function PromptStrategyPage() {
   const demo = await isDemoMode();
-  const [data, promptLibraryRowsRaw, trackedRows, deletedIds, gscKeywordCraftedPrompts, brainstormCards, topicBrandMentions] =
-    await Promise.all([
-      db.promptStrategy.get(DEFAULT_ORG_ID),
-      db.promptLibrary.list(DEFAULT_ORG_ID),
-      listTrackedTopics(),
-      getDeletedLibraryRowIds(),
-      getLlmBridgeScope<GscCraftedPrompt[]>("gsc-keyword-prompts"),
-      getLlmBridgeEntry<LlmBrainstormCard[]>("llm-brainstorm", "current"),
-      demo ? Promise.resolve(null) : getRealTopicBrandMentions().catch(() => null),
-    ]);
+  const [
+    data,
+    promptLibraryRowsRaw,
+    trackedRows,
+    deletedIds,
+    gscKeywordCraftedPrompts,
+    brainstormCards,
+    topicBrandMentions,
+    citationTestPrompts,
+    topPages,
+  ] = await Promise.all([
+    db.promptStrategy.get(DEFAULT_ORG_ID),
+    db.promptLibrary.list(DEFAULT_ORG_ID),
+    listTrackedTopics(),
+    getDeletedLibraryRowIds(),
+    getLlmBridgeScope<GscCraftedPrompt[]>("gsc-keyword-prompts"),
+    getLlmBridgeEntry<LlmBrainstormCard[]>("llm-brainstorm", "current"),
+    demo ? Promise.resolve(null) : getRealTopicBrandMentions().catch(() => null),
+    getLlmBridgeScope<GscCraftedPrompt[]>("citation-test-prompts"),
+    demo ? Promise.resolve(null) : getRealGscTopPages(DEFAULT_BRAND_ID, 5).catch(() => null),
+  ]);
   if (!data) return null;
 
   // 브레인스토밍 마법사 1단계 프롬프트에 그대로 붙여넣을 실측 표.
@@ -74,6 +85,35 @@ export default async function PromptStrategyPage() {
     gscTopPage: gap.gscTopPage,
   }));
 
+  // "인용 테스트" — GSC 실측(노출은 많은데 클릭이 적은 우리 페이지)으로
+  // 타겟 URL을 고르고, 그 URL로 LLM에게 인용 테스트 질문을 만들어달라고
+  // 물어본 결과(citation-test-prompts)를 하위 행으로 채운다. GSC 키워드
+  // 그룹과 완전히 같은 패턴 — 타겟 선정은 100% 실측, 질문 문장만 LLM 우회.
+  const citationGroups = (topPages ?? []).map((page, i) => ({ ...page, id: `citation-${i}` }));
+  const citationTopics: PromptStrategyTopicRow[] = citationGroups.flatMap((page) =>
+    (citationTestPrompts[page.url] ?? []).map((crafted, j) => ({
+      id: `${page.id}-prompt-${j}`,
+      groupId: page.id,
+      topic: crafted.prompt,
+      market: crafted.market ?? "KR",
+      source: "citation_attempt" as const,
+      gscImpressions: null,
+      brandMentions: crafted.brandMentions ?? [],
+      intent: crafted.intent,
+      branded: crafted.branded,
+      reasoning: crafted.reasoning,
+    }))
+  );
+  const citationSuggestions = citationGroups.map((page) => ({
+    id: page.id,
+    tag: "coverage_gap" as const,
+    source: "citation_attempt" as const,
+    title: `"${page.url}" 콘텐츠 인용 테스트`,
+    summary: `GSC 실측: 노출 ${page.impressions.toLocaleString("ko-KR")}회 대비 클릭 ${page.clicks.toLocaleString("ko-KR")}회로 노출 대비 클릭이 낮은 페이지입니다. AI 답변에서 출처로 인용되는지 확인하는 프롬프트입니다.`,
+    stat: `GSC 노출 ${page.impressions.toLocaleString("ko-KR")}회 · 클릭 ${page.clicks.toLocaleString("ko-KR")}회`,
+    citationTestUrl: page.url,
+  }));
+
   // LLM 브레인스토밍 마법사로 실제로 등록된 카드가 있으면, mock
   // llm_brainstorm 카드 전체를 그걸로 교체한다. brandMentions는 LLM
   // 응답이 아니라 항상 실측 표(topicBrandMentions)에서 다시 조회한다 —
@@ -107,9 +147,15 @@ export default async function PromptStrategyPage() {
   const suggestionsWithBrainstorm = brainstormCards
     ? [...suggestions.filter((s) => s.source !== "llm_brainstorm"), ...brainstormSuggestions]
     : suggestions;
-  const topics = brainstormCards
+  const suggestionsWithCitation = topPages
+    ? [...suggestionsWithBrainstorm.filter((s) => s.source !== "citation_attempt"), ...citationSuggestions]
+    : suggestionsWithBrainstorm;
+  const topicsAfterBrainstorm = brainstormCards
     ? [...topicsAfterGsc.filter((t) => t.source !== "llm_brainstorm"), ...brainstormTopics]
     : topicsAfterGsc;
+  const topics = topPages
+    ? [...topicsAfterBrainstorm.filter((t) => t.source !== "citation_attempt"), ...citationTopics]
+    : topicsAfterBrainstorm;
 
   // 이미 프롬프트 라이브러리에 있는 프롬프트는 "추적됨" 상태로 미리
   // 표시한다 — 프롬프트 문장이 완전히 같으면 같은 프롬프트로 간주(대소문자/
@@ -121,11 +167,18 @@ export default async function PromptStrategyPage() {
   const trackedPromptSet = new Set(trackedPrompts.map((p) => p.trim().toLowerCase()));
   const preTrackedIds = topics.filter((t) => trackedPromptSet.has(t.topic.trim().toLowerCase())).map((t) => t.id);
 
+  // 최상단 "구글서치콘솔 분석"/"인용 테스트 분석" 마법사가 한 번에 등록할
+  // 실측 그룹 목록 — 프롬프트에 그대로 나열한다.
+  const gscKeywordTargets = gscKeywordGroups.map((gap) => ({ keyword: gap.topic, impressions: gap.gscImpressions ?? 0 }));
+  const citationTargets = citationGroups.map((page) => ({ url: page.url, impressions: page.impressions, clicks: page.clicks }));
+
   return (
     <PromptStrategyClient
-      initial={{ suggestions: suggestionsWithBrainstorm, topics }}
+      initial={{ suggestions: suggestionsWithCitation, topics }}
       preTrackedIds={preTrackedIds}
       brainstormDigest={brainstormDigest}
+      gscKeywordTargets={gscKeywordTargets}
+      citationTargets={citationTargets}
     />
   );
 }

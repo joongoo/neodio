@@ -36,3 +36,13 @@ export async function setLlmBridgeEntry<T>(scope: string, key: string, data: T):
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
 }
+
+// 최상단 "한 번에 등록" 마법사용 — 여러 key(검색어/URL 등)를 한 번의
+// LLM 답변으로 동시에 채울 때, 파일을 한 번만 읽고 한 번만 쓴다.
+export async function setLlmBridgeEntries<T>(scope: string, newEntries: Record<string, T>): Promise<void> {
+  const entries = await readScope<T>(scope);
+  Object.assign(entries, newEntries);
+  const filePath = path.join(process.cwd(), DIR, `${scope}.json`);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+}
