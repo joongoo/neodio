@@ -1,10 +1,11 @@
 import { PromptStrategyClient } from "@/components/prompt-strategy/PromptStrategyClient";
-import { DEFAULT_ORG_ID, db, GscCraftedPrompt, PromptStrategyTopicRow } from "@/lib/db";
+import { DEFAULT_ORG_ID, db, GscCraftedPrompt, LlmBrainstormCard, PromptStrategySuggestion, PromptStrategyTopicRow } from "@/lib/db";
 import { getRealGscCoverageGaps } from "@/lib/backend/gscSearchAnalyticsReader";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
-import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
+import { getLlmBridgeEntry, getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
+import { formatTopicBrandMentionsDigest, getRealTopicBrandMentions } from "@/lib/backend/collectionStatsReader";
 
 const DEFAULT_BRAND_ID = "brand-neodigm";
 
@@ -13,14 +14,20 @@ export const dynamic = "force-dynamic";
 
 export default async function PromptStrategyPage() {
   const demo = await isDemoMode();
-  const [data, promptLibraryRowsRaw, trackedRows, deletedIds, gscKeywordCraftedPrompts] = await Promise.all([
-    db.promptStrategy.get(DEFAULT_ORG_ID),
-    db.promptLibrary.list(DEFAULT_ORG_ID),
-    listTrackedTopics(),
-    getDeletedLibraryRowIds(),
-    getLlmBridgeScope<GscCraftedPrompt[]>("gsc-keyword-prompts"),
-  ]);
+  const [data, promptLibraryRowsRaw, trackedRows, deletedIds, gscKeywordCraftedPrompts, brainstormCards, topicBrandMentions] =
+    await Promise.all([
+      db.promptStrategy.get(DEFAULT_ORG_ID),
+      db.promptLibrary.list(DEFAULT_ORG_ID),
+      listTrackedTopics(),
+      getDeletedLibraryRowIds(),
+      getLlmBridgeScope<GscCraftedPrompt[]>("gsc-keyword-prompts"),
+      getLlmBridgeEntry<LlmBrainstormCard[]>("llm-brainstorm", "current"),
+      demo ? Promise.resolve(null) : getRealTopicBrandMentions().catch(() => null),
+    ]);
   if (!data) return null;
+
+  // 브레인스토밍 마법사 1단계 프롬프트에 그대로 붙여넣을 실측 표.
+  const brainstormDigest = formatTopicBrandMentionsDigest(topicBrandMentions ?? []);
 
   // mock 시드 라이브러리 행이 삭제됐으면(라이브러리에서 지운 뒤 "삭제된 id
   // 목록"에 기록됨) 여기서도 걸러내야 한다 — 안 그러면 라이브러리에서
@@ -54,7 +61,7 @@ export default async function PromptStrategyPage() {
     }))
   );
 
-  const topics = realGaps ? [...craftedTopics, ...data.topics.filter((t) => t.source !== "gsc")] : data.topics;
+  const topicsAfterGsc = realGaps ? [...craftedTopics, ...data.topics.filter((t) => t.source !== "gsc")] : data.topics;
 
   const keywordSuggestions = gscKeywordGroups.map((gap) => ({
     id: gap.id,
@@ -67,7 +74,42 @@ export default async function PromptStrategyPage() {
     gscTopPage: gap.gscTopPage,
   }));
 
+  // LLM 브레인스토밍 마법사로 실제로 등록된 카드가 있으면, mock
+  // llm_brainstorm 카드 전체를 그걸로 교체한다. brandMentions는 LLM
+  // 응답이 아니라 항상 실측 표(topicBrandMentions)에서 다시 조회한다 —
+  // LLM이 지어낸 숫자를 절대 신뢰하지 않는다. 아직 한 번도 수집되지 않은
+  // 토픽이면 "미수집"으로 남는다(brandMentions 빈 배열).
+  const topicBrandMentionsByTopic = new Map((topicBrandMentions ?? []).map((r) => [r.topic, r]));
+  const brainstormSuggestions: PromptStrategySuggestion[] = (brainstormCards ?? []).map((card) => ({
+    id: card.id,
+    tag: card.tag,
+    source: "llm_brainstorm" as const,
+    title: card.title,
+    summary: card.summary,
+    stat: card.stat,
+  }));
+  const brainstormTopics: PromptStrategyTopicRow[] = (brainstormCards ?? []).flatMap((card) =>
+    card.topics.map((topic, i) => {
+      const real = topicBrandMentionsByTopic.get(topic);
+      return {
+        id: `${card.id}-topic-${i}`,
+        groupId: card.id,
+        topic,
+        market: real?.market ?? "KR",
+        source: "llm_brainstorm" as const,
+        gscImpressions: null,
+        brandMentions: real?.brandMentions ?? [],
+      };
+    })
+  );
+
   const suggestions = realGaps ? [...keywordSuggestions, ...data.suggestions.filter((s) => s.source !== "gsc")] : data.suggestions;
+  const suggestionsWithBrainstorm = brainstormCards
+    ? [...suggestions.filter((s) => s.source !== "llm_brainstorm"), ...brainstormSuggestions]
+    : suggestions;
+  const topics = brainstormCards
+    ? [...topicsAfterGsc.filter((t) => t.source !== "llm_brainstorm"), ...brainstormTopics]
+    : topicsAfterGsc;
 
   // 이미 프롬프트 라이브러리에 있는 프롬프트는 "추적됨" 상태로 미리
   // 표시한다 — 프롬프트 문장이 완전히 같으면 같은 프롬프트로 간주(대소문자/
@@ -79,5 +121,11 @@ export default async function PromptStrategyPage() {
   const trackedPromptSet = new Set(trackedPrompts.map((p) => p.trim().toLowerCase()));
   const preTrackedIds = topics.filter((t) => trackedPromptSet.has(t.topic.trim().toLowerCase())).map((t) => t.id);
 
-  return <PromptStrategyClient initial={{ suggestions, topics }} preTrackedIds={preTrackedIds} />;
+  return (
+    <PromptStrategyClient
+      initial={{ suggestions: suggestionsWithBrainstorm, topics }}
+      preTrackedIds={preTrackedIds}
+      brainstormDigest={brainstormDigest}
+    />
+  );
 }

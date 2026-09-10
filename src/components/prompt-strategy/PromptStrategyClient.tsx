@@ -7,6 +7,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { BrainstormWizardModal } from "@/components/prompt-strategy/BrainstormWizardModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
 
 const SOURCE_LABEL: Record<StrategySource, string> = {
@@ -23,14 +24,18 @@ const TAG_LABEL: Record<PromptStrategySuggestion["tag"], { text: string; classNa
 export function PromptStrategyClient({
   initial,
   preTrackedIds = [],
+  brainstormDigest = "",
 }: {
   initial: PromptStrategyData;
   /** 이미 프롬프트 라이브러리에 있는 프롬프트 id — 서버가 매 로드마다 계산해서 넘긴다. */
   preTrackedIds?: string[];
+  /** 브레인스토밍 마법사 1단계 프롬프트에 넣을 실측 토픽×브랜드 언급 표. */
+  brainstormDigest?: string;
 }) {
   const router = useRouter();
   const topics = initial.topics;
   const [trackedIds, setTrackedIds] = useState<Set<string>>(() => new Set(preTrackedIds));
+  const [brainstormOpen, setBrainstormOpen] = useState(false);
   // 그룹 전체가 추적돼도 배너를 자동으로 숨기지 않는다 — "전체 추적 중"
   // 상태 자체가 유용한 정보라 계속 보여주고, 숨기고 싶으면 "닫기"를 직접
   // 누르게 한다.
@@ -312,7 +317,14 @@ export function PromptStrategyClient({
         description="Google Search Console(자사 실측 노출)과 매주 LLM에게 현재 데이터를 기반으로 요청하는 인사이트 브레인스토밍, 두 소스에서 프롬프트를 추천합니다."
       />
 
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-3">
+        <button
+          type="button"
+          onClick={() => setBrainstormOpen(true)}
+          className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+        >
+          LLM 브레인스토밍 등록
+        </button>
         <span className="text-xs font-medium text-neutral-500">모두 추적된 카드 표시</span>
         <button
           type="button"
@@ -495,6 +507,13 @@ export function PromptStrategyClient({
           onSaved={() => router.refresh()}
         />
       )}
+
+      <BrainstormWizardModal
+        open={brainstormOpen}
+        onClose={() => setBrainstormOpen(false)}
+        digest={brainstormDigest || "아직 수집된 데이터가 없습니다."}
+        onSaved={() => router.refresh()}
+      />
 
       {trackSuccessCount !== null && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(92vw,420px)] -translate-x-1/2 items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg">

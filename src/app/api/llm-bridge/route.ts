@@ -51,5 +51,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (scope === "llm-brainstorm") {
+    const VALID_TAGS = new Set(["coverage_gap", "strength"]);
+    const isValidCard = (item: unknown) => {
+      const c = item as Record<string, unknown>;
+      return (
+        typeof c?.tag === "string" &&
+        VALID_TAGS.has(c.tag) &&
+        typeof c?.title === "string" &&
+        c.title.trim().length > 0 &&
+        typeof c?.summary === "string" &&
+        c.summary.trim().length > 0 &&
+        typeof c?.stat === "string" &&
+        Array.isArray(c?.topics) &&
+        c.topics.length > 0 &&
+        c.topics.every((t: unknown) => typeof t === "string" && t.trim().length > 0)
+      );
+    };
+    if (!Array.isArray(data) || data.length === 0 || !data.every(isValidCard)) {
+      return NextResponse.json(
+        { error: "각 카드는 tag(coverage_gap|strength)/title/summary/stat/topics(문자열 배열)를 모두 가져야 합니다." },
+        { status: 400 }
+      );
+    }
+    await setLlmBridgeEntry(scope, key, data);
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: "알 수 없는 scope입니다." }, { status: 400 });
 }

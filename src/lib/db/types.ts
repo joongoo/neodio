@@ -920,6 +920,21 @@ export interface StrategyBrandMention {
   isOwnBrand: boolean;
 }
 
+// LLM 브레인스토밍 마법사(3단계 DB 등록 모달)의 최종 저장 스키마 — LLM은
+// 서술(tag/title/summary/stat)과 "어떤 실측 토픽을 근거로 들지"만 정하고,
+// brandMentions 같은 숫자는 절대 LLM 응답에서 가져오지 않는다. 저장 시
+// topics에 적힌 문자열로 실측 데이터(getRealTopicBrandMentions)를 다시
+// 조회해서 채운다 — 이미 수집된 토픽이 아니면 "미수집" 상태로 남는다.
+export interface LlmBrainstormCard {
+  id: string;
+  tag: "coverage_gap" | "strength";
+  title: string;
+  summary: string;
+  stat: string;
+  /** LLM이 이 카드의 근거로 인용한 실측 토픽 문자열 목록. */
+  topics: string[];
+}
+
 export interface PromptStrategyTopicRow {
   id: string;
   topic: string;

@@ -19,6 +19,7 @@ import {
   SentimentWeek,
   ShareOfVoiceRow,
   StatCard,
+  StrategyBrandMention,
   ThirdPartyUrlRow,
   TopicPromptRow,
   TopicRow,
@@ -983,4 +984,74 @@ export async function getRealSourceOpportunities(
   if (!sources) return null;
   const opportunities = sources.filter((s) => s.myBrandMentions === 0);
   return opportunities.length > 0 ? opportunities : null;
+}
+
+// ---- 프롬프트 전략 "LLM 브레인스토밍" 마법사용 실측 데이터 ----
+// 토픽별로 브랜드마다 실제 언급 수를 집계한다 — LLM이 브랜드 언급 수 같은
+// 숫자를 지어내지 않도록, 브레인스토밍 마법사 1단계 프롬프트에 이 실측
+// 표를 그대로 넣어준다. 최종 저장 시에도 LLM이 인용한 토픽 문자열로 이
+// 표를 다시 조회해 brandMentions를 채운다(LLM 응답의 숫자는 쓰지 않음).
+export interface TopicBrandMentionRow {
+  topic: string;
+  market: string;
+  brandMentions: StrategyBrandMention[];
+}
+
+export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): Promise<TopicBrandMentionRow[] | null> {
+  const runFiles = await listCollectedRuns();
+  if (runFiles.length === 0) return null;
+
+  const promptRuns = runFiles
+    .map((f) => f.promptRun)
+    .filter((run) => run.status === "success")
+    .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
+    .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
+    .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  if (promptRuns.length === 0) return null;
+
+  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const runsById = new Map(promptRuns.map((r) => [r.id, r]));
+  const brandNameById = new Map(seedBrands.map((b) => [b.id, b.name]));
+
+  const runIdsByQuery = new Map<string, string[]>();
+  for (const run of promptRuns) {
+    const query = run.rawMetadata.query?.trim();
+    if (!query) continue;
+    const list = runIdsByQuery.get(query) ?? [];
+    list.push(run.id);
+    runIdsByQuery.set(query, list);
+  }
+  if (runIdsByQuery.size === 0) return null;
+
+  const mentionsByRun = new Map<string, Set<string>>();
+  for (const m of processed.mentions) {
+    if (!m.isPresent) continue;
+    const set = mentionsByRun.get(m.promptRunId) ?? new Set<string>();
+    set.add(m.brandId);
+    mentionsByRun.set(m.promptRunId, set);
+  }
+
+  return [...runIdsByQuery.entries()].map(([topic, runIds]) => {
+    const market = seedMarkets.find((m) => m.id === runsById.get(runIds[0])?.marketId)?.label ?? "전체";
+    const countByBrand = new Map<string, number>();
+    for (const runId of runIds) {
+      for (const brandId of mentionsByRun.get(runId) ?? []) {
+        countByBrand.set(brandId, (countByBrand.get(brandId) ?? 0) + 1);
+      }
+    }
+    const brandMentions: StrategyBrandMention[] = seedBrands
+      .map((b) => ({ brand: brandNameById.get(b.id) ?? b.id, mentions: countByBrand.get(b.id) ?? 0, isOwnBrand: b.id === OWN_BRAND_ID }))
+      .filter((bm) => bm.mentions > 0 || bm.isOwnBrand);
+    return { topic, market, brandMentions };
+  });
+}
+
+// 위 실측 표를 LLM 프롬프트에 그대로 붙여넣을 텍스트로 포맷한다.
+export function formatTopicBrandMentionsDigest(rows: TopicBrandMentionRow[]): string {
+  return rows
+    .map((r) => {
+      const brandsText = r.brandMentions.map((bm) => `${bm.brand} ${bm.mentions}회${bm.isOwnBrand ? "(자사)" : ""}`).join(", ");
+      return `- "${r.topic}" (마켓 ${r.market}): ${brandsText}`;
+    })
+    .join("\n");
 }
