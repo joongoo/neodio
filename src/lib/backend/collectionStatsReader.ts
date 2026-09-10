@@ -913,9 +913,19 @@ export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<
 // 가시성 개요의 "인용된 소스"/"소스 기회" — 제3자(자사 제외) 도메인별
 // 집계. myBrandMentions === 0인 도메인만 따로 뽑으면 "소스 기회"(경쟁
 // 토픽에서 자주 인용되지만 아직 우리 브랜드는 안 잡히는 소스)가 된다.
-export async function getRealCitedSources(filters: RealDataFilters = {}): Promise<CitedSourceRow[] | null> {
+//
+// 브랜드 설정에서 등록한 "획득 콘텐츠 소스"(earnedContentSources)는 여기
+// trackedDomains로 합쳐진다 — 그래야 등록/삭제가 실제로 이 표에 반영된다.
+// 아직 한 번도 인용되지 않은 도메인이라도(인용 수 0으로) 목록에 나타나야
+// "등록했더니 여기서 추적되기 시작했다"는 게 실제로 보인다. 이전엔
+// earnedContentSources가 브랜드 상세 화면에만 표시되고 이 집계와 완전히
+// 분리돼 있어 추가/삭제해도 아무 데도 반영되지 않았다.
+export async function getRealCitedSources(
+  filters: RealDataFilters = {},
+  extras: { trackedDomains?: string[] } = {}
+): Promise<CitedSourceRow[] | null> {
+  const trackedDomains = extras.trackedDomains ?? [];
   const runFiles = await listCollectedRuns();
-  if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
     .map((f) => f.promptRun)
@@ -923,13 +933,17 @@ export async function getRealCitedSources(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
     .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
-  if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
-  const thirdPartyCitations = processed.citations.filter((c) => !c.isOwnDomain);
-  if (thirdPartyCitations.length === 0) return null;
+  const processed =
+    promptRuns.length > 0
+      ? processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands })
+      : null;
+  const thirdPartyCitations = processed?.citations.filter((c) => !c.isOwnDomain) ?? [];
+  if (thirdPartyCitations.length === 0 && trackedDomains.length === 0) return null;
 
-  const ownMentionRuns = new Set(processed.mentions.filter((m) => m.brandId === OWN_BRAND_ID && m.isPresent).map((m) => m.promptRunId));
+  const ownMentionRuns = new Set(
+    processed?.mentions.filter((m) => m.brandId === OWN_BRAND_ID && m.isPresent).map((m) => m.promptRunId) ?? []
+  );
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
   const marketOf = (runId: string) => seedMarkets.find((m) => m.id === runsById.get(runId)?.marketId)?.code ?? "GLOBAL";
 
@@ -942,12 +956,18 @@ export async function getRealCitedSources(filters: RealDataFilters = {}): Promis
     agg.markets.set(market, (agg.markets.get(market) ?? 0) + 1);
     byDomain.set(c.domain, agg);
   }
+  // 아직 인용이 없는 등록 도메인도 0건짜리 행으로 채워 넣는다.
+  for (const domain of trackedDomains) {
+    if (!byDomain.has(domain)) {
+      byDomain.set(domain, { pageUrls: new Set<string>(), promptRunIds: new Set<string>(), markets: new Map<string, number>() });
+    }
+  }
 
   return [...byDomain.entries()]
     .map(([domain, agg], i) => ({
       id: `real-source-${i}`,
       domain,
-      market: [...agg.markets.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      market: [...agg.markets.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "GLOBAL",
       myBrandMentions: [...agg.promptRunIds].filter((id) => ownMentionRuns.has(id)).length,
       citedPages: agg.pageUrls.size,
       prompts: agg.promptRunIds.size,
@@ -955,8 +975,11 @@ export async function getRealCitedSources(filters: RealDataFilters = {}): Promis
     .sort((a, b) => b.prompts - a.prompts);
 }
 
-export async function getRealSourceOpportunities(filters: RealDataFilters = {}): Promise<CitedSourceRow[] | null> {
-  const sources = await getRealCitedSources(filters);
+export async function getRealSourceOpportunities(
+  filters: RealDataFilters = {},
+  extras: { trackedDomains?: string[] } = {}
+): Promise<CitedSourceRow[] | null> {
+  const sources = await getRealCitedSources(filters, extras);
   if (!sources) return null;
   const opportunities = sources.filter((s) => s.myBrandMentions === 0);
   return opportunities.length > 0 ? opportunities : null;

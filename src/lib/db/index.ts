@@ -9,6 +9,7 @@ import { promptResearchByTopic } from "./data/promptResearch";
 import { searchTrendByKeyword } from "./data/searchTrend";
 import { promptStrategyByOrg } from "./data/promptStrategy";
 import { urlInspectorByOrg } from "./data/urlInspector";
+import { getHelpArticle, helpArticles, roadmapGroups } from "./data/help";
 import {
   checklistByOrg,
   contentVisibilityByOrg,
@@ -282,6 +283,11 @@ export const db = {
     trackedItems: async () => seedTrackedItems,
     agenticTrafficLogs: async () => seedAgenticTrafficLogs,
     visibilityScores: async () => seedVisibilityScores,
+  },
+  help: {
+    roadmap: async () => roadmapGroups,
+    articles: async () => helpArticles,
+    getArticle: async (slug: string) => getHelpArticle(slug),
   },
 };
 

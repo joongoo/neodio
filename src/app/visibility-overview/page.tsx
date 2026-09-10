@@ -15,8 +15,10 @@ import { sourceOpportunityRecommendations } from "@/lib/db/data/sourceOpportunit
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
+import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
+const OWN_BRAND_ID = "brand-neodigm";
 
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다 —
 // 개요/수집 로그 페이지와 동일한 이유.
@@ -34,7 +36,7 @@ export default async function VisibilityOverviewPage({
     : "4w";
   const demo = await isDemoMode();
 
-  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls] =
+  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand] =
     await Promise.all([
       db.organizations.get(orgId),
       db.visibilityOverview.getStatCards(orgId, range),
@@ -45,11 +47,15 @@ export default async function VisibilityOverviewPage({
       listTrackedTopics(),
       getDeletedLibraryRowIds(),
       getTopicOpportunityTargets(),
+      getManagedBrand(orgId, OWN_BRAND_ID),
     ]);
   // 토픽 기회에 "이미 프롬프트 라이브러리에 추가됐는지" 배지를 달기 위한
   // 실제 라이브러리 프롬프트 문장 전체 — 프롬프트 전략 페이지와 동일한
   // 삭제된 시드 필터링을 적용한다.
   const libraryPrompts = [...promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id)), ...trackedRows].map((r) => r.prompt);
+  // 브랜드 상세에서 등록한 "획득 콘텐츠 소스"는 아직 인용이 없어도
+  // "인용된 소스"/"소스 기회" 표에 나타나야 등록/삭제가 실제로 반영된다.
+  const trackedDomains = ownBrand?.earnedContentSources ?? [];
 
   const [realStats, realMentionsByModel, realMentionsByMarket, realTopicRows, realTopBrands, realCitedPages, realCitedSources, realSourceOpportunities] = demo
     ? [null, null, null, null, null, null, null, null]
@@ -60,8 +66,8 @@ export default async function VisibilityOverviewPage({
         getRealTopicRows({}, { libraryPrompts, targetUrls }),
         getRealTopBrands(),
         getRealCitedPages(),
-        getRealCitedSources(),
-        getRealSourceOpportunities(),
+        getRealCitedSources({}, { trackedDomains }),
+        getRealSourceOpportunities({}, { trackedDomains }),
       ]);
 
   // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.

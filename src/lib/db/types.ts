@@ -847,3 +847,39 @@ export interface GscCraftedPrompt {
   branded?: boolean;
   reasoning?: string;
 }
+
+// ---- 도움말 및 학습 페이지 ----
+
+// 데모/쇼케이스에서 "이건 지금 안 되지만, X를 연결하면 이렇게 확장됩니다"를
+// 설명하기 위한 내부용 로드맵 — 실제 기능 화면에는 이런 상태 설명을 절대
+// 노출하지 않는다는 원칙과 별개로, 이 페이지 자체가 그 설명을 위한 곳이라
+// 여기서는 명시적으로 다룬다.
+export interface RoadmapItem {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface RoadmapGroup {
+  id: string;
+  /** 이 그룹의 기능들이 열리는 조건, 예: "LLM API 연동 시". */
+  trigger: string;
+  description: string;
+  items: RoadmapItem[];
+}
+
+// 실 유저가 소비하는 도움말 콘텐츠 — 카드 목록에서 고르면 상세 설명으로
+// 이동한다.
+export interface HelpArticle {
+  slug: string;
+  title: string;
+  category: string;
+  /** 카드 목록에 보이는 한 줄 요약. */
+  summary: string;
+  /** 상세 페이지 본문 — 문단 단위 배열. */
+  content: string[];
+  /** 상세 페이지에 함께 보여줄 핵심 포인트 목록(옵션). */
+  highlights?: string[];
+  relatedHref?: string;
+  relatedLabel?: string;
+}

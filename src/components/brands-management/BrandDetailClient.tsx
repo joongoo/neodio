@@ -106,11 +106,25 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
     persist(patch);
   }
 
+  // "기본 정보" 카드의 입력 필드만 patch로 보낸다 — 이전엔 draft 전체를
+  // 보내서, 목록형 필드(별칭/기타 브랜드/URL/소셜/획득 콘텐츠 소스)를
+  // applyListChange로 방금 바꾼 직후 "변경사항 저장"을 누르면 그 시점의
+  // draft 스냅샷이 낡아 있을 경우 방금 바꾼 값을 되돌려버리는 문제가 있었다
+  // (예: 획득 콘텐츠 소스를 추가/삭제해도 트래킹에 반영되지 않던 원인).
+  // 목록형 필드는 applyListChange가 그 자리에서 바로 저장하므로 여기서
+  // 다시 보낼 필요가 없다.
   async function save() {
     setSaving(true);
     try {
-      await persist(draft);
-      setBrand(draft);
+      const patch: Partial<ManagedBrand> = {
+        name: draft.name,
+        sitemapUrl: draft.sitemapUrl,
+        description: draft.description,
+        industry: draft.industry,
+        markets: draft.markets,
+      };
+      await persist(patch);
+      setBrand((b) => ({ ...b, ...patch }));
       setDirty(false);
       showToast("변경사항을 저장했습니다.");
     } finally {

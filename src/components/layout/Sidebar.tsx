@@ -83,7 +83,7 @@ const NAV: NavGroup[] = [
     icon: Settings,
     children: [{ label: "브랜드 설정", href: "/brands-management" }],
   },
-  { label: "도움말 및 학습", href: "#", icon: HelpCircle },
+  { label: "도움말 및 학습", href: "/help", icon: HelpCircle },
 ];
 
 export function Sidebar() {
