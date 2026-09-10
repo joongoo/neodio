@@ -11,11 +11,12 @@ import {
   getRealTopicRows,
 } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
-import { sourceOpportunityRecommendations } from "@/lib/db/data/sourceOpportunityRecommendations";
+import { SourceOpportunityRecommendation } from "@/lib/db/data/sourceOpportunityRecommendations";
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 const OWN_BRAND_ID = "brand-neodigm";
@@ -36,7 +37,7 @@ export default async function VisibilityOverviewPage({
     : "4w";
   const demo = await isDemoMode();
 
-  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand] =
+  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand, sourceRecommendations] =
     await Promise.all([
       db.organizations.get(orgId),
       db.visibilityOverview.getStatCards(orgId, range),
@@ -48,6 +49,7 @@ export default async function VisibilityOverviewPage({
       getDeletedLibraryRowIds(),
       getTopicOpportunityTargets(),
       getManagedBrand(orgId, OWN_BRAND_ID),
+      getLlmBridgeScope<SourceOpportunityRecommendation>("source-recommendation"),
     ]);
   // 토픽 기회에 "이미 프롬프트 라이브러리에 추가됐는지" 배지를 달기 위한
   // 실제 라이브러리 프롬프트 문장 전체 — 프롬프트 전략 페이지와 동일한
@@ -97,14 +99,16 @@ export default async function VisibilityOverviewPage({
   }
   if (realTopBrands) topicsByCategory["latest-top-brands"] = realTopBrands;
   if (realCitedPages) topicsByCategory["cited-pages"] = realCitedPages;
-  if (realCitedSources) topicsByCategory["cited-sources"] = realCitedSources;
-  // 도메인별 LLM 추천(sourceOpportunityRecommendations.ts)이 채워져 있으면
-  // 실측 집계 행에 recommendation/reasoning을 덧붙인다 — LLM API 연동 전까지
-  // 사람이 채운 값을 그대로 붙이는 다리 역할.
+  // 도메인별 LLM 추천(DB 등록 모달로 채운 .tmp/llm-bridge/source-recommendation.json)이
+  // 있으면 실측 집계 행에 recommendation/reasoning을 덧붙인다 — LLM API 연동
+  // 전까지 사람이 채운 값을 그대로 붙이는 다리 역할.
+  if (realCitedSources) {
+    topicsByCategory["cited-sources"] = realCitedSources.map((row) => ({ ...row, ...sourceRecommendations[row.domain] }));
+  }
   if (realSourceOpportunities) {
     topicsByCategory["source-opportunities"] = realSourceOpportunities.map((row) => ({
       ...row,
-      ...sourceOpportunityRecommendations[row.domain],
+      ...sourceRecommendations[row.domain],
     }));
   }
 

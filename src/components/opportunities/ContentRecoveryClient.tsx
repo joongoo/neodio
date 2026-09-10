@@ -5,12 +5,18 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, FileCheck2, Loader2, RefreshCw, Settings, Sparkles } from "lucide-react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
+import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { GoogleIndexBadge } from "@/components/ui/GoogleIndexBadge";
+import { PageSpeedBadge } from "@/components/ui/PageSpeedBadge";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { ContentRecoveryOpportunity, ContentRecoveryUrl } from "@/lib/db";
 
 const OPTIONAL_COLUMNS: ColumnOption[] = [
   { key: "contentVisibility", label: "가시성 %" },
   { key: "priorityScore", label: "우선순위 점수" },
+  { key: "googleIndex", label: "구글 인덱싱" },
+  { key: "pageSpeed", label: "페이지 속도" },
 ];
 
 const TABS = ["현재 제안", "수정 완료"] as const;
@@ -22,6 +28,8 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
   // id별로 관리한다.
   const [recheckJobs, setRecheckJobs] = useState<Record<string, { jobId: string; stage: string; done: boolean; error: string | null }>>({});
   const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const [guideTarget, setGuideTarget] = useState<ContentRecoveryUrl | null>(null);
+  const [viewingGuide, setViewingGuide] = useState<ContentRecoveryUrl | null>(null);
 
   useEffect(() => {
     return () => {
@@ -72,7 +80,16 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
   }
 
   const columns: DataTableColumn<ContentRecoveryUrl>[] = [
-    { key: "url", label: "전체 도메인 URL", render: (r) => <span className="text-blue-600">{r.url}</span> },
+    {
+      key: "url",
+      label: "전체 도메인 URL",
+      width: "w-[280px]",
+      render: (r) => (
+        <span title={r.url} className="block min-w-0 truncate text-blue-600">
+          {r.url}
+        </span>
+      ),
+    },
     {
       key: "contentVisibility",
       label: "가시성 %",
@@ -90,13 +107,45 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
     },
     { key: "priorityScore", label: "우선순위 점수", width: "w-[110px]", render: (r) => r.priorityScore.toFixed(1) },
     {
+      key: "googleIndex",
+      label: "구글 인덱싱",
+      width: "w-[140px]",
+      render: (r) => <GoogleIndexBadge url={r.url} status={r.googleIndex} />,
+    },
+    {
+      key: "pageSpeed",
+      label: "페이지 속도",
+      width: "w-[120px]",
+      render: (r) => <PageSpeedBadge url={r.url} result={r.pageSpeed} />,
+    },
+    {
       key: "action",
       label: "액션",
-      width: "w-[160px]",
+      width: "w-[280px]",
       render: (r) => {
         const job = recheckJobs[r.url];
+        const guideButton = (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (r.guide) setViewingGuide(r);
+              else setGuideTarget(r);
+            }}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-bold cursor-pointer ${
+              r.guide ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+            }`}
+          >
+            <Sparkles size={12} />
+            {r.guide ? "가이드 보기" : "가이드 등록"}
+          </button>
+        );
         if (r.status === "optimized") {
-          return <span className="text-[11px] font-bold text-emerald-600">기준 통과 (70% 이상)</span>;
+          return (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-emerald-600">기준 통과 (70% 이상)</span>
+              {guideButton}
+            </div>
+          );
         }
         if (job && !job.done) {
           return (
@@ -106,16 +155,19 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
           );
         }
         return (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              recheckUrl(r.url);
-            }}
-            className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-          >
-            <RefreshCw size={12} />
-            수정 완료 확인
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                recheckUrl(r.url);
+              }}
+              className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+            >
+              <RefreshCw size={12} />
+              수정 완료 확인
+            </button>
+            {guideButton}
+          </div>
         );
       },
     },
@@ -187,10 +239,10 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-neutral-400" />
           <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 수정 가이드</h2>
-          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-bold text-neutral-600">준비 중</span>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          LLM API 연동 후, 가시성이 낮은 각 페이지를 어떻게 수정하면 좋을지(콘텐츠 단순화, 요약 추가, FAQ 보강 등) 구체적인 가이드를 자동으로 제안할 예정입니다.
+          아직 LLM API가 연동되지 않아, 아래 표에서 URL별 "가이드 등록" 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가
+          연동되면 이 버튼을 누르지 않아도 자동으로 채워집니다.
         </p>
       </section>
 
@@ -234,6 +286,46 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
         </div>
         <ConfigureColumnsModal open={cols.open} onClose={() => cols.setOpen(false)} columns={OPTIONAL_COLUMNS} visible={cols.visible} onApply={cols.setVisible} />
       </section>
+
+      {guideTarget && (
+        <LlmBridgeModal
+          open={guideTarget !== null}
+          onClose={() => setGuideTarget(null)}
+          title="LLM 기반 수정 가이드 등록"
+          instructions="LLM API 연동 전까지, 이 URL을 어떻게 수정하면 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          scope="content-guide-content-recovery"
+          itemKey={guideTarget.url}
+          promptText={`다음 URL의 콘텐츠 가시성(raw HTML 대비 렌더링 후 텍스트 비율)이 낮습니다: ${guideTarget.url}\n현재 콘텐츠 가시성: ${guideTarget.contentVisibility}%\n\n${data.description}\n\n이 페이지를 실제로 어떻게 수정하면(콘텐츠 단순화, 서버사이드 렌더링 보강, 요약 추가 등) 콘텐츠 가시성을 높일 수 있을지 구체적인 수정 가이드를 문단으로 작성해주세요.`}
+          parse={(raw) => (raw.trim() ? { data: { guide: raw } } : { error: "내용을 입력해주세요." })}
+          onSaved={() => router.refresh()}
+        />
+      )}
+
+      {viewingGuide && (
+        <Modal open={viewingGuide !== null} onClose={() => setViewingGuide(null)}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-neutral-900">LLM 기반 수정 가이드</h2>
+            <ModalCloseButton onClose={() => setViewingGuide(null)} />
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">{viewingGuide.url}</p>
+          <p className="mt-4 whitespace-pre-wrap rounded-lg bg-neutral-50 p-4 text-[13px] leading-relaxed text-neutral-700">
+            {viewingGuide.guide}
+          </p>
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                const target = viewingGuide;
+                setViewingGuide(null);
+                setGuideTarget(target);
+              }}
+              className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+            >
+              다시 등록
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

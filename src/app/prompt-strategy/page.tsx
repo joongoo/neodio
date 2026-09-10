@@ -1,10 +1,10 @@
 import { PromptStrategyClient } from "@/components/prompt-strategy/PromptStrategyClient";
-import { DEFAULT_ORG_ID, db, PromptStrategyTopicRow } from "@/lib/db";
+import { DEFAULT_ORG_ID, db, GscCraftedPrompt, PromptStrategyTopicRow } from "@/lib/db";
 import { getRealGscCoverageGaps } from "@/lib/backend/gscSearchAnalyticsReader";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { isDemoMode } from "@/lib/backend/demoMode";
-import { gscKeywordCraftedPrompts } from "@/lib/db/data/gscKeywordPrompts";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
+import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 
 const DEFAULT_BRAND_ID = "brand-neodigm";
 
@@ -13,11 +13,12 @@ export const dynamic = "force-dynamic";
 
 export default async function PromptStrategyPage() {
   const demo = await isDemoMode();
-  const [data, promptLibraryRowsRaw, trackedRows, deletedIds] = await Promise.all([
+  const [data, promptLibraryRowsRaw, trackedRows, deletedIds, gscKeywordCraftedPrompts] = await Promise.all([
     db.promptStrategy.get(DEFAULT_ORG_ID),
     db.promptLibrary.list(DEFAULT_ORG_ID),
     listTrackedTopics(),
     getDeletedLibraryRowIds(),
+    getLlmBridgeScope<GscCraftedPrompt[]>("gsc-keyword-prompts"),
   ]);
   if (!data) return null;
 
@@ -62,6 +63,8 @@ export default async function PromptStrategyPage() {
     title: `"${gap.topic}" 키워드 기반 프롬프트`,
     summary: `GSC에서 실제로 노출은 발생하지만(노출 ${gap.gscImpressions?.toLocaleString("ko-KR")}회) 우리 프롬프트 목록에 없는 검색어입니다. 이 검색어를 바탕으로 LLM에 물어봐서 얻은 프롬프트를 추적하세요.`,
     stat: `GSC 노출 ${gap.gscImpressions?.toLocaleString("ko-KR")}회`,
+    gscKeyword: gap.topic,
+    gscTopPage: gap.gscTopPage,
   }));
 
   const suggestions = realGaps ? [...keywordSuggestions, ...data.suggestions.filter((s) => s.source !== "gsc")] : data.suggestions;

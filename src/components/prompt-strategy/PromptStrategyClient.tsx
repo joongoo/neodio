@@ -6,6 +6,7 @@ import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Tabs } from "@/components/ui/Tabs";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
+import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
 
 const SOURCE_LABEL: Record<StrategySource, string> = {
@@ -46,6 +47,7 @@ export function PromptStrategyClient({
   // 상단 요약 카드는 전부 추적된 항목까지 계속 보여주면 "다음에 뭘 해야
   // 하지"라는 신호가 희석되니 기본적으로 숨기고, 토글로 다시 볼 수 있게 한다.
   const [showFullyTrackedCards, setShowFullyTrackedCards] = useState(false);
+  const [craftingKeyword, setCraftingKeyword] = useState<PromptStrategySuggestion | null>(null);
 
   // 상단 배너를 누르면 "전체" 탭으로 전환한 뒤 해당 그룹으로 스크롤 —
   // 필터가 바뀌어 DOM이 다시 그려진 다음에 스크롤해야 하므로 필터 변경과
@@ -396,6 +398,11 @@ export function PromptStrategyClient({
                   </div>
                   <h3 className="text-sm font-bold text-neutral-900">{s.title}</h3>
                   <p className="max-w-3xl text-xs text-neutral-500">{s.summary}</p>
+                  {s.gscTopPage && (
+                    <p className="max-w-3xl text-[11px] text-blue-700">
+                      이미 이 검색어로 노출되고 있는 페이지: <span className="font-medium">{s.gscTopPage}</span>
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
@@ -421,8 +428,17 @@ export function PromptStrategyClient({
               </div>
               <div className="mt-4">
                 {isEmpty ? (
-                  <div className="rounded-lg border border-dashed border-neutral-200 px-5 py-6 text-center text-xs text-neutral-400">
-                    아직 이 키워드로 만든 프롬프트가 없습니다.
+                  <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-neutral-200 px-5 py-6 text-center text-xs text-neutral-400">
+                    <p>아직 이 키워드로 만든 프롬프트가 없습니다.</p>
+                    {s.gscKeyword && (
+                      <button
+                        type="button"
+                        onClick={() => setCraftingKeyword(s)}
+                        className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+                      >
+                        DB 등록
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <DataTable columns={buildColumns(s.id, groupTopics)} rows={groupTopics} getRowId={(r) => r.id} />
@@ -450,6 +466,35 @@ export function PromptStrategyClient({
           bulkGroupTopics && handleTrackAll(bulkGroupTopics, category, bulkGroupTopics[0]?.groupId)
         }
       />
+
+      {craftingKeyword && craftingKeyword.gscKeyword && (
+        <LlmBridgeModal
+          open={craftingKeyword !== null}
+          onClose={() => setCraftingKeyword(null)}
+          title={`"${craftingKeyword.gscKeyword}" 프롬프트 등록`}
+          instructions="LLM API 연동 전까지, 이 검색어로 실제 사람이 AI 챗봇에게 물어볼 법한 자연어 질문을 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          scope="gsc-keyword-prompts"
+          itemKey={craftingKeyword.gscKeyword}
+          promptText={`Google Search Console에서 우리 사이트가 실제로 검색 노출을 받고 있는 검색어는 "${craftingKeyword.gscKeyword}"입니다.\n이 검색어로 검색하는 사람이 ChatGPT 같은 AI 챗봇에게 실제로 물어볼 법한 자연어 질문을 5개 만들어주세요. 브랜드명을 직접 언급하지 않는 카테고리/업체 추천형 질문 위주로 작성해주세요.\n\n반드시 아래 JSON 배열 형식으로만 답변하세요:\n[{"prompt": "질문 문장", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "이 질문을 제안하는 근거"}]`}
+          parse={(raw) => {
+            try {
+              const parsed = JSON.parse(raw);
+              if (!Array.isArray(parsed) || parsed.length === 0) {
+                return { error: "JSON 배열 형식이 아닙니다. 형식을 확인해주세요." };
+              }
+              for (const item of parsed) {
+                if (typeof item?.prompt !== "string" || !item.prompt.trim()) {
+                  return { error: "각 항목에 prompt 필드가 필요합니다." };
+                }
+              }
+              return { data: parsed };
+            } catch {
+              return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
+            }
+          }}
+          onSaved={() => router.refresh()}
+        />
+      )}
 
       {trackSuccessCount !== null && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(92vw,420px)] -translate-x-1/2 items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg">

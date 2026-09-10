@@ -5,10 +5,18 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, FileCheck2, Loader2, RefreshCw, Settings, Sparkles, XCircle } from "lucide-react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
+import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { GoogleIndexBadge } from "@/components/ui/GoogleIndexBadge";
+import { PageSpeedBadge } from "@/components/ui/PageSpeedBadge";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
-import { ContentAuditOpportunity, ContentAuditUrl } from "@/lib/db";
+import { ContentAuditOpportunity, ContentAuditUrl, GscSearchAppearanceRow } from "@/lib/db";
 
-const OPTIONAL_COLUMNS: ColumnOption[] = [{ key: "priorityScore", label: "우선순위 점수" }];
+const OPTIONAL_COLUMNS: ColumnOption[] = [
+  { key: "priorityScore", label: "우선순위 점수" },
+  { key: "googleIndex", label: "구글 인덱싱" },
+  { key: "pageSpeed", label: "페이지 속도" },
+];
 
 const TABS = ["현재 제안", "수정 완료", "제외됨"] as const;
 
@@ -20,6 +28,7 @@ export function ContentAuditClient({
   data,
   domain,
   backHref = "/opportunities",
+  searchAppearance,
 }: {
   data: ContentAuditOpportunity;
   /** 최초 크롤 때 저장된 것과 정확히 같은 domain 문자열이어야 한다 — URL에서
@@ -27,6 +36,10 @@ export function ContentAuditClient({
    *  잡혀서" 전/후 비교에 안 들어가는 문제가 생긴다. */
   domain: string;
   backHref?: string;
+  /** FAQ/목차 기회에서만 넘어오는 구글 리치 결과 실적(searchAppearance 차원) —
+   *  이 기회를 실행한 뒤 실제로 리치 결과 노출이 생겼는지 확인하는 근거.
+   *  (docs/gsc-additional-signals.md §3-③) */
+  searchAppearance?: GscSearchAppearanceRow[] | null;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
@@ -35,6 +48,8 @@ export function ContentAuditClient({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkJob, setBulkJob] = useState<{ jobId: string; done: boolean; error: string | null } | null>(null);
   const bulkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [guideTarget, setGuideTarget] = useState<ContentAuditUrl | null>(null);
+  const [viewingGuide, setViewingGuide] = useState<ContentAuditUrl | null>(null);
 
   useEffect(() => {
     return () => {
@@ -175,7 +190,16 @@ export function ContentAuditClient({
 
   const columns: DataTableColumn<ContentAuditUrl>[] = [
     selectColumn,
-    { key: "url", label: "전체 도메인 URL", render: (r) => <span className="text-blue-600">{r.url}</span> },
+    {
+      key: "url",
+      label: "전체 도메인 URL",
+      width: "w-[280px]",
+      render: (r) => (
+        <span title={r.url} className="block min-w-0 truncate text-blue-600">
+          {r.url}
+        </span>
+      ),
+    },
     {
       key: "score",
       label: data.metricLabel,
@@ -199,26 +223,60 @@ export function ContentAuditClient({
     },
     { key: "priorityScore", label: "우선순위 점수", width: "w-[110px]", render: (r) => r.priorityScore.toFixed(1) },
     {
+      key: "googleIndex",
+      label: "구글 인덱싱",
+      width: "w-[140px]",
+      render: (r) => <GoogleIndexBadge url={r.url} status={r.googleIndex} />,
+    },
+    {
+      key: "pageSpeed",
+      label: "페이지 속도",
+      width: "w-[120px]",
+      render: (r) => <PageSpeedBadge url={r.url} result={r.pageSpeed} />,
+    },
+    {
       key: "action",
       label: "액션",
-      width: "w-[230px]",
+      width: "w-[330px]",
       render: (r) => {
         const job = recheckJobs[r.url];
+        const guideButton = (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (r.guide) setViewingGuide(r);
+              else setGuideTarget(r);
+            }}
+            className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-bold cursor-pointer ${
+              r.guide ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+            }`}
+          >
+            <Sparkles size={12} />
+            {r.guide ? "가이드 보기" : "가이드 등록"}
+          </button>
+        );
         if (r.status === "excluded") {
           return (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setExcluded(r.url, false);
-              }}
-              className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-            >
-              다시 포함
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExcluded(r.url, false);
+                }}
+                className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+              >
+                다시 포함
+              </button>
+            </div>
           );
         }
         if (r.status === "optimized") {
-          return <span className="text-[11px] font-bold text-emerald-600">기준 통과</span>;
+          return (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-emerald-600">기준 통과</span>
+              {guideButton}
+            </div>
+          );
         }
         if (job && !job.done) {
           return (
@@ -249,6 +307,7 @@ export function ContentAuditClient({
               <XCircle size={12} />
               제외
             </button>
+            {guideButton}
           </div>
         );
       },
@@ -309,13 +368,34 @@ export function ContentAuditClient({
         </section>
       )}
 
+      {searchAppearance && searchAppearance.length > 0 && (
+        <section className="rounded-xl border border-neutral-200 bg-white px-6 py-5">
+          <h2 className="text-[17px] font-bold text-neutral-900">구글 검색 결과 노출 유형</h2>
+          <p className="mt-1 text-xs text-neutral-500">
+            최근 4주 Google Search Console 실측입니다. 이 기회를 실행해 리치 결과(FAQ, 사이트링크 등)로 노출되기 시작했는지
+            확인하는 근거로 쓰세요.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {searchAppearance.map((row) => (
+              <div key={row.appearance} className="rounded-lg bg-neutral-50 p-3">
+                <p className="text-[11px] text-neutral-500">{row.appearance.replace(/_/g, " ")}</p>
+                <p className="mt-1 text-lg font-bold text-neutral-900">{row.impressions.toLocaleString("ko-KR")}</p>
+                <p className="text-[11px] text-neutral-400">노출 · 클릭 {row.clicks.toLocaleString("ko-KR")}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-5">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-neutral-400" />
           <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 수정 가이드</h2>
-          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-bold text-neutral-600">준비 중</span>
         </div>
-        <p className="mt-2 text-xs text-neutral-500">LLM API 연동 후, 각 페이지를 어떻게 수정하면 좋을지 구체적인 가이드를 자동으로 제안할 예정입니다.</p>
+        <p className="mt-2 text-xs text-neutral-500">
+          아직 LLM API가 연동되지 않아, 아래 표에서 URL별 "가이드 등록" 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가
+          연동되면 이 버튼을 누르지 않아도 자동으로 채워집니다.
+        </p>
       </section>
 
       <section className="rounded-xl bg-blue-50/60 px-6 py-5">
@@ -378,6 +458,46 @@ export function ContentAuditClient({
         </div>
         <ConfigureColumnsModal open={cols.open} onClose={() => cols.setOpen(false)} columns={OPTIONAL_COLUMNS} visible={cols.visible} onApply={cols.setVisible} />
       </section>
+
+      {guideTarget && (
+        <LlmBridgeModal
+          open={guideTarget !== null}
+          onClose={() => setGuideTarget(null)}
+          title="LLM 기반 수정 가이드 등록"
+          instructions="LLM API 연동 전까지, 이 URL을 어떻게 수정하면 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          scope={`content-guide-${data.metricKey}`}
+          itemKey={guideTarget.url}
+          promptText={`다음 URL의 "${data.metricLabel}"이(가) 기준(${data.unit === "pt" ? "60pt 이상" : "50% 이상"})에 못 미칩니다: ${guideTarget.url}\n현재 점수: ${guideTarget.score}${data.unit}\n\n${data.description}\n\n이 페이지를 실제로 어떻게 수정하면 이 지표를 개선할 수 있을지, 구체적인 수정 가이드를 문단으로 작성해주세요.`}
+          parse={(raw) => (raw.trim() ? { data: { guide: raw } } : { error: "내용을 입력해주세요." })}
+          onSaved={() => router.refresh()}
+        />
+      )}
+
+      {viewingGuide && (
+        <Modal open={viewingGuide !== null} onClose={() => setViewingGuide(null)}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-neutral-900">LLM 기반 수정 가이드</h2>
+            <ModalCloseButton onClose={() => setViewingGuide(null)} />
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">{viewingGuide.url}</p>
+          <p className="mt-4 whitespace-pre-wrap rounded-lg bg-neutral-50 p-4 text-[13px] leading-relaxed text-neutral-700">
+            {viewingGuide.guide}
+          </p>
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                const target = viewingGuide;
+                setViewingGuide(null);
+                setGuideTarget(target);
+              }}
+              className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+            >
+              다시 등록
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

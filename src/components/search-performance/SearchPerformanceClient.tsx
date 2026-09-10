@@ -101,6 +101,46 @@ export function SearchPerformanceClient({
               getRowId={(r) => r.id}
             />
           </Card>
+
+          {((performance.devices?.length ?? 0) > 0 || (performance.countries?.length ?? 0) > 0) && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {performance.devices && performance.devices.length > 0 && (
+                <Card className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-neutral-900">기기별 검색 성과</p>
+                    <p className="mt-0.5 text-xs text-neutral-500">콘텐츠를 요약형/긴 글 중 어디에 우선 투자할지 참고하세요.</p>
+                  </div>
+                  <DataTable
+                    columns={[
+                      { key: "device", label: "기기", render: (r) => r.device },
+                      { key: "clicks", label: "클릭", align: "right", render: (r) => r.clicks.toLocaleString("ko-KR") },
+                      { key: "impressions", label: "노출", align: "right", render: (r) => r.impressions.toLocaleString("ko-KR") },
+                      { key: "ctr", label: "CTR", align: "right", render: (r) => `${(r.ctr * 100).toFixed(1)}%` },
+                    ]}
+                    rows={performance.devices}
+                    getRowId={(r) => r.device}
+                  />
+                </Card>
+              )}
+              {performance.countries && performance.countries.length > 0 && (
+                <Card className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-neutral-900">국가별 검색 성과</p>
+                    <p className="mt-0.5 text-xs text-neutral-500">실제 노출 국가를 근거로 마켓 확장 우선순위를 정할 수 있습니다.</p>
+                  </div>
+                  <DataTable
+                    columns={[
+                      { key: "country", label: "국가", render: (r) => r.country },
+                      { key: "clicks", label: "클릭", align: "right", render: (r) => r.clicks.toLocaleString("ko-KR") },
+                      { key: "impressions", label: "노출", align: "right", render: (r) => r.impressions.toLocaleString("ko-KR") },
+                    ]}
+                    rows={performance.countries}
+                    getRowId={(r) => r.country}
+                  />
+                </Card>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

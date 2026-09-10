@@ -1,6 +1,16 @@
 import { getGscToken } from "./gscTokenStore";
 import { refreshAccessToken } from "./googleOAuth";
-import { GscSearchPerformanceResult, GscTrendWeek, GscTopQueryRow, PromptStrategyTopicRow } from "@/lib/db/types";
+import {
+  GscCountryRow,
+  GscDeviceRow,
+  GscSearchAppearanceRow,
+  GscSearchPerformanceResult,
+  GscSitemapStatus,
+  GscTrendWeek,
+  GscTopQueryRow,
+  GscUrlIndexStatus,
+  PromptStrategyTopicRow,
+} from "@/lib/db/types";
 import { classifyGscQuery, gscOpportunityScore } from "./gscQueryClassifier";
 
 interface SearchAnalyticsRow {
@@ -46,7 +56,7 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
   const start = new Date(end);
   start.setDate(start.getDate() - 35); // 5주치
 
-  const [trendRows, queryRows] = await Promise.all([
+  const [trendRows, queryRows, deviceRows, countryRows] = await Promise.all([
     querySearchAnalytics(accessToken, token.property, {
       startDate: isoDate(start),
       endDate: isoDate(end),
@@ -58,6 +68,19 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
       dimensions: ["query"],
       rowLimit: 5,
     }),
+    // device/country 차원 — 콘텐츠 포맷·마켓 확장 우선순위를 실측으로
+    // 뒷받침하는 참고 지표. (docs/gsc-additional-signals.md §3-⑤,⑥)
+    querySearchAnalytics(accessToken, token.property, {
+      startDate: isoDate(start),
+      endDate: isoDate(end),
+      dimensions: ["device"],
+    }).catch(() => []),
+    querySearchAnalytics(accessToken, token.property, {
+      startDate: isoDate(start),
+      endDate: isoDate(end),
+      dimensions: ["country"],
+      rowLimit: 5,
+    }).catch(() => []),
   ]);
 
   // 일별 결과를 주 단위로 묶는다 (일요일 시작) — Overview/브랜드 가시성의
@@ -92,7 +115,15 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
     position: row.position,
   }));
 
-  return { brandId, property: token.property, trend, topQueries };
+  const devices: GscDeviceRow[] = deviceRows
+    .map((row) => ({ device: row.keys[0], clicks: row.clicks, impressions: row.impressions, ctr: row.ctr }))
+    .sort((a, b) => b.impressions - a.impressions);
+
+  const countries: GscCountryRow[] = countryRows
+    .map((row) => ({ country: row.keys[0], clicks: row.clicks, impressions: row.impressions }))
+    .sort((a, b) => b.impressions - a.impressions);
+
+  return { brandId, property: token.property, trend, topQueries, devices, countries };
 }
 
 // 프롬프트 전략의 "GSC 커버리지 공백" — 실제로 노출은 있는데 우리 프롬프트
@@ -115,12 +146,31 @@ export async function getRealGscCoverageGaps(
   const start = new Date(end);
   start.setDate(start.getDate() - 27); // 4주치
 
-  const rows = await querySearchAnalytics(accessToken, token.property, {
-    startDate: isoDate(start),
-    endDate: isoDate(end),
-    dimensions: ["query"],
-    rowLimit: 25,
-  });
+  const [rows, queryPageRows] = await Promise.all([
+    querySearchAnalytics(accessToken, token.property, {
+      startDate: isoDate(start),
+      endDate: isoDate(end),
+      dimensions: ["query"],
+      rowLimit: 25,
+    }),
+    // ["query","page"] 결합 조회 — 이 검색어가 실제로 어느 페이지로 노출되고
+    // 있는지. 커버리지 공백 키워드에 타겟 URL 근거를 붙이는 데 쓴다
+    // (docs/gsc-additional-signals.md §3-②).
+    querySearchAnalytics(accessToken, token.property, {
+      startDate: isoDate(start),
+      endDate: isoDate(end),
+      dimensions: ["query", "page"],
+      rowLimit: 1000,
+    }).catch(() => []),
+  ]);
+
+  // 검색어별로 클릭이 가장 많은 페이지 하나만 남긴다.
+  const topPageByQuery = new Map<string, { page: string; clicks: number }>();
+  for (const r of queryPageRows) {
+    const [query, page] = r.keys;
+    const existing = topPageByQuery.get(query);
+    if (!existing || r.clicks > existing.clicks) topPageByQuery.set(query, { page, clicks: r.clicks });
+  }
 
   const trackedLower = trackedPrompts.map((p) => p.toLowerCase());
   // 노출 수만으로 정렬하면 브랜드 검색어("네오다임"/"neodigm")가 항상 상위를
@@ -148,6 +198,7 @@ export async function getRealGscCoverageGaps(
     source: "gsc" as const,
     gscImpressions: r.impressions,
     brandMentions: [{ brand: "Neodigm", mentions: 0, isOwnBrand: true }],
+    gscTopPage: topPageByQuery.get(r.keys[0])?.page,
   }));
 }
 
@@ -179,4 +230,125 @@ export async function getRealGscTopPages(brandId: string, limit = 10): Promise<G
   });
 
   return rows.map((r) => ({ url: r.keys[0], clicks: r.clicks, impressions: r.impressions }));
+}
+
+// URL Inspection API — 우리 자체 크롤 콘텐츠 가시성 점수와 별개로, 구글이
+// 실제로 이 URL을 어떻게 보는지(인덱싱 여부/robots.txt 차단/크롤 시각).
+// searchAnalytics.query와 다른 엔드포인트(Search Console API v1)라 별도
+// 함수로 둔다 — 같은 webmasters.readonly 스코프로 호출 가능.
+// (docs/gsc-additional-signals.md §3-①)
+export async function getRealGscUrlIndexStatus(brandId: string, url: string): Promise<GscUrlIndexStatus | null> {
+  const token = await getGscToken(brandId);
+  if (!token) return null;
+
+  const { access_token: accessToken } = await refreshAccessToken(token.refreshToken);
+
+  const res = await fetch("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ inspectionUrl: url, siteUrl: token.property }),
+  });
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as {
+    inspectionResult?: {
+      indexStatusResult?: {
+        verdict?: string;
+        coverageState?: string;
+        robotsTxtState?: string;
+        indexingState?: string;
+        lastCrawlTime?: string;
+        pageFetchState?: string;
+        googleCanonical?: string;
+        userCanonical?: string;
+        sitemap?: string[];
+      };
+    };
+  };
+  const result = data.inspectionResult?.indexStatusResult;
+  if (!result) return null;
+
+  return {
+    url,
+    verdict: result.verdict ?? "VERDICT_UNSPECIFIED",
+    coverageState: result.coverageState ?? "",
+    robotsTxtState: result.robotsTxtState ?? "",
+    indexingState: result.indexingState ?? "",
+    lastCrawlTime: result.lastCrawlTime ?? null,
+    pageFetchState: result.pageFetchState ?? "",
+    googleCanonical: result.googleCanonical ?? null,
+    userCanonical: result.userCanonical ?? null,
+    sitemaps: result.sitemap ?? [],
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+// searchAnalytics.query의 searchAppearance 차원 — FAQ/사이트링크 같은 리치
+// 결과 유형별 실적. "FAQ 추가"/"목차 추가" 기회를 실행한 뒤 실제로 검색결과가
+// 개선됐는지 확인하는 근거로 쓴다. (docs/gsc-additional-signals.md §3-③)
+export async function getRealGscSearchAppearance(brandId: string): Promise<GscSearchAppearanceRow[] | null> {
+  const token = await getGscToken(brandId);
+  if (!token) return null;
+
+  const { access_token: accessToken } = await refreshAccessToken(token.refreshToken);
+
+  const end = new Date();
+  end.setDate(end.getDate() - 3);
+  const start = new Date(end);
+  start.setDate(start.getDate() - 27); // 4주치
+
+  const rows = await querySearchAnalytics(accessToken, token.property, {
+    startDate: isoDate(start),
+    endDate: isoDate(end),
+    dimensions: ["searchAppearance"],
+  });
+  if (rows.length === 0) return null;
+
+  return rows.map((r) => ({ appearance: r.keys[0], clicks: r.clicks, impressions: r.impressions }));
+}
+
+// Sitemaps API — 제출한 사이트맵별 구글 처리 현황(경고/에러/타입별 제출-인덱싱
+// 수). robots.txt 차단 진단 옆에 나란히 둘 정량 지표로 쓴다.
+// (docs/gsc-additional-signals.md §3-④)
+export async function getRealGscSitemaps(brandId: string): Promise<GscSitemapStatus[] | null> {
+  const token = await getGscToken(brandId);
+  if (!token) return null;
+
+  const { access_token: accessToken } = await refreshAccessToken(token.refreshToken);
+
+  const res = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(token.property)}/sitemaps`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as {
+    sitemap?: {
+      path?: string;
+      lastSubmitted?: string;
+      lastDownloaded?: string;
+      isPending?: boolean;
+      isSitemapsIndex?: boolean;
+      warnings?: string;
+      errors?: string;
+      contents?: { type?: string; submitted?: string; indexed?: string }[];
+    }[];
+  };
+  const list = data.sitemap ?? [];
+  if (list.length === 0) return null;
+
+  return list.map((s) => ({
+    path: s.path ?? "",
+    lastSubmitted: s.lastSubmitted ?? null,
+    lastDownloaded: s.lastDownloaded ?? null,
+    isPending: !!s.isPending,
+    isSitemapsIndex: !!s.isSitemapsIndex,
+    warnings: Number(s.warnings ?? 0),
+    errors: Number(s.errors ?? 0),
+    contents: (s.contents ?? []).map((c) => ({
+      type: c.type ?? "",
+      submitted: Number(c.submitted ?? 0),
+      indexed: Number(c.indexed ?? 0),
+    })),
+  }));
 }

@@ -6,6 +6,7 @@ import { isDemoMode } from "@/lib/backend/demoMode";
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
 import { listTrackedTopics } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
+import { getLlmBridgeEntry } from "@/lib/backend/llmBridgeStore";
 
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
@@ -29,5 +30,8 @@ export default async function TopicOpportunityDetailPage({ params }: { params: P
   const row = [...(realTopicRows?.opportunities ?? []), ...(realTopicRows?.topPrompts ?? [])].find((r) => r.topic === topic);
   if (!row) notFound();
 
-  return <TopicOpportunityDetailClient row={row} />;
+  const guideEntry = await getLlmBridgeEntry<{ guide: string }>("topic-guide", topic);
+  const rowWithGuide = { ...row, guide: guideEntry?.guide };
+
+  return <TopicOpportunityDetailClient row={rowWithGuide} />;
 }

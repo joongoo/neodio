@@ -320,6 +320,8 @@ export interface TopicRow {
   /** 이 토픽이 처음 수집된 시점 — prompts 중 가장 이른 runAt. Overview의
    *  "최신 기회" 정렬 기준으로 쓴다. */
   createdAt?: string;
+  /** LLM API 연동 전까지 "DB 등록" 모달로 사람이 채운 콘텐츠 생성 가이드. */
+  guide?: string;
 }
 
 export interface TopicCategory {
@@ -464,11 +466,96 @@ export interface GscTopQueryRow {
   position: number;
 }
 
+export interface GscDeviceRow {
+  device: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+}
+
+export interface GscCountryRow {
+  country: string;
+  clicks: number;
+  impressions: number;
+}
+
 export interface GscSearchPerformanceResult {
   brandId: string;
   property: string;
   trend: GscTrendWeek[];
   topQueries: GscTopQueryRow[];
+  /** device 차원 실적 — 콘텐츠 포맷(요약형 vs 긴 글) 우선순위 참고용. */
+  devices?: GscDeviceRow[];
+  /** country 차원 실적 — 마켓 확장 우선순위를 실측으로 뒷받침하는 근거. */
+  countries?: GscCountryRow[];
+}
+
+// ---- GSC 추가 신호 (docs/gsc-additional-signals.md) ----
+
+// URL Inspection API (urlInspection.index.inspect) — 우리 자체 크롤 기반
+// 콘텐츠 가시성 점수와 별개로, 구글이 실제로 이 URL을 어떻게 보고 있는지.
+// "인덱싱 자체가 안 됨" vs "인덱싱은 됐는데 크롤 가시성이 낮음" vs "다 되는데
+// 안 뽑힘"을 구분하기 위한 근거로 쓴다.
+export interface GscUrlIndexStatus {
+  url: string;
+  verdict: string;
+  coverageState: string;
+  robotsTxtState: string;
+  indexingState: string;
+  lastCrawlTime: string | null;
+  pageFetchState: string;
+  googleCanonical: string | null;
+  userCanonical: string | null;
+  sitemaps: string[];
+  checkedAt: string;
+}
+
+// searchAnalytics.query의 searchAppearance 차원 — FAQ/사이트링크 같은 리치
+// 결과 유형별 실적. "FAQ 추가" 기회 실행 후 실제로 리치 결과 노출이 생겼는지
+// 검증하는 근거로 쓴다.
+export interface GscSearchAppearanceRow {
+  appearance: string;
+  clicks: number;
+  impressions: number;
+}
+
+// Sitemaps API (sitemaps.list) — 제출한 사이트맵별 구글 처리 현황.
+export interface GscSitemapContentStat {
+  type: string;
+  submitted: number;
+  indexed: number;
+}
+
+export interface GscSitemapStatus {
+  path: string;
+  lastSubmitted: string | null;
+  lastDownloaded: string | null;
+  isPending: boolean;
+  isSitemapsIndex: boolean;
+  warnings: number;
+  errors: number;
+  contents: GscSitemapContentStat[];
+}
+
+// PageSpeed Insights API(CrUX 실사용자 필드 데이터 + Lighthouse 랩 데이터) —
+// GSC와 다른 API(API 키 인증)라 별도 타입으로 둔다. 페이지가 느리면 AI
+// 크롤러도 렌더링 타임아웃으로 못 읽을 수 있어 "콘텐츠 가시성 회복" 진단의
+// 보조 근거로 쓴다.
+export interface PageSpeedResult {
+  url: string;
+  strategy: "mobile" | "desktop";
+  /** Lighthouse 성능 점수 (0~100). */
+  performanceScore: number | null;
+  /** Largest Contentful Paint (ms) — 실사용자 CrUX 데이터. */
+  lcpMs: number | null;
+  /** Cumulative Layout Shift (0~1대) — 실사용자 CrUX 데이터. */
+  cls: number | null;
+  /** Interaction to Next Paint (ms) — 실사용자 CrUX 데이터. */
+  inpMs: number | null;
+  /** true면 아래 값들이 실사용자 CrUX 필드 데이터, false면 Lighthouse 실험실
+   *  추정치(트래픽이 적어 CrUX 데이터가 없는 경우). */
+  hasFieldData: boolean;
+  checkedAt: string;
 }
 
 // ---- Prompt Library page ----
@@ -609,6 +696,13 @@ export interface ContentRecoveryUrl {
   priorityScore: number;
   /** 배포 없이 "다시 크롤링"만 반복해서 얻는 전/후 비교 — 이전 크롤의 같은 URL 값. */
   previousContentVisibility?: number;
+  /** LLM API 연동 전까지 "DB 등록" 모달로 사람이 채운 수정 가이드. */
+  guide?: string;
+  /** URL Inspection API로 확인한 구글 실제 인덱싱 상태 — 우리 크롤 가시성
+   *  점수와 별개로, "애초에 구글이 안 읽는지"를 구분하는 근거. */
+  googleIndex?: GscUrlIndexStatus;
+  /** PageSpeed Insights(CrUX 실사용자 데이터) 결과. */
+  pageSpeed?: PageSpeedResult;
 }
 
 export interface ContentRecoveryOpportunity {
@@ -645,6 +739,12 @@ export interface ContentAuditUrl {
   score: number;
   priorityScore: number;
   previousScore?: number;
+  /** LLM API 연동 전까지 "DB 등록" 모달로 사람이 채운 수정 가이드. */
+  guide?: string;
+  /** URL Inspection API로 확인한 구글 실제 인덱싱 상태. */
+  googleIndex?: GscUrlIndexStatus;
+  /** PageSpeed Insights(CrUX 실사용자 데이터) 결과. */
+  pageSpeed?: PageSpeedResult;
 }
 
 export interface ContentAuditOpportunity {
@@ -806,6 +906,12 @@ export interface PromptStrategySuggestion {
   title: string;
   summary: string;
   stat: string;
+  /** source === "gsc"인 실측 키워드 공백 그룹에서만 채워지는 원본 GSC 검색어 —
+   *  이 키워드로 LLM에게 자연어 프롬프트를 만들어달라고 물어볼 때 쓴다. */
+  gscKeyword?: string;
+  /** searchAnalytics.query를 ["query","page"] 결합 차원으로 조회해 찾은,
+   *  이 검색어로 이미 노출되고 있는 우리 페이지 — 있으면 타겟 URL 추천 근거로 쓴다. */
+  gscTopPage?: string;
 }
 
 export interface StrategyBrandMention {
@@ -829,6 +935,9 @@ export interface PromptStrategyTopicRow {
   branded?: boolean;
   /** 왜 이 프롬프트를 추천하는지에 대한 짧은 근거. */
   reasoning?: string;
+  /** GSC 커버리지 공백 행(source==="gsc")에서만 채워지는, 이 검색어로 이미
+   *  노출되고 있는 우리 페이지 — ["query","page"] 결합 조회로 찾는다. */
+  gscTopPage?: string;
 }
 
 export interface PromptStrategyData {

@@ -3,6 +3,9 @@ import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { buildComplexityOpportunity, getSitemapCrawlHistory } from "@/lib/backend/sitemapCrawlReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
+import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
+import { getCachedUrlIndexStatuses } from "@/lib/backend/gscUrlInspectionStore";
+import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +22,20 @@ export default async function ComplexityOpportunityPage() {
     );
   }
 
-  return <ContentAuditClient data={data} domain={org?.domain ?? ""} />;
+  const [guides, indexStatuses, pageSpeedResults] = await Promise.all([
+    getLlmBridgeScope<{ guide: string }>("content-guide-complexity"),
+    getCachedUrlIndexStatuses(),
+    getCachedPageSpeedResults(),
+  ]);
+  const dataWithExtras = {
+    ...data,
+    urls: data.urls.map((u) => ({
+      ...u,
+      guide: guides[u.url]?.guide,
+      googleIndex: indexStatuses[u.url],
+      pageSpeed: pageSpeedResults[u.url],
+    })),
+  };
+
+  return <ContentAuditClient data={dataWithExtras} domain={org?.domain ?? ""} />;
 }

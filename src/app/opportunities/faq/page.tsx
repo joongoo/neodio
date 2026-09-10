@@ -3,6 +3,12 @@ import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { buildFaqOpportunity, getSitemapCrawlHistory } from "@/lib/backend/sitemapCrawlReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
+import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
+import { getCachedUrlIndexStatuses } from "@/lib/backend/gscUrlInspectionStore";
+import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore";
+import { getRealGscSearchAppearance } from "@/lib/backend/gscSearchAnalyticsReader";
+
+const OWN_BRAND_ID = "brand-neodigm";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +25,21 @@ export default async function FaqOpportunityPage() {
     );
   }
 
-  return <ContentAuditClient data={data} domain={org?.domain ?? ""} />;
+  const [guides, indexStatuses, searchAppearance, pageSpeedResults] = await Promise.all([
+    getLlmBridgeScope<{ guide: string }>("content-guide-faq"),
+    getCachedUrlIndexStatuses(),
+    getRealGscSearchAppearance(OWN_BRAND_ID).catch(() => null),
+    getCachedPageSpeedResults(),
+  ]);
+  const dataWithExtras = {
+    ...data,
+    urls: data.urls.map((u) => ({
+      ...u,
+      guide: guides[u.url]?.guide,
+      googleIndex: indexStatuses[u.url],
+      pageSpeed: pageSpeedResults[u.url],
+    })),
+  };
+
+  return <ContentAuditClient data={dataWithExtras} domain={org?.domain ?? ""} searchAppearance={searchAppearance} />;
 }

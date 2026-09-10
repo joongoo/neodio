@@ -11,6 +11,7 @@ import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureCo
 import { Pagination } from "@/components/ui/Pagination";
 import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
+import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
 import {
   BrandRankRow,
   CitedPageRow,
@@ -125,7 +126,23 @@ function buildTopicColumns(
   onTargetUrlSaved: () => void
 ): DataTableColumn<TopicRow>[] {
   const base: DataTableColumn<TopicRow>[] = [
-    { key: "topic", label: "토픽", width: "w-[240px]", render: (r) => <span className="text-neutral-700">{r.topic}</span> },
+    {
+      key: "topic",
+      label: "토픽",
+      width: "w-[240px]",
+      render: (r) =>
+        isOpportunity ? (
+          <a
+            href={`/opportunities/topic/${encodeURIComponent(r.topic)}`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-blue-600 hover:underline"
+          >
+            {r.topic}
+          </a>
+        ) : (
+          <span className="text-neutral-700">{r.topic}</span>
+        ),
+    },
     { key: "mentions", label: "언급 수", width: "w-[100px]", render: (r) => r.mentions },
     { key: "visibility", label: "가시성", width: "w-[100px]", render: (r) => `${r.visibility}%` },
     {
@@ -216,40 +233,55 @@ const pageColumns: DataTableColumn<CitedPageRow>[] = [
   },
 ];
 
-const sourceColumns: DataTableColumn<CitedSourceRow>[] = [
-  {
-    key: "domain",
-    label: "도메인",
-    width: "w-[220px]",
-    render: (r) => (
-      <span className="flex items-center gap-2 text-neutral-700">
-        <FaviconIcon domain={r.domain} />
-        {r.domain}
-      </span>
-    ),
-  },
-  {
-    key: "market",
-    label: "마켓",
-    width: "w-[90px]",
-    render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
-  },
-  { key: "myBrandMentions", label: "내 브랜드 언급 수", width: "w-[130px]", render: (r) => r.myBrandMentions },
-  { key: "citedPages", label: "인용된 페이지 수", width: "w-[130px]", render: (r) => r.citedPages },
-  { key: "prompts", label: "프롬프트 수", width: "w-[110px]", render: (r) => r.prompts },
-  {
-    key: "recommendation",
-    label: "추천 액션",
-    render: (r) =>
-      r.recommendation ? (
-        <span title={r.reasoning} className="line-clamp-2 text-[11px] text-neutral-600">
-          {r.recommendation}
+// LLM API 연동 전까지는 "DB 등록" 버튼으로 사람이 LlmBridgeModal을 통해
+// 추천/근거를 채운다 — onRegister가 그 모달을 연다.
+function buildSourceColumns(onRegister: (row: CitedSourceRow) => void): DataTableColumn<CitedSourceRow>[] {
+  return [
+    {
+      key: "domain",
+      label: "도메인",
+      width: "w-[220px]",
+      render: (r) => (
+        <span className="flex items-center gap-2 text-neutral-700">
+          <FaviconIcon domain={r.domain} />
+          {r.domain}
         </span>
-      ) : (
-        <span className="text-neutral-300">—</span>
       ),
-  },
-];
+    },
+    {
+      key: "market",
+      label: "마켓",
+      width: "w-[90px]",
+      render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span>,
+    },
+    { key: "myBrandMentions", label: "내 브랜드 언급 수", width: "w-[130px]", render: (r) => r.myBrandMentions },
+    { key: "citedPages", label: "인용된 페이지 수", width: "w-[130px]", render: (r) => r.citedPages },
+    { key: "prompts", label: "프롬프트 수", width: "w-[110px]", render: (r) => r.prompts },
+    {
+      key: "recommendation",
+      label: "추천 액션",
+      width: "w-[220px]",
+      render: (r) =>
+        r.recommendation ? (
+          <span title={r.reasoning} className="line-clamp-2 text-[11px] text-neutral-600">
+            {r.recommendation}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRegister(r);
+            }}
+            className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+          >
+            <Sparkles size={12} />
+            DB 등록
+          </button>
+        ),
+    },
+  ];
+}
 
 function isTopicRow(row: VisibilityTableRow): row is TopicRow {
   return "topic" in row;
@@ -279,6 +311,7 @@ export function TopicsTableSection({
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [trackTarget, setTrackTarget] = useState<TrackTarget | null>(null);
+  const [registeringSource, setRegisteringSource] = useState<CitedSourceRow | null>(null);
 
   // 실제로 프롬프트 라이브러리에 저장(.tmp/tracked-topics)한 뒤 그 화면으로
   // 이동한다 — 이전엔 클라이언트 로컬 state만 바뀌고 새로고침하면 사라졌고,
@@ -348,6 +381,7 @@ export function TopicsTableSection({
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
   const visibleBrandColumns = brandColumns.filter((c) => c.key !== "mentions" || visible.has(c.key));
   const visiblePageColumns = pageColumns.filter((c) => !["responses", "market"].includes(c.key) || visible.has(c.key));
+  const sourceColumns = useMemo(() => buildSourceColumns((row) => setRegisteringSource(row)), []);
   const visibleSourceColumns = sourceColumns.filter(
     (c) => !["market", "myBrandMentions", "citedPages", "prompts"].includes(c.key) || visible.has(c.key)
   );
@@ -383,8 +417,8 @@ export function TopicsTableSection({
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-4 py-3">
           <Sparkles size={16} className="shrink-0 text-neutral-400" />
           <p className="text-xs text-neutral-500">
-            <span className="mr-1.5 rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-bold text-neutral-600">준비 중</span>
-            LLM API 연동 후, 이 토픽에 어떤 콘텐츠를 만들면 좋을지 구체적인 생성 가이드를 자동으로 제안할 예정입니다.
+            토픽 이름을 눌러 상세 페이지로 들어가면 "가이드 등록" 버튼으로 이 토픽에 어떤 콘텐츠를 만들면 좋을지 LLM에게 물어본
+            답변을 등록할 수 있습니다.
           </p>
         </div>
       )}
@@ -504,6 +538,30 @@ export function TopicsTableSection({
         onClose={() => setTrackTarget(null)}
         onTrack={(target, category) => handleTrack(target, category)}
       />
+
+      {registeringSource && (
+        <LlmBridgeModal
+          open={registeringSource !== null}
+          onClose={() => setRegisteringSource(null)}
+          title={`${registeringSource.domain} 공략 추천 등록`}
+          instructions="LLM API 연동 전까지, 이 소스를 어떻게 공략하면 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          scope="source-recommendation"
+          itemKey={registeringSource.domain}
+          promptText={`도메인 "${registeringSource.domain}"이(가) 우리 브랜드 관련 AI 답변에서 ${registeringSource.prompts}개 프롬프트에 걸쳐 인용되고 있는데, 우리 브랜드 언급은 ${registeringSource.myBrandMentions}건뿐입니다.\n이 도메인에 어떤 콘텐츠를 기고하거나 어떻게 접근하면 우리 브랜드가 이 소스에서도 함께 언급/인용될 수 있을지 추천해주세요.\n\n반드시 아래 JSON 형식으로만 답변하세요:\n{"recommendation": "실행 가능한 한 문장 추천", "reasoning": "왜 이 추천이 유효한지 근거"}`}
+          parse={(raw) => {
+            try {
+              const parsed = JSON.parse(raw);
+              if (typeof parsed.recommendation !== "string" || !parsed.recommendation.trim()) {
+                return { error: "recommendation 필드가 없습니다. JSON 형식을 확인해주세요." };
+              }
+              return { data: { recommendation: parsed.recommendation, reasoning: parsed.reasoning ?? "" } };
+            } catch {
+              return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
+            }
+          }}
+          onSaved={() => router.refresh()}
+        />
+      )}
     </div>
   );
 }

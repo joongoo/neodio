@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
+import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { TopicRow } from "@/lib/db";
 
 export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
@@ -12,6 +14,8 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
   const [trackOpen, setTrackOpen] = useState(false);
   const [targetUrlInput, setTargetUrlInput] = useState(row.targetUrl ?? "");
   const [saving, setSaving] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [viewingGuide, setViewingGuide] = useState(false);
 
   async function saveTargetUrl() {
     setSaving(true);
@@ -129,13 +133,25 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
       </section>
 
       <section className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-5">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-neutral-400" />
-          <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 콘텐츠 생성 가이드</h2>
-          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-bold text-neutral-600">준비 중</span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-neutral-400" />
+            <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 콘텐츠 생성 가이드</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => (row.guide ? setViewingGuide(true) : setGuideOpen(true))}
+            className={`flex shrink-0 items-center gap-1 rounded px-2.5 py-1.5 text-[11px] font-bold cursor-pointer ${
+              row.guide ? "bg-blue-50 text-blue-700 hover:bg-blue-100" : "bg-slate-100 text-slate-800 hover:bg-slate-200"
+            }`}
+          >
+            <Sparkles size={12} />
+            {row.guide ? "가이드 보기" : "가이드 등록"}
+          </button>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          LLM API 연동 후, 이 토픽에 대해 어떤 내용/형식의 콘텐츠를 만들면 브랜드 언급 가능성을 높일 수 있는지 구체적인 생성 가이드를 자동으로 제안할 예정입니다.
+          아직 LLM API가 연동되지 않아, "가이드 등록" 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가 연동되면
+          자동으로 채워집니다.
         </p>
       </section>
 
@@ -154,6 +170,43 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
         onClose={() => setTrackOpen(false)}
         onTrack={(_target, category) => trackTopic(category)}
       />
+
+      {guideOpen && (
+        <LlmBridgeModal
+          open={guideOpen}
+          onClose={() => setGuideOpen(false)}
+          title="LLM 기반 콘텐츠 생성 가이드 등록"
+          instructions="LLM API 연동 전까지, 이 토픽으로 콘텐츠를 만들 때 어떤 내용/형식이 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          scope="topic-guide"
+          itemKey={row.topic}
+          promptText={`다음은 AI 검색/챗봇에서 자주 등장하지만 아직 우리 브랜드가 언급되지 않는 토픽입니다: "${row.topic}" (마켓: ${row.market})\n\n이 토픽에 대해 우리 브랜드가 언급/인용될 수 있는 콘텐츠를 만들려면 어떤 제목/구성/핵심 내용으로 작성하면 좋을지 구체적인 콘텐츠 생성 가이드를 문단으로 작성해주세요.`}
+          parse={(raw) => (raw.trim() ? { data: { guide: raw } } : { error: "내용을 입력해주세요." })}
+          onSaved={() => router.refresh()}
+        />
+      )}
+
+      {viewingGuide && row.guide && (
+        <Modal open={viewingGuide} onClose={() => setViewingGuide(false)}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-neutral-900">LLM 기반 콘텐츠 생성 가이드</h2>
+            <ModalCloseButton onClose={() => setViewingGuide(false)} />
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">{row.topic}</p>
+          <p className="mt-4 whitespace-pre-wrap rounded-lg bg-neutral-50 p-4 text-[13px] leading-relaxed text-neutral-700">{row.guide}</p>
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setViewingGuide(false);
+                setGuideOpen(true);
+              }}
+              className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+            >
+              다시 등록
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
