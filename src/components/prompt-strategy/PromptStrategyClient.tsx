@@ -351,6 +351,8 @@ export function PromptStrategyClient({
       <InfoBanner
         title="프롬프트 전략은 어떻게 동작하나요"
         description="Google Search Console(자사 실측 노출)과 매주 LLM에게 현재 데이터를 기반으로 요청하는 인사이트 브레인스토밍, 두 소스에서 프롬프트를 추천합니다."
+        actionLabel="도움말 보기"
+        onAction={() => router.push("/help/prompt-strategy")}
       />
 
       <div className="grid grid-cols-3 gap-3">

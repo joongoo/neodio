@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Download, Upload, Plus, Pencil, Trash2, Settings } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -33,6 +34,7 @@ export function PromptLibraryClient({
   topicOptionsByCategory: Record<string, string[]>;
   uncategorizedTopicOptions: string[];
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   // 오늘 추가/수정된 항목을 "NEW"로 표시 — 프롬프트 전략/가시성 개요에서
   // 방금 추적했거나, 방금 CSV로 가져왔거나, 방금 직접 추가한 프롬프트가
@@ -234,7 +236,8 @@ export function PromptLibraryClient({
       <InfoBanner
         title="프롬프트 라이브러리는 어떻게 동작하나요"
         description="AI 플랫폼 전반에서 브랜드 가시성을 측정하는 데 사용되는 프롬프트를 살펴보세요. 토픽별로 프롬프트를 탐색하고, 어떤 질문이 제기되는지 파악하고, 브랜드 존재감과 경쟁 포지셔닝을 개선할 기회를 발견하세요."
-        actionLabel="개요 영상 보기"
+        actionLabel="도움말 보기"
+        onAction={() => router.push("/help/prompt-library")}
       />
 
       {health && (

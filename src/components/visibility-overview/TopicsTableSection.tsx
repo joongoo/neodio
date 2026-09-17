@@ -70,60 +70,14 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
   ],
 };
 
-// "토픽 기회" 전용 — 이 토픽으로 만든 콘텐츠 URL을 입력해두면 실제로
-// 인용되는지(targetUrlCitations) 다음 로드부터 실측으로 보여준다.
-function TargetUrlCell({ row, onSaved }: { row: TopicRow; onSaved: () => void }) {
-  const [value, setValue] = useState(row.targetUrl ?? "");
-  const [saving, setSaving] = useState(false);
-
-  if (row.targetUrl) {
-    return (
-      <div className="flex flex-col gap-0.5">
-        <a href={row.targetUrl} target="_blank" rel="noopener noreferrer" className="max-w-[220px] truncate text-xs text-blue-600 hover:underline">
-          {row.targetUrl}
-        </a>
-        <span className="text-[11px] text-neutral-500">
-          인용 {row.targetUrlCitations ?? 0}회
-          {(row.targetUrlCitations ?? 0) > 0 ? " ✅" : ""}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-      <input
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="콘텐츠 URL (옵션)"
-        className="h-7 w-[180px] rounded border border-neutral-300 px-2 text-[11px]"
-      />
-      <button
-        type="button"
-        disabled={!value.trim() || saving}
-        onClick={async () => {
-          setSaving(true);
-          await fetch("/api/topic-opportunity-target", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ topic: row.topic, targetUrl: value.trim() }),
-          });
-          setSaving(false);
-          onSaved();
-        }}
-        className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200 disabled:cursor-default disabled:opacity-40"
-      >
-        저장
-      </button>
-    </div>
-  );
-}
-
+// "콘텐츠 인용 트래킹"(타겟 URL 입력/인용 확인)은 이 테이블에서 빼고 토픽
+// 상세 페이지(TopicOpportunityDetailClient)에만 둔다 — 테이블 행마다 입력
+// 필드를 두면 좁아서 실제로 잘 안 쓰였고, 토픽 이름을 눌러 상세로 들어가면
+// 어차피 같은 기능을 더 넓은 화면에서 쓸 수 있다.
 function buildTopicColumns(
   trackedIds: Set<string>,
   onTrack: (row: TopicRow) => void,
-  isOpportunity: boolean,
-  onTargetUrlSaved: () => void
+  isOpportunity: boolean
 ): DataTableColumn<TopicRow>[] {
   const base: DataTableColumn<TopicRow>[] = [
     {
@@ -154,25 +108,17 @@ function buildTopicColumns(
   ];
 
   if (isOpportunity) {
-    base.push(
-      {
-        key: "addedToLibrary",
-        label: "라이브러리",
-        width: "w-[90px]",
-        render: (r) =>
-          r.addedToLibrary ? (
-            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">추가됨</span>
-          ) : (
-            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500">미추가</span>
-          ),
-      },
-      {
-        key: "targetUrl",
-        label: "콘텐츠 인용 트래킹",
-        width: "w-[220px]",
-        render: (r) => <TargetUrlCell row={r} onSaved={onTargetUrlSaved} />,
-      }
-    );
+    base.push({
+      key: "addedToLibrary",
+      label: "라이브러리",
+      width: "w-[90px]",
+      render: (r) =>
+        r.addedToLibrary ? (
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">추가됨</span>
+        ) : (
+          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500">미추가</span>
+        ),
+    });
   }
 
   base.push({
@@ -393,10 +339,9 @@ export function TopicsTableSection({
             market: row.market,
             prompts: row.prompts.map((p) => ({ id: p.id, prompt: p.prompt })),
           }),
-        isTopicOpportunities,
-        () => router.refresh()
+        isTopicOpportunities
       ),
-    [trackedIds, isTopicOpportunities, router]
+    [trackedIds, isTopicOpportunities]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
   const visibleBrandColumns = brandColumns.filter((c) => c.key !== "mentions" || visible.has(c.key));

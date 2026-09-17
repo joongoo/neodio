@@ -885,6 +885,15 @@ export interface SocialAccount {
   handle: string;
 }
 
+// 경쟁사 등 "추적할 기타 브랜드" 한 항목 — 이름만 다르게 불리는 표기(예:
+// "Salesforce"/"세일즈포스"/"세일즈포스 닷컴")를 alias로 묶어야 실제 언급
+// 집계(brandSeeds.ts)에서 같은 브랜드로 카운팅된다. 예전엔 문자열 배열이라
+// 표기가 다르면 서로 다른 브랜드로 잡혔다.
+export interface TrackedOtherBrand {
+  name: string;
+  aliases: string[];
+}
+
 export interface ManagedBrand {
   id: string;
   /** 지금은 조직이 하나뿐이라 항상 DEFAULT_ORG_ID지만, 실 DB로 옮길 때 FK로
@@ -899,7 +908,7 @@ export interface ManagedBrand {
   markets: string[];
   status: BrandStatus;
   aliases: string[];
-  otherBrands: string[];
+  otherBrands: TrackedOtherBrand[];
   urls: string[];
   socialAccounts: SocialAccount[];
   earnedContentSources: string[];

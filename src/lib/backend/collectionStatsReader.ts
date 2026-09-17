@@ -2,7 +2,8 @@ import { listCollectedRuns } from "./collectionRuns";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { getPromptTopicGroups } from "./promptTopics";
-import { seedBrands, seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
+import { seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
+import { getRealBrandSeeds } from "./brandSeeds";
 import {
   BrandRankRow,
   BrandWeeklyPoint,
@@ -88,7 +89,8 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const brands = await getRealBrandSeeds(ORG_ID);
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
 
   const weekOfRun = new Map<string, string>();
   for (const run of promptRuns) {
@@ -103,7 +105,7 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
   const currentWeeks = weeks.slice(-windowSize);
   const previousWeeks = weeks.slice(-windowSize * 2, -windowSize);
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
-  return { processed, weekOfRun, currentWeeks, previousWeeks, runsById };
+  return { processed, weekOfRun, currentWeeks, previousWeeks, runsById, brands };
 }
 
 // Same "우리 브랜드가 언급된 프롬프트 실행의 감성" the mentions pipeline
@@ -144,11 +146,11 @@ export async function getRealSentimentSeries(range: DateRange, filters: RealData
 export async function getRealMarketComparison(range: DateRange, filters: RealDataFilters = {}): Promise<MarketComparisonRow[] | null> {
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks } = result;
+  const { processed, weekOfRun, currentWeeks, brands } = result;
   const currentWeekSet = new Set(currentWeeks);
 
   const byBrand = new Map<string, { brand: string; isSelf: boolean; mentions: number; citations: number }>();
-  for (const brand of seedBrands) {
+  for (const brand of brands) {
     byBrand.set(brand.id, { brand: brand.name, isSelf: brand.isOwnBrand, mentions: 0, citations: 0 });
   }
 
@@ -353,7 +355,7 @@ export async function getRealTopicRows(
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
 
   const ownMentionByRun = new Map<string, boolean>();
@@ -473,10 +475,10 @@ export async function getRealMarketWeeklyTracking(
 ): Promise<{ mentionsByWeek: BrandWeeklyPoint[]; citationsByWeek: BrandWeeklyPoint[] } | null> {
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks } = result;
+  const { processed, weekOfRun, currentWeeks, brands } = result;
   const currentWeekSet = new Set(currentWeeks);
 
-  const brandNameById = new Map(seedBrands.map((b) => [b.id, b.name]));
+  const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
   const mentionsByWeek = new Map<string, Map<string, number>>(currentWeeks.map((w) => [w, new Map()]));
   const citationsByWeek = new Map<string, Map<string, number>>(currentWeeks.map((w) => [w, new Map()]));
 
@@ -566,7 +568,7 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
 
   const ownMentionByRun = new Map<string, { present: boolean; sentiment: Sentiment }>();
@@ -631,8 +633,9 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
-  const brandNameById = new Map(seedBrands.map((b) => [b.id, b.name]));
+  const brands = await getRealBrandSeeds(ORG_ID);
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
+  const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
   const ownBrandName = brandNameById.get(OWN_BRAND_ID);
 
   const queryOfRun = new Map<string, string>();
@@ -762,7 +765,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
   if (processed.citations.length === 0) return null;
 
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
@@ -888,7 +891,8 @@ export async function getRealTopBrands(filters: RealDataFilters = {}): Promise<B
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const brands = await getRealBrandSeeds(ORG_ID);
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
   if (processed.mentions.length === 0) return null;
 
   const mentionsByBrand = new Map<string, number>();
@@ -901,7 +905,7 @@ export async function getRealTopBrands(filters: RealDataFilters = {}): Promise<B
   return [...mentionsByBrand.entries()]
     .map(([brandId, mentions]) => ({
       id: `real-brand-${brandId}`,
-      brand: seedBrands.find((b) => b.id === brandId)?.name ?? brandId,
+      brand: brands.find((b) => b.id === brandId)?.name ?? brandId,
       mentions,
     }))
     .sort((a, b) => b.mentions - a.mentions);
@@ -922,7 +926,7 @@ export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
   const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
   if (ownCitations.length === 0) return null;
 
@@ -976,7 +980,7 @@ export async function getRealCitedSources(
 
   const processed =
     promptRuns.length > 0
-      ? await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands })
+      ? await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) })
       : null;
   const thirdPartyCitations = processed?.citations.filter((c) => !c.isOwnDomain) ?? [];
   if (thirdPartyCitations.length === 0 && trackedDomains.length === 0) return null;
@@ -1048,9 +1052,10 @@ export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): 
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const brands = await getRealBrandSeeds(ORG_ID);
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
-  const brandNameById = new Map(seedBrands.map((b) => [b.id, b.name]));
+  const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
 
   const runIdsByQuery = new Map<string, string[]>();
   for (const run of promptRuns) {
@@ -1078,7 +1083,7 @@ export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): 
         countByBrand.set(brandId, (countByBrand.get(brandId) ?? 0) + 1);
       }
     }
-    const brandMentions: StrategyBrandMention[] = seedBrands
+    const brandMentions: StrategyBrandMention[] = brands
       .map((b) => ({ brand: brandNameById.get(b.id) ?? b.id, mentions: countByBrand.get(b.id) ?? 0, isOwnBrand: b.id === OWN_BRAND_ID }))
       .filter((bm) => bm.mentions > 0 || bm.isOwnBrand);
     return { topic, market, brandMentions };

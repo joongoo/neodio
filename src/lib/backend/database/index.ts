@@ -3,8 +3,9 @@ import path from "node:path";
 import { PromptStore } from "./store";
 import { promptLibraryByOrg } from "../../db/data/promptLibrary";
 import { promptStrategyByOrg } from "../../db/data/promptStrategy";
+import { brandsManagementByOrg } from "../../db/data/brandsManagement";
 import { seedCategories } from "../../db/data/seed";
-import type { PromptLibraryRow, PromptRunSeed } from "../../db/types";
+import type { ManagedBrand, PromptLibraryRow, PromptRunSeed } from "../../db/types";
 import type { CollectionJob } from "../collectionJobTypes";
 
 const ORG_ID = "neodigm";
@@ -65,10 +66,32 @@ async function importLegacy(store: PromptStore) {
   });
 }
 
+// 브랜드 관리(추가/편집/삭제)를 .tmp/brands-management-{added,patches,deleted}.json
+// 3개 파일로 시드 위에 얹어 계산하던 방식을 그만두고, 다른 테이블처럼 실
+// 행으로 옮긴다 — 시드 브랜드도 이 마이그레이션 이후엔 진짜로 지우거나
+// 고칠 수 있는 보통 행이 된다.
+async function importLegacyBrands(store: PromptStore) {
+  if (store.sql.prepare("SELECT name FROM data_migrations WHERE name='legacy-brands-v1'").get()) return;
+  const added = await jsonFile<ManagedBrand[]>(".tmp/brands-management-added.json", []);
+  const patches = await jsonFile<Record<string, Partial<ManagedBrand>>>(".tmp/brands-management-patches.json", {});
+  const deleted = new Set(await jsonFile<string[]>(".tmp/brands-management-deleted.json", []));
+  store.transaction(() => {
+    if (store.sql.prepare("SELECT name FROM data_migrations WHERE name='legacy-brands-v1'").get()) return;
+    for (const [orgId, data] of Object.entries(brandsManagementByOrg)) {
+      for (const brand of [...data.brands, ...added.filter(b => b.organizationId === orgId)]) {
+        if (deleted.has(brand.id)) continue;
+        const { id: brandId, organizationId, ...rest } = { ...brand, ...(patches[brand.id] ?? {}) };
+        store.createBrand(organizationId, rest, brandId);
+      }
+    }
+    store.sql.prepare("INSERT INTO data_migrations VALUES ('legacy-brands-v1',?)").run(new Date().toISOString());
+  });
+}
+
 export function getPromptStore(): Promise<PromptStore> {
   if (!initializing) initializing = (async () => {
     const store = new PromptStore(process.env.NEODIO_DB_PATH ?? path.join(process.cwd(), ".data/neodio.sqlite"));
-    try { await importLegacy(store); await syncCollectedFiles(store); return store; }
+    try { await importLegacy(store); await importLegacyBrands(store); await syncCollectedFiles(store); return store; }
     catch (error) { store.sql.close(); throw error; }
   })().catch(error => { initializing = undefined; throw error; });
   return initializing;

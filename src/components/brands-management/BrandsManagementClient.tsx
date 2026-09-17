@@ -279,7 +279,7 @@ function BrandCard({ brand, onDelete }: { brand: ManagedBrand; onDelete: () => v
         {(brand.aliases.length > 0 || brand.otherBrands.length > 0) && (
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-500">
             {brand.aliases.length > 0 && <span>별칭: {brand.aliases.join(", ")}</span>}
-            {brand.otherBrands.length > 0 && <span>기타 브랜드: {brand.otherBrands.join(", ")}</span>}
+            {brand.otherBrands.length > 0 && <span>기타 브랜드: {brand.otherBrands.map((b) => b.name).join(", ")}</span>}
           </div>
         )}
 

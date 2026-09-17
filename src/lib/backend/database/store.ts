@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import type { BrandSeed, PromptLibraryRow, PromptRunSeed, PromptTopicGroup } from "../../db/types";
+import type { BrandSeed, ManagedBrand, PromptLibraryRow, PromptRunSeed, PromptTopicGroup } from "../../db/types";
 import type { CollectedRunFile } from "../collectionRunsTypes";
 import { extractMentionsFromRun } from "../processing/mentions";
 import { extractCitationsFromRun } from "../processing/citations";
@@ -319,5 +319,66 @@ export class PromptStore {
         .run(analysisId, run.id, ANALYSIS_VERSION, inputHash, "keyword_heuristic", now(), error instanceof Error ? error.message : String(error));
       throw error;
     }
+  }
+
+  private toBrand(row: Record<string, unknown>): ManagedBrand {
+    // otherBrands used to be a plain string[] before per-brand aliases were
+    // added — coerce old rows so a stale DB never crashes the UI.
+    const otherBrands = (JSON.parse(row.other_brands_json as string) as unknown[]).map((entry) =>
+      typeof entry === "string" ? { name: entry, aliases: [] } : (entry as { name: string; aliases: string[] })
+    );
+    return {
+      id: row.id as string, organizationId: row.organization_id as string, name: row.name as string,
+      url: row.url as string, sitemapUrl: row.sitemap_url as string, description: row.description as string,
+      industry: row.industry as string, status: row.status as ManagedBrand["status"],
+      markets: JSON.parse(row.markets_json as string), aliases: JSON.parse(row.aliases_json as string),
+      otherBrands, urls: JSON.parse(row.urls_json as string),
+      socialAccounts: JSON.parse(row.social_accounts_json as string), earnedContentSources: JSON.parse(row.earned_content_sources_json as string),
+      cdnConnected: !!row.cdn_connected, gscConnected: !!row.gsc_connected, analyticsConnected: !!row.analytics_connected,
+    };
+  }
+
+  listBrands(orgId: string): ManagedBrand[] {
+    return this.sql.prepare("SELECT * FROM brands WHERE organization_id=? ORDER BY created_at").all(orgId)
+      .map(row => this.toBrand(row as Record<string, unknown>));
+  }
+
+  getBrand(orgId: string, brandId: string): ManagedBrand | null {
+    const row = this.sql.prepare("SELECT * FROM brands WHERE organization_id=? AND id=?").get(orgId, brandId);
+    return row ? this.toBrand(row as Record<string, unknown>) : null;
+  }
+
+  createBrand(orgId: string, brand: Omit<ManagedBrand, "id" | "organizationId">, brandId?: string): ManagedBrand {
+    return this.transaction(() => {
+      this.ensureOrg(orgId);
+      const newId = brandId ?? id("brand");
+      const at = now();
+      this.sql.prepare(`INSERT INTO brands VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        newId, orgId, brand.name, brand.url, brand.sitemapUrl, brand.description, brand.industry, brand.status,
+        JSON.stringify(brand.markets), JSON.stringify(brand.aliases), JSON.stringify(brand.otherBrands),
+        JSON.stringify(brand.urls), JSON.stringify(brand.socialAccounts), JSON.stringify(brand.earnedContentSources),
+        Number(brand.cdnConnected), Number(brand.gscConnected), Number(brand.analyticsConnected), at, at);
+      return this.getBrand(orgId, newId)!;
+    });
+  }
+
+  updateBrand(orgId: string, brandId: string, patch: Partial<Omit<ManagedBrand, "id" | "organizationId">>): ManagedBrand | null {
+    return this.transaction(() => {
+      const existing = this.getBrand(orgId, brandId);
+      if (!existing) return null;
+      const merged = { ...existing, ...patch };
+      this.sql.prepare(`UPDATE brands SET name=?,url=?,sitemap_url=?,description=?,industry=?,status=?,
+        markets_json=?,aliases_json=?,other_brands_json=?,urls_json=?,social_accounts_json=?,earned_content_sources_json=?,
+        cdn_connected=?,gsc_connected=?,analytics_connected=?,updated_at=? WHERE organization_id=? AND id=?`).run(
+        merged.name, merged.url, merged.sitemapUrl, merged.description, merged.industry, merged.status,
+        JSON.stringify(merged.markets), JSON.stringify(merged.aliases), JSON.stringify(merged.otherBrands),
+        JSON.stringify(merged.urls), JSON.stringify(merged.socialAccounts), JSON.stringify(merged.earnedContentSources),
+        Number(merged.cdnConnected), Number(merged.gscConnected), Number(merged.analyticsConnected), now(), orgId, brandId);
+      return this.getBrand(orgId, brandId);
+    });
+  }
+
+  deleteBrand(orgId: string, brandId: string): boolean {
+    return this.sql.prepare("DELETE FROM brands WHERE organization_id=? AND id=?").run(orgId, brandId).changes > 0;
   }
 }

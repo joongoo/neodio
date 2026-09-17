@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Share2, Settings } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -41,6 +42,7 @@ export function BrandPresenceClient({
   statCards: StatCardData[];
   data: BrandPresenceData;
 }) {
+  const router = useRouter();
   const [market, setMarket] = useState(MARKET_OPTIONS[0]);
   const [model, setModel] = useState(MODEL_OPTIONS[0]);
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>(data.defaultSelectedCompetitors);
@@ -207,6 +209,8 @@ export function BrandPresenceClient({
       <InfoBanner
         title="브랜드 가시성는 어떻게 동작하나요"
         description="브랜드가 어디서, 얼마나 자주, 어떤 토픽에서 언급되는지 파악하고, 놓친 기회와 최적화 기회를 발견하세요."
+        actionLabel="도움말 보기"
+        onAction={() => router.push("/help/brand-presence")}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

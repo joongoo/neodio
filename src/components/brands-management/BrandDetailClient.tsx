@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Link2, Share2, FileText, Tag, Radar } from "lucide-react";
+import { ArrowLeft, Plus, X, Link2, Share2, FileText, Tag, Radar, Sparkles, Pencil } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlModal";
-import { ManagedBrand } from "@/lib/db";
+import { ManagedBrand, TrackedOtherBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
 
 const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
@@ -18,7 +18,14 @@ type SitemapCrawlStatus = Pick<SitemapCrawlJob, "stage" | "log" | "error" | "res
 // Matches Figma "브랜드 상세 (Brand Detail)" (doc §22). 저장/상태 전환은
 // PATCH /api/brands-management/brands/[brandId]로 실 파일 저장소
 // (brandsManagementStore.ts)에 반영된다.
-export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
+export function BrandDetailClient({
+  initial,
+  observedBrands = [],
+}: {
+  initial: ManagedBrand;
+  /** 가시성 개요에서 실제로 언급된 브랜드 목록 — "추적할 기타 브랜드" +버튼이 여기서 고른다. */
+  observedBrands?: { name: string; mentions: number }[];
+}) {
   const router = useRouter();
   const [brand, setBrand] = useState(initial);
   const [draft, setDraft] = useState(initial);
@@ -28,6 +35,9 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
   const [movingToActive, setMovingToActive] = useState(false);
   const [addAliasOpen, setAddAliasOpen] = useState(false);
   const [addOtherBrandOpen, setAddOtherBrandOpen] = useState(false);
+  const [pickObservedOpen, setPickObservedOpen] = useState(false);
+  const [editingOtherBrand, setEditingOtherBrand] = useState<TrackedOtherBrand | null>(null);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [addSocialOpen, setAddSocialOpen] = useState(false);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
@@ -279,35 +289,83 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         onAdd={() => setAddSourceOpen(true)}
         onRemove={(i) => applyListChange({ earnedContentSources: brand.earnedContentSources.filter((_, idx) => idx !== i) })}
       />
-      <ListSection
-        icon={Tag}
-        title="브랜드 별칭"
-        description="AI 답변에서 이 브랜드를 지칭하는 다른 이름입니다."
-        items={brand.aliases}
-        onAdd={() => setAddAliasOpen(true)}
-        onRemove={(i) => applyListChange({ aliases: brand.aliases.filter((_, idx) => idx !== i) })}
-      />
+      <Card className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Tag size={16} />
+            <div>
+              <h2 className="text-base font-bold text-neutral-900">브랜드 별칭</h2>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                AI 답변에서 이 브랜드를 지칭하는 다른 이름입니다. 여기 등록된 표기는 전부 같은 브랜드 언급으로 집계됩니다.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setOptimizeOpen(true)}>
+              AI로 별칭 최적화
+            </Button>
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddAliasOpen(true)}>
+              추가
+            </Button>
+          </div>
+        </div>
+        {brand.aliases.length === 0 ? (
+          <p className="text-xs text-neutral-400">아직 추가된 항목이 없습니다.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {brand.aliases.map((item, i) => (
+              <li key={item} className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+                {item}
+                <button
+                  type="button"
+                  aria-label={`${item} 삭제`}
+                  onClick={() => applyListChange({ aliases: brand.aliases.filter((_, idx) => idx !== i) })}
+                  className="cursor-pointer text-neutral-400 hover:text-red-600"
+                >
+                  <X size={13} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-neutral-900">추적할 기타 브랜드</h2>
-            <p className="mt-0.5 text-xs text-neutral-500">경쟁사 등 함께 추적할 다른 브랜드입니다.</p>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              경쟁사 등 함께 추적할 다른 브랜드입니다. 이름을 누르면 별칭(다른 표기)을 관리할 수 있습니다.
+            </p>
           </div>
-          <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddOtherBrandOpen(true)}>
-            추가
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setPickObservedOpen(true)}>
+              가시성 개요에서 추가
+            </Button>
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddOtherBrandOpen(true)}>
+              직접 추가
+            </Button>
+          </div>
         </div>
         {brand.otherBrands.length === 0 ? (
           <p className="text-xs text-neutral-400">아직 추가된 브랜드가 없습니다.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {brand.otherBrands.map((b, i) => (
-              <span key={b} className="flex items-center gap-1.5 rounded-full bg-neutral-100 py-1 pl-3 pr-2 text-xs text-neutral-700">
-                {b}
+              <span key={b.name} className="flex items-center gap-1.5 rounded-full bg-neutral-100 py-1 pl-3 pr-2 text-xs text-neutral-700">
                 <button
                   type="button"
-                  aria-label={`${b} 삭제`}
+                  onClick={() => setEditingOtherBrand(b)}
+                  className="flex items-center gap-1 cursor-pointer hover:underline"
+                  title={b.aliases.length > 0 ? `별칭: ${b.aliases.join(", ")}` : "별칭 없음 — 눌러서 추가"}
+                >
+                  {b.name}
+                  {b.aliases.length > 0 && <span className="text-neutral-400">({b.aliases.length})</span>}
+                  <Pencil size={10} className="text-neutral-400" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`${b.name} 삭제`}
                   onClick={() => applyListChange({ otherBrands: brand.otherBrands.filter((_, idx) => idx !== i) })}
                   className="cursor-pointer text-neutral-400 hover:text-red-600"
                 >
@@ -325,7 +383,46 @@ export function BrandDetailClient({ initial }: { initial: ManagedBrand }) {
         title="기타 브랜드 추가"
         label="브랜드 이름"
         onClose={() => setAddOtherBrandOpen(false)}
-        onAdd={(v) => applyListChange({ otherBrands: [...brand.otherBrands, v] })}
+        onAdd={(v) => applyListChange({ otherBrands: [...brand.otherBrands, { name: v, aliases: [] }] })}
+      />
+      <PickObservedBrandsModal
+        open={pickObservedOpen}
+        onClose={() => setPickObservedOpen(false)}
+        observedBrands={observedBrands}
+        trackedNames={brand.otherBrands.map((b) => b.name.toLowerCase())}
+        onToggle={(name, tracked) =>
+          applyListChange({
+            otherBrands: tracked
+              ? brand.otherBrands.filter((b) => b.name.toLowerCase() !== name.toLowerCase())
+              : [...brand.otherBrands, { name, aliases: [] }],
+          })
+        }
+      />
+      {editingOtherBrand && (
+        <OtherBrandAliasesModal
+          otherBrand={editingOtherBrand}
+          onClose={() => setEditingOtherBrand(null)}
+          onSave={(aliases) => {
+            applyListChange({
+              otherBrands: brand.otherBrands.map((b) => (b.name === editingOtherBrand.name ? { ...b, aliases } : b)),
+            });
+            setEditingOtherBrand(null);
+          }}
+        />
+      )}
+      <OptimizeAliasesModal
+        open={optimizeOpen}
+        onClose={() => setOptimizeOpen(false)}
+        brand={brand}
+        onSave={(result) => {
+          const ownKey = brand.name.trim().toLowerCase();
+          const nextAliases = result[ownKey] ? [...new Set([...brand.aliases, ...result[ownKey]])] : brand.aliases;
+          const nextOtherBrands = brand.otherBrands.map((b) => {
+            const found = result[b.name.trim().toLowerCase()];
+            return found ? { ...b, aliases: [...new Set([...b.aliases, ...found])] } : b;
+          });
+          applyListChange({ aliases: nextAliases, otherBrands: nextOtherBrands });
+        }}
       />
       <SimpleAddModal open={addUrlOpen} title="URL 추가" label="URL" onClose={() => setAddUrlOpen(false)} onAdd={(v) => applyListChange({ urls: [...brand.urls, v] })} />
       <SimpleAddModal
@@ -518,5 +615,236 @@ function MoveToPendingForm({ brand, onClose, onConfirm }: { brand: ManagedBrand;
         </Button>
       </div>
     </>
+  );
+}
+
+// "가시성 개요에서 추가" — 실측으로 언급된 브랜드 목록에서 골라 "추적할
+// 기타 브랜드"에 넣거나 뺀다. Y/N으로 이미 추적 중인지 바로 보여준다.
+function PickObservedBrandsModal({
+  open,
+  onClose,
+  observedBrands,
+  trackedNames,
+  onToggle,
+}: {
+  open: boolean;
+  onClose: () => void;
+  observedBrands: { name: string; mentions: number }[];
+  trackedNames: string[];
+  onToggle: (name: string, alreadyTracked: boolean) => void;
+}) {
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-neutral-900">가시성 개요에서 브랜드 추가</h2>
+        <ModalCloseButton onClose={onClose} />
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">최근 수집 데이터에서 실제로 언급된 브랜드 목록입니다. 추적 여부를 바로 켜고 끌 수 있습니다.</p>
+      <div className="mt-4 flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
+        {observedBrands.length === 0 && <p className="text-xs text-neutral-400">아직 실측 언급 데이터가 없습니다.</p>}
+        {observedBrands.map((b) => {
+          const tracked = trackedNames.includes(b.name.toLowerCase());
+          return (
+            <div key={b.name} className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-3 py-2 text-xs">
+              <span className="text-neutral-700">
+                {b.name} <span className="text-neutral-400">· 언급 {b.mentions}회</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onToggle(b.name, tracked)}
+                className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold cursor-pointer ${
+                  tracked ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300"
+                }`}
+              >
+                {tracked ? "Y · 추적 중" : "N · 추가"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button variant="secondary" onClick={onClose}>
+          닫기
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+// "추적할 기타 브랜드" 칩 하나의 별칭 편집 — Salesforce/세일즈포스/세일즈포스
+// 닷컴처럼 표기가 다른 언급을 같은 브랜드로 묶는다.
+function OtherBrandAliasesModal({
+  otherBrand,
+  onClose,
+  onSave,
+}: {
+  otherBrand: TrackedOtherBrand;
+  onClose: () => void;
+  onSave: (aliases: string[]) => void;
+}) {
+  const [aliases, setAliases] = useState(otherBrand.aliases);
+  const [value, setValue] = useState("");
+
+  function add() {
+    if (!value.trim() || aliases.includes(value.trim())) return;
+    setAliases((prev) => [...prev, value.trim()]);
+    setValue("");
+  }
+
+  return (
+    <Modal open onClose={onClose}>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-neutral-900">{otherBrand.name} — 별칭 관리</h2>
+        <ModalCloseButton onClose={onClose} />
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">AI 답변에서 이 브랜드가 다르게 표기되는 이름을 추가하면 같은 브랜드 언급으로 집계됩니다.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {aliases.length === 0 && <p className="text-xs text-neutral-400">아직 별칭이 없습니다.</p>}
+        {aliases.map((a) => (
+          <span key={a} className="flex items-center gap-1.5 rounded-full bg-neutral-100 py-1 pl-3 pr-2 text-xs text-neutral-700">
+            {a}
+            <button
+              type="button"
+              aria-label={`${a} 삭제`}
+              onClick={() => setAliases((prev) => prev.filter((x) => x !== a))}
+              className="cursor-pointer text-neutral-400 hover:text-red-600"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="mt-4 flex gap-2">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="예: 세일즈포스 닷컴"
+          className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+        />
+        <Button type="button" variant="secondary" onClick={add}>
+          추가
+        </Button>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          취소
+        </Button>
+        <Button variant="primary" onClick={() => onSave(aliases)}>
+          저장
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+// LLM API 연동 전까지 — 브랜드 이름 목록을 프롬프트로 만들어 LLM에 물어보고
+// {브랜드명: [별칭...]} JSON을 붙여넣으면 본 브랜드/기타 브랜드 각각의
+// aliases에 병합한다. LlmBridgeModal과 같은 패턴이지만 결과를 서버 저장소가
+// 아니라 이 브랜드의 aliases/otherBrands에 직접 합치므로 전용 컴포넌트로 둔다.
+function OptimizeAliasesModal({
+  open,
+  onClose,
+  brand,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  brand: ManagedBrand;
+  onSave: (result: Record<string, string[]>) => void;
+}) {
+  const [pasted, setPasted] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const names = [brand.name, ...brand.otherBrands.map((b) => b.name)];
+  const promptText = `다음은 우리가 추적 중인 브랜드 이름 목록입니다:\n\n${names.map((n) => `- ${n}`).join("\n")}\n\n각 브랜드마다, AI 챗봇 답변에서 실제로 다르게 표기될 수 있는 이름(한글/영문 혼용 표기, 줄임말, 정식 법인명, 흔한 오표기 등)을 3~5개씩 나열해주세요.\n\n반드시 아래 JSON 형식으로만, 브랜드 전체에 대해 한 번에 답변하세요:\n{\n  "${names[0]}": ["별칭1", "별칭2"],\n  "${names[1] ?? "다른 브랜드"}": ["별칭1", "별칭2"]\n}`;
+
+  function close() {
+    setPasted("");
+    setError(null);
+    onClose();
+  }
+
+  async function copyPrompt() {
+    await navigator.clipboard.writeText(promptText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function save() {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(pasted);
+    } catch {
+      setError("JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요.");
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      setError("브랜드명을 key로 갖는 JSON 객체 형식이어야 합니다.");
+      return;
+    }
+    const entries = Object.entries(parsed as Record<string, unknown>);
+    if (entries.length === 0 || entries.some(([, v]) => !Array.isArray(v) || v.some((x) => typeof x !== "string"))) {
+      setError("각 브랜드 값은 문자열 배열이어야 합니다.");
+      return;
+    }
+    const normalized: Record<string, string[]> = {};
+    for (const [name, aliases] of entries) normalized[name.trim().toLowerCase()] = aliases as string[];
+    onSave(normalized);
+    close();
+  }
+
+  return (
+    <Modal open={open} onClose={close}>
+      <div className="flex items-center gap-2">
+        <Sparkles size={16} className="text-slate-500" />
+        <h2 className="text-lg font-bold text-neutral-900">AI로 별칭 최적화</h2>
+        <ModalCloseButton onClose={close} />
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">
+        LLM API 연동 전까지, 아래 프롬프트를 LLM에게 물어본 뒤 답변을 붙여넣으면 이 브랜드와 기타 브랜드 전체의 별칭이 한 번에 채워집니다.
+      </p>
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-neutral-700">1. 아래 프롬프트를 복사해 LLM(ChatGPT 등)에 붙여넣으세요</span>
+          <button
+            type="button"
+            onClick={copyPrompt}
+            className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+          >
+            {copied ? "복사됨" : "복사"}
+          </button>
+        </div>
+        <textarea readOnly value={promptText} rows={6} className="w-full rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600" />
+      </div>
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+        <textarea
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+          rows={6}
+          placeholder="여기에 LLM 답변을 붙여넣으세요"
+          className="w-full rounded-md border border-neutral-300 p-3 text-xs text-neutral-800"
+        />
+      </div>
+
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={close}>
+          취소
+        </Button>
+        <Button variant="primary" disabled={!pasted.trim()} onClick={save}>
+          별칭 병합
+        </Button>
+      </div>
+    </Modal>
   );
 }

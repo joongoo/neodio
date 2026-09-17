@@ -98,6 +98,21 @@ CREATE TABLE IF NOT EXISTS citations (
   position INTEGER NOT NULL, is_own_domain INTEGER NOT NULL CHECK(is_own_domain IN (0,1)),
   UNIQUE(analysis_id,url)
 );
+CREATE TABLE IF NOT EXISTS brands (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
+  name TEXT NOT NULL, url TEXT NOT NULL, sitemap_url TEXT NOT NULL, description TEXT NOT NULL,
+  industry TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','pending')),
+  markets_json TEXT NOT NULL CHECK(json_valid(markets_json)),
+  aliases_json TEXT NOT NULL CHECK(json_valid(aliases_json)),
+  other_brands_json TEXT NOT NULL CHECK(json_valid(other_brands_json)),
+  urls_json TEXT NOT NULL CHECK(json_valid(urls_json)),
+  social_accounts_json TEXT NOT NULL CHECK(json_valid(social_accounts_json)),
+  earned_content_sources_json TEXT NOT NULL CHECK(json_valid(earned_content_sources_json)),
+  cdn_connected INTEGER NOT NULL CHECK(cdn_connected IN (0,1)),
+  gsc_connected INTEGER NOT NULL CHECK(gsc_connected IN (0,1)),
+  analytics_connected INTEGER NOT NULL CHECK(analytics_connected IN (0,1)),
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS imported_files (path TEXT PRIMARY KEY, signature TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS prompts_topic ON prompts(organization_id,topic_id);

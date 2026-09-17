@@ -41,7 +41,11 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
         markets: ["한국"],
         status: "active",
         aliases: ["네오다임", "네오디지엠"],
-        otherBrands: ["HubSpot", "Salesforce", "Rinda AI"],
+        otherBrands: [
+          { name: "HubSpot", aliases: ["허브스팟"] },
+          { name: "Salesforce", aliases: ["세일즈포스", "세일즈포스 닷컴"] },
+          { name: "Rinda AI", aliases: [] },
+        ],
         urls: ["https://blog.neodigm.com"],
         socialAccounts: [{ platform: "LinkedIn", handle: "neodigm" }],
         earnedContentSources: ["cafe.naver.com/ticketsuccess"],
