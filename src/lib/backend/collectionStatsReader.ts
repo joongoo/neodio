@@ -1,6 +1,7 @@
 import { listCollectedRuns } from "./collectionRuns";
-import { processPromptRuns } from "./processing";
+import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
+import { getPromptTopicGroups } from "./promptTopics";
 import { seedBrands, seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
 import {
   BrandRankRow,
@@ -87,7 +88,7 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
 
   const weekOfRun = new Map<string, string>();
   for (const run of promptRuns) {
@@ -122,7 +123,18 @@ export async function getRealSentimentSeries(range: DateRange, filters: RealData
     if (bucket) bucket[mention.sentiment] += 1;
   }
 
-  return currentWeeks.map((w) => ({ week: formatWeekLabel(w), ...byWeek.get(w)! }));
+  // SentimentChart는 mock 데이터처럼 positive+neutral+negative가 100이 되는
+  // "그 주 언급 중 비율(%)"을 기대한다 — 건수를 그대로 넘기면 축 라벨("%")과
+  // 실제 값(예: 2, 1, 0)이 안 맞아 차트가 거의 0으로 보인다.
+  return currentWeeks.map((w) => {
+    const counts = byWeek.get(w)!;
+    const total = counts.positive + counts.neutral + counts.negative;
+    if (total === 0) return { week: formatWeekLabel(w), positive: 0, neutral: 0, negative: 0 };
+    const positive = Math.round((counts.positive / total) * 100);
+    const negative = Math.round((counts.negative / total) * 100);
+    const neutral = 100 - positive - negative;
+    return { week: formatWeekLabel(w), positive, neutral, negative };
+  });
 }
 
 // Mentions/citations already carry a brandId for every tracked brand, not
@@ -341,7 +353,7 @@ export async function getRealTopicRows(
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
 
   const ownMentionByRun = new Map<string, boolean>();
@@ -378,10 +390,30 @@ export async function getRealTopicRows(
   }
   const libraryPromptSet = new Set((extras.libraryPrompts ?? []).map((p) => p.trim().toLowerCase()));
 
+  // 여러 프롬프트를 하나의 "토픽"으로 묶는 그룹핑 — LLM API 연동 전까지는
+  // LlmBridgeModal(scope "prompt-topic-groups")로 사람이 채운다. 아직 안
+  // 묶인 프롬프트는 자기 자신 하나짜리 토픽으로 남는다(types.ts 정의 참고).
+  const topicGroups = await getPromptTopicGroups(ORG_ID);
+  const topicOfQuery = new Map<string, string>();
+  for (const group of topicGroups) {
+    for (const p of group.prompts) topicOfQuery.set(p.trim(), group.topic);
+  }
+  for (const run of promptRuns) {
+    if (run.rawMetadata.query && run.rawMetadata.topic) topicOfQuery.set(run.rawMetadata.query.trim(), run.rawMetadata.topic);
+  }
+  const queriesByTopic = new Map<string, string[]>();
+  for (const query of runIdsByQuery.keys()) {
+    const topic = topicOfQuery.get(query) ?? query;
+    const list = queriesByTopic.get(topic) ?? [];
+    list.push(query);
+    queriesByTopic.set(topic, list);
+  }
+
   const topPrompts: TopicRow[] = [];
   const opportunities: TopicRow[] = [];
 
-  for (const [query, runIds] of runIdsByQuery) {
+  for (const [topic, queries] of queriesByTopic) {
+    const runIds = queries.flatMap((q) => runIdsByQuery.get(q)!);
     const mentionCount = runIds.filter((id) => ownMentionByRun.get(id)).length;
     const firstRun = runsById.get(runIds[0])!;
     const market = seedMarkets.find((m) => m.id === firstRun.marketId)?.label ?? firstRun.marketId;
@@ -389,6 +421,7 @@ export async function getRealTopicRows(
     const prompts: TopicPromptRow[] = runIds
       .map((id) => {
         const run = runsById.get(id)!;
+        const query = run.rawMetadata.query!.trim();
         return {
           id,
           prompt: query,
@@ -398,20 +431,22 @@ export async function getRealTopicRows(
           source: String(citationCountByRun.get(id) ?? 0),
           market: seedMarkets.find((m) => m.id === run.marketId)?.label ?? run.marketId,
           runAt: run.runAt,
+          addedToLibrary: libraryPromptSet.size > 0 ? libraryPromptSet.has(query.toLowerCase()) : undefined,
         };
       })
       .sort((a, b) => (a.runAt ?? "").localeCompare(b.runAt ?? ""));
 
-    const targetUrl = extras.targetUrls?.[query];
+    const targetUrl = extras.targetUrls?.[topic];
 
     const row: TopicRow = {
-      id: `real-${query}`,
-      topic: query,
+      id: `real-${topic}`,
+      topic,
       mentions: mentionCount,
       visibility: Math.round((mentionCount / runIds.length) * 100),
       market,
       prompts,
-      addedToLibrary: libraryPromptSet.size > 0 ? libraryPromptSet.has(query.trim().toLowerCase()) : undefined,
+      addedToLibrary:
+        libraryPromptSet.size > 0 ? queries.some((q) => libraryPromptSet.has(q.trim().toLowerCase())) : undefined,
       targetUrl,
       targetUrlCitations: targetUrl ? (citationCountByPageUrl.get(targetUrl) ?? 0) : undefined,
       createdAt: prompts[0]?.runAt,
@@ -531,7 +566,7 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
 
   const ownMentionByRun = new Map<string, { present: boolean; sentiment: Sentiment }>();
@@ -596,7 +631,7 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   const brandNameById = new Map(seedBrands.map((b) => [b.id, b.name]));
   const ownBrandName = brandNameById.get(OWN_BRAND_ID);
 
@@ -727,7 +762,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   if (processed.citations.length === 0) return null;
 
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
@@ -735,6 +770,8 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
     const run = runsById.get(runId);
     return seedMarkets.find((m) => m.id === run?.marketId)?.code ?? "GLOBAL";
   };
+  const queryOf = (runId: string) => runsById.get(runId)?.rawMetadata.query?.trim();
+  const promptTitlesOf = (runIds: Set<string>) => [...new Set([...runIds].map(queryOf).filter((q): q is string => !!q))];
 
   interface UrlAgg {
     isOwnDomain: boolean;
@@ -775,6 +812,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
         url,
         citations: agg.citations,
         citedPrompts: agg.promptRunIds.size,
+        citedPromptTitles: promptTitlesOf(agg.promptRunIds),
         contentVisibility: null,
         category: "미분류",
         market: topMarket(agg),
@@ -786,6 +824,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
         contentType: "미분류",
         citations: agg.citations,
         citedPrompts: agg.promptRunIds.size,
+        citedPromptTitles: promptTitlesOf(agg.promptRunIds),
         category: "미분류",
         market: topMarket(agg),
       });
@@ -849,7 +888,7 @@ export async function getRealTopBrands(filters: RealDataFilters = {}): Promise<B
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   if (processed.mentions.length === 0) return null;
 
   const mentionsByBrand = new Map<string, number>();
@@ -883,7 +922,7 @@ export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
   if (ownCitations.length === 0) return null;
 
@@ -937,7 +976,7 @@ export async function getRealCitedSources(
 
   const processed =
     promptRuns.length > 0
-      ? processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands })
+      ? await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands })
       : null;
   const thirdPartyCitations = processed?.citations.filter((c) => !c.isOwnDomain) ?? [];
   if (thirdPartyCitations.length === 0 && trackedDomains.length === 0) return null;
@@ -1009,7 +1048,7 @@ export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): 
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: seedBrands });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
   const brandNameById = new Map(seedBrands.map((b) => [b.id, b.name]));
 

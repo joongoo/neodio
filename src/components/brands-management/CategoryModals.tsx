@@ -15,14 +15,14 @@ export function CreateCategoryModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (name: string) => void;
+  onCreate: (name: string) => Promise<boolean>;
 }) {
   const [name, setName] = useState("");
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim());
+    if (!await onCreate(name.trim())) return;
     setName("");
     onClose();
   }
@@ -65,7 +65,7 @@ export function EditCategoryModal({
 }: {
   category: ManagedCategory | null;
   onClose: () => void;
-  onSave: (id: string, name: string) => void;
+  onSave: (id: string, name: string) => Promise<boolean>;
 }) {
   return (
     <Modal open={!!category} onClose={onClose}>
@@ -83,14 +83,14 @@ function EditCategoryForm({
 }: {
   category: ManagedCategory;
   onClose: () => void;
-  onSave: (id: string, name: string) => void;
+  onSave: (id: string, name: string) => Promise<boolean>;
 }) {
   const [name, setName] = useState(category.name);
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(category.id, name.trim());
+    if (!await onSave(category.id, name.trim())) return;
     onClose();
   }
 
@@ -135,7 +135,7 @@ export function DeleteCategoryModal({
 }: {
   category: ManagedCategory | null;
   onClose: () => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<boolean>;
 }) {
   return (
     <Modal open={!!category} onClose={onClose}>
@@ -149,7 +149,7 @@ export function DeleteCategoryModal({
             <b>{category.name}</b> 카테고리를 삭제하시겠습니까?
             {category.promptCount > 0 && (
               <span className="mt-2 block rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
-                이 카테고리를 사용 중인 프롬프트가 {category.promptCount}개 있습니다. 삭제하면 해당 프롬프트는 미분류 상태가 됩니다.
+                이 카테고리를 사용 중인 프롬프트가 {category.promptCount}개 있습니다. 다른 카테고리로 옮긴 후 삭제해주세요.
               </span>
             )}
           </p>
@@ -160,8 +160,8 @@ export function DeleteCategoryModal({
             <button
               type="button"
               className="rounded-md bg-red-600 px-3.5 py-2 text-sm font-medium text-white cursor-pointer hover:opacity-90"
-              onClick={() => {
-                onDelete(category.id);
+              onClick={async () => {
+                if (!await onDelete(category.id)) return;
                 onClose();
               }}
             >

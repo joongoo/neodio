@@ -271,6 +271,7 @@ async function main() {
         status,
         rawResponse,
         rawMetadata: {
+          collectionJobId: process.env.NEODIO_COLLECTION_JOB_ID || undefined,
           source: "google-ai-overview",
           collectedBy: "playwright-incognito-chrome",
           query,
@@ -306,6 +307,7 @@ async function main() {
             status,
             rawResponse: "",
             rawMetadata: {
+              collectionJobId: process.env.NEODIO_COLLECTION_JOB_ID || undefined,
               source: "google-ai-overview",
               collectedBy: "playwright-incognito-chrome",
               query,

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { CollectionJob } from "./collectionJobTypes";
+import { getPersistedCollectionJob, getPromptStore, persistCollectionJob, syncCollectedFiles } from "./database";
 
 // In-memory job store — this dashboard runs as a single local dev process,
 // so a Map survives exactly as long as a running job needs it. Restarting
@@ -8,9 +9,10 @@ import { CollectionJob } from "./collectionJobTypes";
 const jobs = new Map<string, CollectionJob>();
 const isWindows = process.platform === "win32";
 
-function runCommand(command: string, args: string[], onLog: (line: string) => void): Promise<number> {
+function runCommand(command: string, args: string[], onLog: (line: string) => void, jobId?: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: process.cwd(), shell: isWindows });
+    const child = spawn(command, args, { cwd: process.cwd(), shell: isWindows,
+      env: { ...process.env, NEODIO_COLLECTION_JOB_ID: jobId ?? "" } });
     child.stdout?.on("data", (chunk) => onLog(chunk.toString()));
     child.stderr?.on("data", (chunk) => onLog(chunk.toString()));
     child.on("error", reject);
@@ -26,8 +28,8 @@ function appendLog(job: CollectionJob, text: string) {
   if (job.log.length > 200) job.log = job.log.slice(-200);
 }
 
-export function getJob(id: string): CollectionJob | undefined {
-  return jobs.get(id);
+export async function getJob(id: string): Promise<CollectionJob | undefined> {
+  return jobs.get(id) ?? getPersistedCollectionJob(id);
 }
 
 export function startCollectionJob(keyword: string, engines: ("naver" | "google")[]): CollectionJob {
@@ -44,11 +46,12 @@ export function startCollectionJob(keyword: string, engines: ("naver" | "google"
   };
   jobs.set(id, job);
 
-  runJob(job).catch((error) => {
+  runJob(job).catch(async (error) => {
     job.stage = "error";
     job.error = error instanceof Error ? error.message : String(error);
     job.finishedAt = Date.now();
-  });
+    await persistCollectionJob(job);
+  }).catch(error => console.error("Unable to persist collection job", error));
 
   return job;
 }
@@ -59,6 +62,7 @@ export function startCollectionJob(keyword: string, engines: ("naver" | "google"
 // same npm scripts a person would run from a terminal, and "저장 중" runs
 // process-raw.ts so mentions/citations are recomputed immediately.
 async function runJob(job: CollectionJob) {
+  await persistCollectionJob(job);
   job.stage = "install";
   appendLog(job, "Playwright 브라우저 설치 확인 중...");
   const npx = isWindows ? "npx.cmd" : "npx";
@@ -68,31 +72,42 @@ async function runJob(job: CollectionJob) {
   }
 
   const npm = isWindows ? "npm.cmd" : "npm";
+  let collectionFailed = false;
 
   if (job.engines.includes("naver")) {
     job.stage = "naver";
+    await persistCollectionJob(job);
     appendLog(job, `네이버 AI검색 수집 시작: "${job.keyword}"`);
     const code = await runCommand(npm, ["run", "collect:naver-ai", "--", "--query", job.keyword], (line) =>
-      appendLog(job, line)
+      appendLog(job, line), job.id
     );
     appendLog(job, code === 0 ? "네이버 수집 완료" : "네이버 수집이 실패 상태로 종료되었습니다 (로그 참고).");
+    collectionFailed ||= code !== 0;
   }
 
   if (job.engines.includes("google")) {
     job.stage = "google";
+    await persistCollectionJob(job);
     appendLog(job, `구글 AI 모드 수집 시작: "${job.keyword}" (시크릿 크롬 창이 열립니다)`);
     const code = await runCommand(npm, ["run", "collect:google-ai", "--", "--query", job.keyword], (line) =>
-      appendLog(job, line)
+      appendLog(job, line), job.id
     );
     appendLog(job, code === 0 ? "구글 수집 완료" : "구글 수집이 실패 상태로 종료되었습니다 (로그 참고).");
+    collectionFailed ||= code !== 0;
   }
 
   job.stage = "save";
+  await persistCollectionJob(job);
   appendLog(job, "수집 결과 저장(가공) 중...");
-  await runCommand(npm, ["run", "process:raw"], (line) => appendLog(job, line));
+  const store = await getPromptStore();
+  await syncCollectedFiles(store);
+  const saveCode = await runCommand(npm, ["run", "db:migrate"], (line) => appendLog(job, line));
+  if (saveCode !== 0) throw new Error("Failed to save collection analysis");
+  if (collectionFailed) throw new Error("일부 수집이 실패했습니다. 수집 로그를 확인해주세요.");
 
   job.stage = "done";
   job.finishedAt = Date.now();
+  await persistCollectionJob(job);
 }
 
 export type { CollectionStage, CollectionJob } from "./collectionJobTypes";

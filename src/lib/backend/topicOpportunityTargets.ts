@@ -17,15 +17,28 @@ async function readAll(): Promise<Record<string, string>> {
   }
 }
 
-export async function getTopicOpportunityTargets(): Promise<Record<string, string>> {
-  return readAll();
+// 실 DB로 옮길 때 조직별로 행을 나눠야 하므로, 지금은 조직이 하나뿐이라도
+// 키에 orgId를 미리 섞어 넣는다.
+function scopedKey(orgId: string, topic: string): string {
+  return `${orgId}::${topic}`;
 }
 
-export async function setTopicOpportunityTarget(topic: string, targetUrl: string): Promise<void> {
+export async function getTopicOpportunityTargets(orgId: string): Promise<Record<string, string>> {
+  const all = await readAll();
+  const prefix = `${orgId}::`;
+  const byTopic: Record<string, string> = {};
+  for (const [key, url] of Object.entries(all)) {
+    if (key.startsWith(prefix)) byTopic[key.slice(prefix.length)] = url;
+  }
+  return byTopic;
+}
+
+export async function setTopicOpportunityTarget(orgId: string, topic: string, targetUrl: string): Promise<void> {
   const filePath = path.join(process.cwd(), FILE_PATH);
   await mkdir(path.dirname(filePath), { recursive: true });
   const all = await readAll();
-  if (targetUrl.trim()) all[topic] = targetUrl.trim();
-  else delete all[topic];
+  const key = scopedKey(orgId, topic);
+  if (targetUrl.trim()) all[key] = targetUrl.trim();
+  else delete all[key];
   await writeFile(filePath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
 }

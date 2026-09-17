@@ -10,7 +10,7 @@ import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore"
 export const dynamic = "force-dynamic";
 
 export default async function MultimediaOpportunityPage() {
-  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls("multimedia")]);
+  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls(DEFAULT_ORG_ID, "multimedia")]);
   const history = demo || !org ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
   const data = buildMultimediaOpportunity(history, excludedUrls);
 
@@ -23,8 +23,8 @@ export default async function MultimediaOpportunityPage() {
   }
 
   const [guides, indexStatuses, pageSpeedResults] = await Promise.all([
-    getLlmBridgeScope<{ guide: string }>("content-guide-multimedia"),
-    getCachedUrlIndexStatuses(),
+    getLlmBridgeScope<{ guide: string }>(DEFAULT_ORG_ID, "content-guide-multimedia"),
+    getCachedUrlIndexStatuses(DEFAULT_ORG_ID),
     getCachedPageSpeedResults(),
   ]);
   const dataWithExtras = {

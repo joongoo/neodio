@@ -14,7 +14,7 @@ import { ContentRecoveryOpportunity, ContentRecoveryUrl } from "@/lib/db";
 
 const OPTIONAL_COLUMNS: ColumnOption[] = [
   { key: "contentVisibility", label: "가시성 %" },
-  { key: "priorityScore", label: "우선순위 점수" },
+  { key: "priorityScore", label: "우선순위" },
   { key: "googleIndex", label: "구글 인덱싱" },
   { key: "pageSpeed", label: "페이지 속도" },
 ];
@@ -30,6 +30,7 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
   const pollRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   const [guideTarget, setGuideTarget] = useState<ContentRecoveryUrl | null>(null);
   const [viewingGuide, setViewingGuide] = useState<ContentRecoveryUrl | null>(null);
+  const [bulkDiagnostic, setBulkDiagnostic] = useState<{ type: "index" | "speed"; done: number; total: number } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -79,11 +80,31 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
     pollRefs.current[url] = setInterval(poll, 1500);
   }
 
+  // 구글 인덱싱/페이지 속도를 URL마다 따로 눌러 확인해야 했는데, 여러 개
+  // 있으면 비현실적이다 — "현재 제안" 탭 전체를 순서대로 돌며 한 번에
+  // 확인한다. Lighthouse 실행은 5~10초씩 걸려 병렬로 너무 많이 돌리면
+  // 느려지므로 순차 실행하고 진행률만 보여준다.
+  async function checkAllDiagnostics(type: "index" | "speed", urls: string[]) {
+    if (urls.length === 0) return;
+    setBulkDiagnostic({ type, done: 0, total: urls.length });
+    const endpoint = type === "index" ? "/api/gsc-url-inspection" : "/api/pagespeed-insights";
+    for (let i = 0; i < urls.length; i++) {
+      await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urls[i] }),
+      }).catch(() => null);
+      setBulkDiagnostic((prev) => (prev ? { ...prev, done: i + 1 } : prev));
+    }
+    setBulkDiagnostic(null);
+    router.refresh();
+  }
+
   const columns: DataTableColumn<ContentRecoveryUrl>[] = [
     {
       key: "url",
       label: "전체 도메인 URL",
-      width: "w-[280px]",
+      width: "w-[220px]",
       render: (r) => (
         <span title={r.url} className="block min-w-0 truncate text-blue-600">
           {r.url}
@@ -93,7 +114,7 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
     {
       key: "contentVisibility",
       label: "가시성 %",
-      width: "w-[140px]",
+      width: "w-[90px]",
       render: (r) =>
         r.previousContentVisibility !== undefined ? (
           <span className="flex items-center gap-1 text-xs">
@@ -105,23 +126,23 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
           `${r.contentVisibility}%`
         ),
     },
-    { key: "priorityScore", label: "우선순위 점수", width: "w-[110px]", render: (r) => r.priorityScore.toFixed(1) },
+    { key: "priorityScore", label: "우선순위", width: "w-[70px]", render: (r) => r.priorityScore.toFixed(1) },
     {
       key: "googleIndex",
       label: "구글 인덱싱",
-      width: "w-[140px]",
+      width: "w-[110px]",
       render: (r) => <GoogleIndexBadge url={r.url} status={r.googleIndex} />,
     },
     {
       key: "pageSpeed",
       label: "페이지 속도",
-      width: "w-[120px]",
+      width: "w-[100px]",
       render: (r) => <PageSpeedBadge url={r.url} result={r.pageSpeed} />,
     },
     {
       key: "action",
       label: "액션",
-      width: "w-[280px]",
+      width: "w-[220px]",
       render: (r) => {
         const job = recheckJobs[r.url];
         const guideButton = (
@@ -263,18 +284,52 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
           콘텐츠를 수정한 뒤 "수정 완료 확인"을 누르면 그 URL만 다시 크롤링해서 콘텐츠 가시성이 70% 이상인지 실측으로 검토합니다. 기준을 넘으면 자동으로 "수정 완료"로 이동하고, 못 넘으면 계속 "현재 제안"에 남습니다.
         </p>
 
-        <div className="mt-4 flex gap-6 border-b border-neutral-200">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`cursor-pointer border-b-2 pb-2 text-[13px] font-bold ${
-                tab === t ? "border-slate-800 text-slate-800" : "border-transparent text-neutral-400"
-              }`}
-            >
-              {t} ({rowsByTab[t].length})
-            </button>
-          ))}
+        <div className="mt-4 flex items-center justify-between gap-3 border-b border-neutral-200">
+          <div className="flex gap-6">
+            {TABS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`cursor-pointer border-b-2 pb-2 text-[13px] font-bold ${
+                  tab === t ? "border-slate-800 text-slate-800" : "border-transparent text-neutral-400"
+                }`}
+              >
+                {t} ({rowsByTab[t].length})
+              </button>
+            ))}
+          </div>
+          {tab === "현재 제안" && rowsByTab["현재 제안"].length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!!bulkDiagnostic}
+                onClick={() => checkAllDiagnostics("index", rowsByTab["현재 제안"].map((r) => r.url))}
+                className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-3 py-1.5 text-[11px] font-bold text-neutral-700 cursor-pointer hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+              >
+                {bulkDiagnostic?.type === "index" ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> 인덱싱 확인 중 ({bulkDiagnostic.done}/{bulkDiagnostic.total})
+                  </>
+                ) : (
+                  "전체 인덱싱 확인"
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={!!bulkDiagnostic}
+                onClick={() => checkAllDiagnostics("speed", rowsByTab["현재 제안"].map((r) => r.url))}
+                className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-3 py-1.5 text-[11px] font-bold text-neutral-700 cursor-pointer hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+              >
+                {bulkDiagnostic?.type === "speed" ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> 속도 확인 중 ({bulkDiagnostic.done}/{bulkDiagnostic.total})
+                  </>
+                ) : (
+                  "전체 속도 확인"
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 rounded-lg border border-neutral-200 bg-white">

@@ -38,6 +38,7 @@ yarn-error.log*
 
 # scratch data (scraped raw data, chrome debug profiles, local venv)
 .tmp/
+.data/
 
 # typescript
 *.tsbuildinfo

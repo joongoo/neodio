@@ -1,5 +1,5 @@
 import { VisibilityOverviewClient } from "@/components/visibility-overview/VisibilityOverviewClient";
-import { DateRange, DEFAULT_ORG_ID, db, VisibilityTableRow } from "@/lib/db";
+import { DateRange, DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db, VisibilityTableRow } from "@/lib/db";
 import {
   getRealCitedPages,
   getRealCitedSources,
@@ -13,14 +13,12 @@ import {
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { SourceOpportunityRecommendation } from "@/lib/db/data/sourceOpportunityRecommendations";
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
-import { listTrackedTopics } from "@/lib/backend/trackedTopics";
+import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
-const OWN_BRAND_ID = "brand-neodigm";
-
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다 —
 // 개요/수집 로그 페이지와 동일한 이유.
 export const dynamic = "force-dynamic";
@@ -44,12 +42,12 @@ export default async function VisibilityOverviewPage({
       db.visibilityOverview.getMentionsByModel(orgId),
       db.visibilityOverview.getMentionsByMarket(orgId),
       db.visibilityOverview.getTopicCategories(orgId),
-      db.promptLibrary.list(orgId),
-      listTrackedTopics(),
-      getDeletedLibraryRowIds(),
-      getTopicOpportunityTargets(),
-      getManagedBrand(orgId, OWN_BRAND_ID),
-      getLlmBridgeScope<SourceOpportunityRecommendation>("source-recommendation"),
+      listSeedLibraryRows(orgId),
+      listTrackedTopics(orgId),
+      getDeletedLibraryRowIds(orgId),
+      getTopicOpportunityTargets(orgId),
+      getManagedBrand(orgId, DEFAULT_BRAND_ID),
+      getLlmBridgeScope<SourceOpportunityRecommendation>(DEFAULT_ORG_ID, "source-recommendation"),
     ]);
   // 토픽 기회에 "이미 프롬프트 라이브러리에 추가됐는지" 배지를 달기 위한
   // 실제 라이브러리 프롬프트 문장 전체 — 프롬프트 전략 페이지와 동일한

@@ -3,6 +3,7 @@ import { refreshAccessToken } from "./googleOAuth";
 import {
   GscCountryRow,
   GscDeviceRow,
+  GscRichResultsStatus,
   GscSearchAppearanceRow,
   GscSearchPerformanceResult,
   GscSitemapStatus,
@@ -56,7 +57,7 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
   const start = new Date(end);
   start.setDate(start.getDate() - 35); // 5주치
 
-  const [trendRows, queryRows, deviceRows, countryRows] = await Promise.all([
+  const [trendRows, queryRows, allQueryRows, deviceRows, countryRows] = await Promise.all([
     querySearchAnalytics(accessToken, token.property, {
       startDate: isoDate(start),
       endDate: isoDate(end),
@@ -68,6 +69,14 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
       dimensions: ["query"],
       rowLimit: 5,
     }),
+    // "동기화 통계"의 총 쿼리 수는 topQueries(상위 5개)가 아니라 이 기간
+    // 전체 고유 검색어 수여야 한다 — API 상한(25,000)까지 받아서 개수만 센다.
+    querySearchAnalytics(accessToken, token.property, {
+      startDate: isoDate(start),
+      endDate: isoDate(end),
+      dimensions: ["query"],
+      rowLimit: 25000,
+    }).catch(() => []),
     // device/country 차원 — 콘텐츠 포맷·마켓 확장 우선순위를 실측으로
     // 뒷받침하는 참고 지표. (docs/gsc-additional-signals.md §3-⑤,⑥)
     querySearchAnalytics(accessToken, token.property, {
@@ -123,7 +132,20 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
     .map((row) => ({ country: row.keys[0], clicks: row.clicks, impressions: row.impressions }))
     .sort((a, b) => b.impressions - a.impressions);
 
-  return { brandId, property: token.property, trend, topQueries, devices, countries };
+  const totalClicks = trendRows.reduce((sum, row) => sum + row.clicks, 0);
+  const totalImpressions = trendRows.reduce((sum, row) => sum + row.impressions, 0);
+
+  return {
+    brandId,
+    property: token.property,
+    trend,
+    topQueries,
+    devices,
+    countries,
+    totalClicks,
+    totalImpressions,
+    totalQueries: allQueryRows.length,
+  };
 }
 
 // 프롬프트 전략의 "GSC 커버리지 공백" — 실제로 노출은 있는데 우리 프롬프트
@@ -269,11 +291,34 @@ export async function getRealGscUrlIndexStatus(brandId: string, url: string): Pr
         googleCanonical?: string;
         userCanonical?: string;
         sitemap?: string[];
+        referringUrls?: string[];
+      };
+      richResultsResult?: {
+        verdict?: string;
+        detectedItems?: {
+          richResultType?: string;
+          items?: { name?: string; issues?: { issueMessage?: string; severity?: string }[] }[];
+        }[];
       };
     };
   };
   const result = data.inspectionResult?.indexStatusResult;
   if (!result) return null;
+
+  const richResultsRaw = data.inspectionResult?.richResultsResult;
+  const richResults: GscRichResultsStatus = {
+    verdict: richResultsRaw?.verdict ?? "VERDICT_UNSPECIFIED",
+    items: (richResultsRaw?.detectedItems ?? []).flatMap((detected) =>
+      (detected.items ?? []).map((item) => ({
+        richResultType: detected.richResultType ?? "",
+        itemName: item.name ?? "",
+        issues: (item.issues ?? []).map((issue) => ({
+          message: issue.issueMessage ?? "",
+          severity: issue.severity === "WARNING" ? ("WARNING" as const) : ("ERROR" as const),
+        })),
+      }))
+    ),
+  };
 
   return {
     url,
@@ -286,6 +331,8 @@ export async function getRealGscUrlIndexStatus(brandId: string, url: string): Pr
     googleCanonical: result.googleCanonical ?? null,
     userCanonical: result.userCanonical ?? null,
     sitemaps: result.sitemap ?? [],
+    referringUrls: result.referringUrls ?? [],
+    richResults,
     checkedAt: new Date().toISOString(),
   };
 }

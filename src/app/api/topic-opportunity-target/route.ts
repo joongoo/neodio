@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setTopicOpportunityTarget } from "@/lib/backend/topicOpportunityTargets";
+import { DEFAULT_ORG_ID } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -10,6 +11,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "토픽이 필요합니다." }, { status: 400 });
   }
 
-  await setTopicOpportunityTarget(topic, targetUrl);
+  await setTopicOpportunityTarget(DEFAULT_ORG_ID, topic, targetUrl);
   return NextResponse.json({ ok: true });
 }

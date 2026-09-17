@@ -16,6 +16,65 @@ function normalizePrompt(prompt: string) {
   return prompt.trim().toLowerCase();
 }
 
+const NEW_TOPIC = "__new_topic__";
+
+// 토픽 입력을 자유 텍스트가 아니라 기존 토픽 중에서 고르게 한다 — 같은
+// 주제가 "Adobe Marketo 파트너 추천"/"adobe marketo파트너추천"처럼 표기만
+// 다르게 여러 번 만들어지는 걸 막기 위함(데이터 클렌징). 목록에 없는
+// 새 주제면 "새 토픽"을 골라 자유 입력 필드로 전환한다.
+function TopicField({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+  const [customMode, setCustomMode] = useState(value !== "" && !options.includes(value));
+
+  if (customMode) {
+    return (
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="새 토픽 이름"
+          className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+        />
+        {options.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setCustomMode(false);
+              onChange("");
+            }}
+            className="shrink-0 whitespace-nowrap text-xs text-neutral-500 underline cursor-pointer"
+          >
+            목록에서 선택
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === NEW_TOPIC) {
+          setCustomMode(true);
+          onChange("");
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+      className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+    >
+      <option value="">미지정</option>
+      {options.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt}
+        </option>
+      ))}
+      <option value={NEW_TOPIC}>+ 새 토픽</option>
+    </select>
+  );
+}
+
 // Matches Figma "Modal / Add Prompts", "Modal / Import Prompts", "Modal /
 // Edit Prompt" (Prompt Library screen spec, neodigm_screens_documentation.md
 // §6). All three write into the in-memory row list the client owns — no
@@ -26,15 +85,25 @@ export function AddPromptModal({
   onClose,
   onAdd,
   existingPrompts,
+  topicOptionsByCategory,
+  uncategorizedTopicOptions,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (row: Omit<PromptLibraryRow, "id" | "origin">) => void;
   /** 중복 검사 대상 — 이미 라이브러리에 있는 프롬프트 문장 전체. */
   existingPrompts: string[];
+  /** 카테고리별 기존 토픽 목록 — 새로 타이핑하는 대신 여기서 고르게 한다. */
+  topicOptionsByCategory: Record<string, string[]>;
+  /** 아직 카테고리가 없는 토픽(가시성 개요의 AI 벌크 그룹핑 결과)도 선택은 가능하게. */
+  uncategorizedTopicOptions: string[];
 }) {
-  const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
-  const [subcategory, setSubcategory] = useState("");
+  const categoryOptions = Object.keys(topicOptionsByCategory);
+  const [category, setCategory] = useState(categoryOptions[0] ?? "");
+  const [topic, setTopic] = useState("");
+  const topicOptions = [...new Set([...(topicOptionsByCategory[category] ?? []), ...uncategorizedTopicOptions])].sort(
+    (a, b) => a.localeCompare(b, "ko")
+  );
   const [prompt, setPrompt] = useState("");
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
@@ -50,12 +119,12 @@ export function AddPromptModal({
     onAdd({
       prompt: prompt.trim(),
       category,
-      subcategory: subcategory.trim() || "—",
+      topic: topic.trim() || "—",
       lastModifiedAt: new Date().toISOString().slice(0, 10),
       lastModifiedBy: "나",
     });
     setPrompt("");
-    setSubcategory("");
+    setTopic("");
     setDuplicateError(null);
     onClose();
   }
@@ -73,20 +142,15 @@ export function AddPromptModal({
             onChange={(e) => setCategory(e.target.value)}
             className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
           >
-            {CATEGORY_OPTIONS.map((opt) => (
+            {categoryOptions.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="서브카테고리">
-          <input
-            value={subcategory}
-            onChange={(e) => setSubcategory(e.target.value)}
-            className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
-            placeholder="예: 캠페인 운영 기법"
-          />
+        <Field label="토픽">
+          <TopicField value={topic} onChange={setTopic} options={topicOptions} />
         </Field>
         <Field label="프롬프트 *">
           <textarea
@@ -123,12 +187,16 @@ export function EditPromptModal({
   onClose,
   onSave,
   existingPrompts,
+  topicOptionsByCategory,
+  uncategorizedTopicOptions,
 }: {
   row: PromptLibraryRow | null;
   onClose: () => void;
-  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "subcategory">) => void;
+  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic">) => void;
   /** 중복 검사 대상 — 지금 편집 중인 행 자기 자신은 호출부에서 미리 빼고 넘긴다. */
   existingPrompts: string[];
+  topicOptionsByCategory: Record<string, string[]>;
+  uncategorizedTopicOptions: string[];
 }) {
   return (
     <Modal open={!!row} onClose={onClose}>
@@ -136,7 +204,17 @@ export function EditPromptModal({
         <h2 className="text-lg font-bold text-neutral-900">프롬프트 편집</h2>
         <ModalCloseButton onClose={onClose} />
       </div>
-      {row && <EditPromptForm key={row.id} row={row} onClose={onClose} onSave={onSave} existingPrompts={existingPrompts} />}
+      {row && (
+        <EditPromptForm
+          key={row.id}
+          row={row}
+          onClose={onClose}
+          onSave={onSave}
+          existingPrompts={existingPrompts}
+          topicOptionsByCategory={topicOptionsByCategory}
+          uncategorizedTopicOptions={uncategorizedTopicOptions}
+        />
+      )}
     </Modal>
   );
 }
@@ -148,22 +226,30 @@ function EditPromptForm({
   onClose,
   onSave,
   existingPrompts,
+  topicOptionsByCategory,
+  uncategorizedTopicOptions,
 }: {
   row: PromptLibraryRow;
   onClose: () => void;
-  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "subcategory">) => void;
+  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic">) => void;
   existingPrompts: string[];
+  topicOptionsByCategory: Record<string, string[]>;
+  uncategorizedTopicOptions: string[];
 }) {
+  const categoryOptions = [...new Set([...Object.keys(topicOptionsByCategory), row.category].filter(Boolean))];
   const [category, setCategory] = useState(row.category);
-  const [subcategory, setSubcategory] = useState(row.subcategory);
+  const [topic, setTopic] = useState(row.topic === "—" ? "" : row.topic);
   const [prompt, setPrompt] = useState(row.prompt);
+  const topicOptions = [...new Set([...(topicOptionsByCategory[category] ?? []), ...uncategorizedTopicOptions])].sort(
+    (a, b) => a.localeCompare(b, "ko")
+  );
 
   const isDuplicate = existingPrompts.some((p) => normalizePrompt(p) === normalizePrompt(prompt));
 
   function submit(e: FormEvent) {
     e.preventDefault();
     if (isDuplicate) return;
-    onSave(row.id, { prompt: prompt.trim(), category, subcategory: subcategory.trim() || "—" });
+    onSave(row.id, { prompt: prompt.trim(), category, topic: topic.trim() || "—" });
     onClose();
   }
 
@@ -175,19 +261,15 @@ function EditPromptForm({
           onChange={(e) => setCategory(e.target.value)}
           className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
         >
-          {CATEGORY_OPTIONS.map((opt) => (
+          {categoryOptions.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>
           ))}
         </select>
       </Field>
-      <Field label="서브카테고리">
-        <input
-          value={subcategory}
-          onChange={(e) => setSubcategory(e.target.value)}
-          className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
-        />
+      <Field label="토픽">
+        <TopicField value={topic} onChange={setTopic} options={topicOptions} />
       </Field>
       <Field label="프롬프트">
         <textarea
@@ -213,10 +295,10 @@ function EditPromptForm({
 export interface ImportedPromptRow {
   prompt: string;
   category: string;
-  subcategory: string;
+  topic: string;
 }
 
-// CSV 헤더는 대소문자/순서 무관하게 prompt/category/subcategory 열만 찾는다
+// CSV 헤더는 대소문자/순서 무관하게 prompt/category/topic 열만 찾는다
 // — 사용자가 템플릿을 그대로 안 쓰고 엑셀에서 열 순서를 바꿔도 견디도록.
 function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: string | null } {
   const table = parseCsv(text);
@@ -225,7 +307,7 @@ function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: stri
   const header = table[0].map((h) => h.trim().toLowerCase());
   const promptIdx = header.indexOf("prompt");
   const categoryIdx = header.indexOf("category");
-  const subcategoryIdx = header.indexOf("subcategory");
+  const topicIdx = header.indexOf("topic");
 
   if (promptIdx === -1 || categoryIdx === -1) {
     return { rows: [], error: "필수 컬럼(prompt, category)을 찾을 수 없습니다." };
@@ -236,7 +318,7 @@ function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: stri
     .map((cells) => ({
       prompt: (cells[promptIdx] ?? "").trim(),
       category: (cells[categoryIdx] ?? "").trim(),
-      subcategory: subcategoryIdx >= 0 ? (cells[subcategoryIdx] ?? "").trim() : "",
+      topic: topicIdx >= 0 ? (cells[topicIdx] ?? "").trim() : "",
     }))
     .filter((r) => r.prompt && r.category);
 
@@ -312,7 +394,7 @@ export function ImportPromptsModal({
       <p className="mt-2 text-xs text-neutral-500">
         필수 컬럼: <code className="rounded bg-neutral-100 px-1">prompt</code>,{" "}
         <code className="rounded bg-neutral-100 px-1">category</code> · 선택:{" "}
-        <code className="rounded bg-neutral-100 px-1">subcategory</code> · 최대 10MB
+        <code className="rounded bg-neutral-100 px-1">topic</code> · 최대 10MB
       </p>
 
       <label className="mt-4 flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 px-6 py-10 text-center hover:border-neutral-400">
@@ -348,8 +430,8 @@ export function ImportPromptsModal({
           onClick={() =>
             downloadCsv(
               "prompt-library-template.csv",
-              ["prompt", "category", "subcategory"],
-              [["예: 국내 GEO 컨설팅 업체 추천해줘", CATEGORY_OPTIONS[0], "예시 서브카테고리"]]
+              ["prompt", "category", "topic"],
+              [["예: 국내 GEO 컨설팅 업체 추천해줘", CATEGORY_OPTIONS[0], "예시 토픽"]]
             )
           }
         >

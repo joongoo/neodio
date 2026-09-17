@@ -1,3 +1,4 @@
+import { listPromptLibrary } from "@/lib/backend/trackedTopics";
 import { ArrowUpRight } from "lucide-react";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MarketComparisonChart } from "@/components/charts/MarketComparisonChart";
@@ -77,7 +78,7 @@ export default async function OverviewPage({
     db.brandsManagement.get(orgId),
     getManagedBrands(orgId),
     db.seed.llmModels(),
-    db.promptLibrary.list(orgId),
+    listPromptLibrary(orgId),
   ]);
 
   // 카테고리/마켓/도메인 옵션은 Brand Management에 등록된 실제 데이터에서 가져온다

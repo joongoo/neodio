@@ -69,7 +69,7 @@ export function GoogleIndexBadge({ url, status }: { url: string; status?: GscUrl
         e.stopPropagation();
         check();
       }}
-      title={`${status.coverageState || status.verdict}${status.lastCrawlTime ? ` · 마지막 크롤: ${new Date(status.lastCrawlTime).toLocaleString("ko-KR")}` : ""} — 눌러서 다시 확인`}
+      title={`${status.coverageState || status.verdict}${status.lastCrawlTime ? ` · 마지막 크롤: ${new Date(status.lastCrawlTime).toLocaleString("ko-KR")}` : ""} · 내부 링크: ${status.referringUrls?.length ? `${status.referringUrls.length}개 페이지에서 링크됨` : "없음(고아 페이지일 수 있음)"} — 눌러서 다시 확인`}
       className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-bold cursor-pointer ${tone}`}
     >
       <Icon size={12} />

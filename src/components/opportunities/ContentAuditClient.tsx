@@ -9,14 +9,18 @@ import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { GoogleIndexBadge } from "@/components/ui/GoogleIndexBadge";
 import { PageSpeedBadge } from "@/components/ui/PageSpeedBadge";
+import { RichResultsBadge } from "@/components/ui/RichResultsBadge";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { ContentAuditOpportunity, ContentAuditUrl, GscSearchAppearanceRow } from "@/lib/db";
 
-const OPTIONAL_COLUMNS: ColumnOption[] = [
-  { key: "priorityScore", label: "우선순위 점수" },
+const BASE_OPTIONAL_COLUMNS: ColumnOption[] = [
+  { key: "priorityScore", label: "우선순위" },
   { key: "googleIndex", label: "구글 인덱싱" },
   { key: "pageSpeed", label: "페이지 속도" },
 ];
+// FAQ/목차 기회에서만 의미가 있다(구글이 실제로 검증하는 구조화 데이터
+// 타입이 FAQPage 등이라서) — searchAppearance prop이 넘어올 때만 켠다.
+const RICH_RESULTS_COLUMN: ColumnOption = { key: "richResults", label: "구조화 데이터" };
 
 const TABS = ["현재 제안", "수정 완료", "제외됨"] as const;
 
@@ -50,6 +54,7 @@ export function ContentAuditClient({
   const bulkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [guideTarget, setGuideTarget] = useState<ContentAuditUrl | null>(null);
   const [viewingGuide, setViewingGuide] = useState<ContentAuditUrl | null>(null);
+  const [bulkDiagnostic, setBulkDiagnostic] = useState<{ type: "index" | "speed"; done: number; total: number } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -144,6 +149,26 @@ export function ContentAuditClient({
     bulkPollRef.current = setInterval(poll, 1500);
   }
 
+  // 구글 인덱싱/페이지 속도는 URL마다 따로 눌러 확인해야 했는데, 19개씩
+  // 있으면 비현실적이다 — "현재 제안" 탭 전체(또는 선택한 것)를 순서대로
+  // 돌며 한 번에 확인한다. Lighthouse 실행은 5~10초씩 걸려 병렬로 너무
+  // 많이 돌리면 느려지므로 순차 실행하고 진행률만 보여준다.
+  async function checkAllDiagnostics(type: "index" | "speed", urls: string[]) {
+    if (urls.length === 0) return;
+    setBulkDiagnostic({ type, done: 0, total: urls.length });
+    const endpoint = type === "index" ? "/api/gsc-url-inspection" : "/api/pagespeed-insights";
+    for (let i = 0; i < urls.length; i++) {
+      await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urls[i] }),
+      }).catch(() => null);
+      setBulkDiagnostic((prev) => (prev ? { ...prev, done: i + 1 } : prev));
+    }
+    setBulkDiagnostic(null);
+    router.refresh();
+  }
+
   const selectableRows = rows.filter((r) => r.status === "not_optimized" && !(recheckJobs[r.url] && !recheckJobs[r.url].done));
 
   const selectColumn: DataTableColumn<ContentAuditUrl> = {
@@ -193,7 +218,7 @@ export function ContentAuditClient({
     {
       key: "url",
       label: "전체 도메인 URL",
-      width: "w-[280px]",
+      width: "w-[220px]",
       render: (r) => (
         <span title={r.url} className="block min-w-0 truncate text-blue-600">
           {r.url}
@@ -202,8 +227,8 @@ export function ContentAuditClient({
     },
     {
       key: "score",
-      label: data.metricLabel,
-      width: "w-[160px]",
+      label: data.metricLabel.replace(/ 점수$/, ""),
+      width: "w-[90px]",
       render: (r) =>
         r.previousScore !== undefined ? (
           <span className="flex items-center gap-1 text-xs">
@@ -221,23 +246,33 @@ export function ContentAuditClient({
           `${r.score}${data.unit}`
         ),
     },
-    { key: "priorityScore", label: "우선순위 점수", width: "w-[110px]", render: (r) => r.priorityScore.toFixed(1) },
+    { key: "priorityScore", label: "우선순위", width: "w-[70px]", render: (r) => r.priorityScore.toFixed(1) },
     {
       key: "googleIndex",
       label: "구글 인덱싱",
-      width: "w-[140px]",
+      width: "w-[110px]",
       render: (r) => <GoogleIndexBadge url={r.url} status={r.googleIndex} />,
     },
     {
       key: "pageSpeed",
       label: "페이지 속도",
-      width: "w-[120px]",
+      width: "w-[100px]",
       render: (r) => <PageSpeedBadge url={r.url} result={r.pageSpeed} />,
     },
+    ...(searchAppearance !== undefined
+      ? [
+          {
+            key: "richResults",
+            label: "구조화 데이터",
+            width: "w-[130px]",
+            render: (r: ContentAuditUrl) => <RichResultsBadge url={r.url} status={r.googleIndex} />,
+          } satisfies DataTableColumn<ContentAuditUrl>,
+        ]
+      : []),
     {
       key: "action",
       label: "액션",
-      width: "w-[330px]",
+      width: "w-[220px]",
       render: (r) => {
         const job = recheckJobs[r.url];
         const guideButton = (
@@ -314,7 +349,8 @@ export function ContentAuditClient({
     },
   ];
 
-  const cols = useColumnVisibility(columns, OPTIONAL_COLUMNS);
+  const optionalColumns = searchAppearance !== undefined ? [...BASE_OPTIONAL_COLUMNS, RICH_RESULTS_COLUMN] : BASE_OPTIONAL_COLUMNS;
+  const cols = useColumnVisibility(columns, optionalColumns);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6 pb-10">
@@ -430,22 +466,56 @@ export function ContentAuditClient({
             ))}
           </div>
           {tab === "현재 제안" && rowsByTab["현재 제안"].length > 0 && (
-            <button
-              type="button"
-              disabled={!!(bulkJob && !bulkJob.done)}
-              onClick={() => recheckMany(selected.size > 0 ? [...selected] : rowsByTab["현재 제안"].map((r) => r.url))}
-              className="mb-2 flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
-            >
-              {bulkJob && !bulkJob.done ? (
-                <>
-                  <Loader2 size={12} className="animate-spin" /> 재크롤 중...
-                </>
-              ) : selected.size > 0 ? (
-                `선택 재색인 (${selected.size}) →`
-              ) : (
-                "전체 재색인 →"
-              )}
-            </button>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!!bulkDiagnostic || !!(bulkJob && !bulkJob.done)}
+                onClick={() =>
+                  checkAllDiagnostics("index", selected.size > 0 ? [...selected] : rowsByTab["현재 제안"].map((r) => r.url))
+                }
+                className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-3 py-1.5 text-[11px] font-bold text-neutral-700 cursor-pointer hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+              >
+                {bulkDiagnostic?.type === "index" ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> 인덱싱 확인 중 ({bulkDiagnostic.done}/{bulkDiagnostic.total})
+                  </>
+                ) : (
+                  `${selected.size > 0 ? `선택 (${selected.size})` : "전체"} 인덱싱 확인`
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={!!bulkDiagnostic || !!(bulkJob && !bulkJob.done)}
+                onClick={() =>
+                  checkAllDiagnostics("speed", selected.size > 0 ? [...selected] : rowsByTab["현재 제안"].map((r) => r.url))
+                }
+                className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-3 py-1.5 text-[11px] font-bold text-neutral-700 cursor-pointer hover:bg-neutral-200 disabled:cursor-default disabled:opacity-50"
+              >
+                {bulkDiagnostic?.type === "speed" ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> 속도 확인 중 ({bulkDiagnostic.done}/{bulkDiagnostic.total})
+                  </>
+                ) : (
+                  `${selected.size > 0 ? `선택 (${selected.size})` : "전체"} 속도 확인`
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={!!bulkDiagnostic || !!(bulkJob && !bulkJob.done)}
+                onClick={() => recheckMany(selected.size > 0 ? [...selected] : rowsByTab["현재 제안"].map((r) => r.url))}
+                className="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
+              >
+                {bulkJob && !bulkJob.done ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> 재크롤 중...
+                  </>
+                ) : selected.size > 0 ? (
+                  `선택 재색인 (${selected.size}) →`
+                ) : (
+                  "전체 재색인 →"
+                )}
+              </button>
+            </div>
           )}
         </div>
 
@@ -456,7 +526,7 @@ export function ContentAuditClient({
             <DataTable columns={cols.filtered} rows={rows} getRowId={(r) => r.id} />
           )}
         </div>
-        <ConfigureColumnsModal open={cols.open} onClose={() => cols.setOpen(false)} columns={OPTIONAL_COLUMNS} visible={cols.visible} onApply={cols.setVisible} />
+        <ConfigureColumnsModal open={cols.open} onClose={() => cols.setOpen(false)} columns={optionalColumns} visible={cols.visible} onApply={cols.setVisible} />
       </section>
 
       {guideTarget && (

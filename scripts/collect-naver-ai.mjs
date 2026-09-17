@@ -336,6 +336,7 @@ async function main() {
         status,
         rawResponse,
         rawMetadata: {
+          collectionJobId: process.env.NEODIO_COLLECTION_JOB_ID || undefined,
           source: "naver-ai-search",
           collectedBy: "playwright",
           query,
@@ -376,6 +377,7 @@ async function main() {
             status,
             rawResponse: "",
             rawMetadata: {
+              collectionJobId: process.env.NEODIO_COLLECTION_JOB_ID || undefined,
               source: "naver-ai-search",
               collectedBy: "playwright",
               query,

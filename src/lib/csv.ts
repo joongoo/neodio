@@ -1,5 +1,5 @@
 // Minimal CSV helpers — no library, just enough to round-trip simple
-// prompt/category/subcategory rows (handles quoted fields with embedded
+// prompt/category/topic rows (handles quoted fields with embedded
 // commas/quotes, which is the only escaping our own export ever produces).
 
 export function toCsv(header: string[], rows: string[][]): string {

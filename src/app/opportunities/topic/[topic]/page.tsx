@@ -4,7 +4,7 @@ import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getRealTopicRows } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
-import { listTrackedTopics } from "@/lib/backend/trackedTopics";
+import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getLlmBridgeEntry } from "@/lib/backend/llmBridgeStore";
 
@@ -19,10 +19,10 @@ export default async function TopicOpportunityDetailPage({ params }: { params: P
   if (demo) notFound();
 
   const [promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls] = await Promise.all([
-    db.promptLibrary.list(DEFAULT_ORG_ID),
-    listTrackedTopics(),
-    getDeletedLibraryRowIds(),
-    getTopicOpportunityTargets(),
+    listSeedLibraryRows(DEFAULT_ORG_ID),
+    listTrackedTopics(DEFAULT_ORG_ID),
+    getDeletedLibraryRowIds(DEFAULT_ORG_ID),
+    getTopicOpportunityTargets(DEFAULT_ORG_ID),
   ]);
   const libraryPrompts = [...promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id)), ...trackedRows].map((r) => r.prompt);
 
@@ -30,7 +30,7 @@ export default async function TopicOpportunityDetailPage({ params }: { params: P
   const row = [...(realTopicRows?.opportunities ?? []), ...(realTopicRows?.topPrompts ?? [])].find((r) => r.topic === topic);
   if (!row) notFound();
 
-  const guideEntry = await getLlmBridgeEntry<{ guide: string }>("topic-guide", topic);
+  const guideEntry = await getLlmBridgeEntry<{ guide: string }>(DEFAULT_ORG_ID, "topic-guide", topic);
   const rowWithGuide = { ...row, guide: guideEntry?.guide };
 
   return <TopicOpportunityDetailClient row={rowWithGuide} />;

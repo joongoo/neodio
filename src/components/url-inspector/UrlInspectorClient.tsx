@@ -7,6 +7,7 @@ import { TablePanel } from "@/components/ui/TablePanel";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
+import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { CitedDomainRow, OwnCitedUrlRow, ThirdPartyUrlRow, UrlInspectorData } from "@/lib/db";
 
@@ -36,14 +37,32 @@ function UrlLink({ url }: { url: string }) {
   );
 }
 
-const ownColumns: DataTableColumn<OwnCitedUrlRow>[] = [
-  { key: "url", label: "URL", render: (r) => <UrlLink url={r.url} /> },
-  { key: "citations", label: "인용 횟수", width: "w-[90px]", render: (r) => r.citations },
-  { key: "citedPrompts", label: "인용된 프롬프트 수", width: "w-[130px]", render: (r) => r.citedPrompts },
-  { key: "contentVisibility", label: "콘텐츠 가시성", width: "w-[110px]", render: (r) => (r.contentVisibility === null ? "—" : `${r.contentVisibility}%`) },
-  { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
-  { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
-];
+function DetailButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] text-neutral-600 hover:bg-neutral-50 cursor-pointer"
+    >
+      상세
+    </button>
+  );
+}
+
+function buildOwnColumns(onDetail: (row: OwnCitedUrlRow) => void): DataTableColumn<OwnCitedUrlRow>[] {
+  return [
+    { key: "url", label: "URL", render: (r) => <UrlLink url={r.url} /> },
+    { key: "citations", label: "인용 횟수", width: "w-[90px]", render: (r) => r.citations },
+    { key: "citedPrompts", label: "인용된 프롬프트 수", width: "w-[130px]", render: (r) => r.citedPrompts },
+    { key: "contentVisibility", label: "콘텐츠 가시성", width: "w-[110px]", render: (r) => (r.contentVisibility === null ? "—" : `${r.contentVisibility}%`) },
+    { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
+    { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
+    { key: "detail", label: "", width: "w-[64px]", render: (r) => <DetailButton onClick={() => onDetail(r)} /> },
+  ];
+}
 const ownOptional: ColumnOption[] = [
   { key: "citations", label: "인용 횟수" },
   { key: "citedPrompts", label: "인용된 프롬프트 수" },
@@ -52,14 +71,17 @@ const ownOptional: ColumnOption[] = [
   { key: "market", label: "마켓" },
 ];
 
-const thirdPartyColumns: DataTableColumn<ThirdPartyUrlRow>[] = [
-  { key: "url", label: "URL", render: (r) => <UrlLink url={r.url} /> },
-  { key: "contentType", label: "콘텐츠 유형", width: "w-[100px]", render: (r) => r.contentType },
-  { key: "citations", label: "인용 횟수", width: "w-[90px]", render: (r) => r.citations },
-  { key: "citedPrompts", label: "인용된 프롬프트 수", width: "w-[130px]", render: (r) => r.citedPrompts },
-  { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
-  { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
-];
+function buildThirdPartyColumns(onDetail: (row: ThirdPartyUrlRow) => void): DataTableColumn<ThirdPartyUrlRow>[] {
+  return [
+    { key: "url", label: "URL", render: (r) => <UrlLink url={r.url} /> },
+    { key: "contentType", label: "콘텐츠 유형", width: "w-[100px]", render: (r) => r.contentType },
+    { key: "citations", label: "인용 횟수", width: "w-[90px]", render: (r) => r.citations },
+    { key: "citedPrompts", label: "인용된 프롬프트 수", width: "w-[130px]", render: (r) => r.citedPrompts },
+    { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
+    { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
+    { key: "detail", label: "", width: "w-[64px]", render: (r) => <DetailButton onClick={() => onDetail(r)} /> },
+  ];
+}
 const thirdPartyOptional: ColumnOption[] = [
   { key: "contentType", label: "콘텐츠 유형" },
   { key: "citations", label: "인용 횟수" },
@@ -86,21 +108,42 @@ const domainOptional: ColumnOption[] = [
 
 function usePagedRows<T>(rows: T[]) {
   const [page, setPage] = useState(1);
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const clampedPage = Math.min(page, pageCount);
   const pageRows = useMemo(
-    () => rows.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE),
-    [rows, clampedPage]
+    () => rows.slice((clampedPage - 1) * pageSize, clampedPage * pageSize),
+    [rows, clampedPage, pageSize]
   );
-  return { page: clampedPage, setPage, pageCount, pageRows };
+  const changePageSize = (size: number) => {
+    setPageSize(size);
+    setPage(1);
+  };
+  return { page: clampedPage, setPage, pageCount, pageRows, pageSize, setPageSize: changePageSize };
 }
 
 export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
   const [market, setMarket] = useState(MARKET_OPTIONS[0]);
   const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
+  const [ownSearch, setOwnSearch] = useState("");
+  const [thirdPartySearch, setThirdPartySearch] = useState("");
+  const [domainSearch, setDomainSearch] = useState("");
+  const [detailRow, setDetailRow] = useState<{ url: string; prompts: string[] } | null>(null);
 
-  const ownRows = data.ownUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
-  const thirdPartyRows = data.thirdPartyUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
+  const ownRowsBase = data.ownUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
+  const thirdPartyRowsBase = data.thirdPartyUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
+  const ownRows = ownRowsBase.filter((r) => r.url.toLowerCase().includes(ownSearch.trim().toLowerCase()));
+  const thirdPartyRows = thirdPartyRowsBase.filter((r) => r.url.toLowerCase().includes(thirdPartySearch.trim().toLowerCase()));
+  const domainRows = data.citedDomains.filter((r) => r.domain.toLowerCase().includes(domainSearch.trim().toLowerCase()));
+
+  const ownColumns = useMemo(
+    () => buildOwnColumns((r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles })),
+    []
+  );
+  const thirdPartyColumns = useMemo(
+    () => buildThirdPartyColumns((r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles })),
+    []
+  );
 
   const own = useColumnVisibility(ownColumns, ownOptional);
   const thirdParty = useColumnVisibility(thirdPartyColumns, thirdPartyOptional);
@@ -108,7 +151,7 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
 
   const ownPaged = usePagedRows(ownRows);
   const thirdPartyPaged = usePagedRows(thirdPartyRows);
-  const domainPaged = usePagedRows(data.citedDomains);
+  const domainPaged = usePagedRows(domainRows);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
@@ -129,10 +172,26 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
         <SimpleStatCard label="총 인용 횟수" value={data.totalCitations} />
       </div>
 
-      <TablePanel title="자사 인용 URL" description="AI 답변에 인용된 우리 사이트 URL입니다." count={0} total={ownRows.length} onConfigureColumns={() => own.setOpen(true)}>
+      <TablePanel
+        title="자사 인용 URL"
+        description="AI 답변에 인용된 우리 사이트 URL입니다."
+        count={ownRows.length}
+        total={ownRowsBase.length}
+        onConfigureColumns={() => own.setOpen(true)}
+        searchValue={ownSearch}
+        onSearchChange={setOwnSearch}
+        searchPlaceholder="URL 검색"
+      >
         <DataTable columns={own.filtered} rows={ownPaged.pageRows} getRowId={(r) => r.id} />
         <div className="mt-3">
-          <Pagination page={ownPaged.page} pageCount={ownPaged.pageCount} pageSize={PAGE_SIZE} totalCount={ownRows.length} onPageChange={ownPaged.setPage} />
+          <Pagination
+            page={ownPaged.page}
+            pageCount={ownPaged.pageCount}
+            pageSize={ownPaged.pageSize}
+            totalCount={ownRows.length}
+            onPageChange={ownPaged.setPage}
+            onPageSizeChange={ownPaged.setPageSize}
+          />
         </div>
         <ConfigureColumnsModal open={own.open} onClose={() => own.setOpen(false)} columns={ownOptional} visible={own.visible} onApply={own.setVisible} />
       </TablePanel>
@@ -140,18 +199,22 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
       <TablePanel
         title="인용된 제3자 URL"
         description="AI 답변에 인용된 제3자 사이트 URL입니다."
-        count={0}
-        total={thirdPartyRows.length}
+        count={thirdPartyRows.length}
+        total={thirdPartyRowsBase.length}
         onConfigureColumns={() => thirdParty.setOpen(true)}
+        searchValue={thirdPartySearch}
+        onSearchChange={setThirdPartySearch}
+        searchPlaceholder="URL 검색"
       >
         <DataTable columns={thirdParty.filtered} rows={thirdPartyPaged.pageRows} getRowId={(r) => r.id} />
         <div className="mt-3">
           <Pagination
             page={thirdPartyPaged.page}
             pageCount={thirdPartyPaged.pageCount}
-            pageSize={PAGE_SIZE}
+            pageSize={thirdPartyPaged.pageSize}
             totalCount={thirdPartyRows.length}
             onPageChange={thirdPartyPaged.setPage}
+            onPageSizeChange={thirdPartyPaged.setPageSize}
           />
         </div>
         <ConfigureColumnsModal
@@ -166,22 +229,51 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
       <TablePanel
         title="인용된 도메인"
         description="AI 답변이 가장 많이 인용한 도메인입니다."
-        count={0}
+        count={domainRows.length}
         total={data.citedDomains.length}
         onConfigureColumns={() => domain.setOpen(true)}
+        searchValue={domainSearch}
+        onSearchChange={setDomainSearch}
+        searchPlaceholder="도메인 검색"
       >
         <DataTable columns={domain.filtered} rows={domainPaged.pageRows} getRowId={(r) => r.id} />
         <div className="mt-3">
           <Pagination
             page={domainPaged.page}
             pageCount={domainPaged.pageCount}
-            pageSize={PAGE_SIZE}
-            totalCount={data.citedDomains.length}
+            pageSize={domainPaged.pageSize}
+            totalCount={domainRows.length}
             onPageChange={domainPaged.setPage}
+            onPageSizeChange={domainPaged.setPageSize}
           />
         </div>
         <ConfigureColumnsModal open={domain.open} onClose={() => domain.setOpen(false)} columns={domainOptional} visible={domain.visible} onApply={domain.setVisible} />
       </TablePanel>
+
+      <Modal open={!!detailRow} onClose={() => setDetailRow(null)}>
+        {detailRow && (
+          <div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-900">인용된 프롬프트</h2>
+                <p className="mt-1 break-all text-xs text-neutral-500">{detailRow.url}</p>
+              </div>
+              <ModalCloseButton onClose={() => setDetailRow(null)} />
+            </div>
+            <ul className="mt-4 flex flex-col gap-2">
+              {detailRow.prompts.length === 0 ? (
+                <li className="text-xs text-neutral-400">인용된 프롬프트 정보가 없습니다.</li>
+              ) : (
+                detailRow.prompts.map((prompt, i) => (
+                  <li key={i} className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+                    {prompt}
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

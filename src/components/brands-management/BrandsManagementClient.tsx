@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, CheckCircle2, XCircle, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
@@ -17,6 +17,7 @@ import { BrandsManagementData, ManagedBrand, ManagedCategory } from "@/lib/db";
 export function BrandsManagementClient({ initial }: { initial: BrandsManagementData }) {
   const router = useRouter();
   const [categories, setCategories] = useState(initial.categories);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [addBrandOpen, setAddBrandOpen] = useState(false);
   const [addBrandSaving, setAddBrandSaving] = useState(false);
   const [deletingBrand, setDeletingBrand] = useState<ManagedBrand | null>(null);
@@ -25,11 +26,28 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
   const [editingCategory, setEditingCategory] = useState<ManagedCategory | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<ManagedCategory | null>(null);
 
+  async function changeCategory(method: "POST" | "PATCH" | "DELETE", id?: string, name?: string) {
+    try {
+      const res = await fetch(`/api/categories${id ? `?id=${encodeURIComponent(id)}` : ""}`, {
+        method, headers: { "Content-Type": "application/json" },
+        body: method === "DELETE" ? undefined : JSON.stringify({ id, name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCategories(data.categories);
+      router.refresh();
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "카테고리를 저장하지 못했습니다.");
+      return false;
+    }
+  }
+
   const brands = initial.brands;
   const activeBrands = brands.filter((b) => b.status === "active");
   const pendingBrands = brands.filter((b) => b.status === "pending");
 
-  async function addBrand(brand: Omit<ManagedBrand, "id">) {
+  async function addBrand(brand: Omit<ManagedBrand, "id" | "organizationId">) {
     setAddBrandSaving(true);
     try {
       const res = await fetch("/api/brands-management/brands", {
@@ -108,38 +126,75 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
             카테고리 생성
           </Button>
         </div>
-        <div className="mt-3 rounded-xl border border-neutral-200 bg-white">
-          <div className="flex items-center gap-3 border-b border-neutral-100 px-5 py-3 text-xs font-semibold text-neutral-500">
-            <span className="flex-1">이름</span>
-            <span className="w-[100px] text-right">프롬프트 수</span>
-            <span className="w-[80px] text-right">출처</span>
-            <span className="w-[80px] text-right">액션</span>
+        <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+          <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 border-b border-neutral-100 px-3 py-3 text-xs font-semibold text-neutral-500 sm:grid-cols-[minmax(0,1fr)_100px_80px_80px] sm:gap-3 sm:px-5">
+            <span>이름</span>
+            <span className="text-right">프롬프트 수</span>
+            <span className="hidden text-right sm:block">출처</span>
+            <span className="text-right">액션</span>
           </div>
-          {categories.map((cat) => (
-            <div key={cat.id} className="flex items-center gap-3 border-b border-neutral-50 px-5 py-3 text-sm last:border-b-0">
-              <span className="flex-1 text-neutral-800">{cat.name}</span>
-              <span className="w-[100px] text-right text-neutral-600">{cat.promptCount}</span>
-              <span className="w-[80px] text-right text-neutral-400">{cat.origin === "system" ? "—" : "직접 생성"}</span>
-              <span className="flex w-[80px] justify-end gap-2">
+          {categories.map((cat) => {
+            const expanded = expandedCategories.has(cat.id);
+            const topics = cat.topics ?? [];
+            return (
+            <div key={cat.id} className="border-b border-neutral-100 text-sm last:border-b-0">
+              <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_100px_80px_80px] sm:gap-3 sm:px-5">
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={`category-topics-${cat.id}`}
+                aria-label={`${cat.name} 토픽 ${expanded ? "접기" : "펼치기"}`}
+                onClick={() => setExpandedCategories(previous => {
+                  const next = new Set(previous);
+                  if (next.has(cat.id)) next.delete(cat.id);
+                  else next.add(cat.id);
+                  return next;
+                })}
+                className="flex min-w-0 items-center gap-2 rounded py-2 text-left text-neutral-800 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-blue-600 cursor-pointer"
+              >
+                <ChevronRight size={16} aria-hidden="true" className={`shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+                <span className="min-w-0 break-words">{cat.name}</span>
+                <span className="shrink-0 text-xs tabular-nums text-neutral-400">({topics.length})</span>
+              </button>
+              <span className="text-right tabular-nums text-neutral-600">{cat.promptCount}</span>
+              <span className="hidden text-right text-neutral-400 sm:block">{cat.origin === "system" ? "—" : "직접 생성"}</span>
+              <span className="flex justify-end">
                 <button
                   type="button"
-                  aria-label="편집"
+                  aria-label={`${cat.name} 편집`}
+                  title="카테고리 편집"
                   onClick={() => setEditingCategory(cat)}
-                  className="text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-700 cursor-pointer"
                 >
                   <Pencil size={14} />
                 </button>
                 <button
                   type="button"
-                  aria-label="삭제"
+                  aria-label={`${cat.name} 삭제`}
+                  title="카테고리 삭제"
                   onClick={() => setDeletingCategory(cat)}
-                  className="text-neutral-400 hover:text-red-600 cursor-pointer"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-red-600 cursor-pointer"
                 >
                   <Trash2 size={14} />
                 </button>
               </span>
+              </div>
+              <div id={`category-topics-${cat.id}`} hidden={!expanded}>
+                <ul aria-label={`${cat.name} 토픽`} className="border-t border-neutral-100 bg-neutral-50/70 py-1">
+                  {topics.map(topic => (
+                    <li key={topic.id} className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_100px_80px_80px] sm:gap-3 sm:px-5">
+                      <span className="min-w-0 break-words pl-6 text-neutral-600">{topic.name}</span>
+                      <span aria-label={`프롬프트 ${topic.promptCount}개`} className="text-right text-xs tabular-nums text-neutral-500">{topic.promptCount}</span>
+                    </li>
+                  ))}
+                  {topics.length === 0 && (
+                    <li className="px-9 py-3 text-xs text-neutral-400 sm:px-11">등록된 토픽이 없습니다.</li>
+                  )}
+                </ul>
+              </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -173,19 +228,17 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
       <CreateCategoryModal
         open={createCategoryOpen}
         onClose={() => setCreateCategoryOpen(false)}
-        onCreate={(name) =>
-          setCategories((prev) => [...prev, { id: `cat-${Date.now()}`, name, promptCount: 0, origin: "user" }])
-        }
+        onCreate={(name) => changeCategory("POST", undefined, name)}
       />
       <EditCategoryModal
         category={editingCategory}
         onClose={() => setEditingCategory(null)}
-        onSave={(id, name) => setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)))}
+        onSave={(id, name) => changeCategory("PATCH", id, name)}
       />
       <DeleteCategoryModal
         category={deletingCategory}
         onClose={() => setDeletingCategory(null)}
-        onDelete={(id) => setCategories((prev) => prev.filter((c) => c.id !== id))}
+        onDelete={(id) => changeCategory("DELETE", id)}
       />
     </div>
   );

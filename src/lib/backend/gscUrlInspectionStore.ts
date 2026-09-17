@@ -20,18 +20,30 @@ async function readAll(): Promise<Record<string, GscUrlIndexStatus>> {
   }
 }
 
-export async function getCachedUrlIndexStatuses(): Promise<Record<string, GscUrlIndexStatus>> {
-  return readAll();
+// 실 DB로 옮길 때 조직별로 행을 나눠야 하므로(같은 URL을 두 조직이 등록할
+// 수 있음), 지금은 조직이 하나뿐이라도 키에 orgId를 미리 섞어 넣는다.
+function scopedKey(orgId: string, url: string): string {
+  return `${orgId}::${url}`;
 }
 
-export async function getCachedUrlIndexStatus(url: string): Promise<GscUrlIndexStatus | null> {
+export async function getCachedUrlIndexStatuses(orgId: string): Promise<Record<string, GscUrlIndexStatus>> {
   const all = await readAll();
-  return all[url] ?? null;
+  const prefix = `${orgId}::`;
+  const byUrl: Record<string, GscUrlIndexStatus> = {};
+  for (const [key, status] of Object.entries(all)) {
+    if (key.startsWith(prefix)) byUrl[key.slice(prefix.length)] = status;
+  }
+  return byUrl;
 }
 
-export async function setCachedUrlIndexStatus(url: string, status: GscUrlIndexStatus): Promise<void> {
+export async function getCachedUrlIndexStatus(orgId: string, url: string): Promise<GscUrlIndexStatus | null> {
   const all = await readAll();
-  all[url] = status;
+  return all[scopedKey(orgId, url)] ?? null;
+}
+
+export async function setCachedUrlIndexStatus(orgId: string, url: string, status: GscUrlIndexStatus): Promise<void> {
+  const all = await readAll();
+  all[scopedKey(orgId, url)] = status;
   const filePath = path.join(process.cwd(), FILE_PATH);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(all, null, 2)}\n`, "utf8");

@@ -1,10 +1,8 @@
 import { RobotsTxtClient } from "@/components/opportunities/RobotsTxtClient";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+import { DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getRealRobotsTxtOpportunity } from "@/lib/backend/robotsTxtReader";
 import { getRealGscSitemaps } from "@/lib/backend/gscSearchAnalyticsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
-
-const OWN_BRAND_ID = "brand-neodigm";
 
 // robots.txt는 매번 fetch해서 최신 내용을 보여줘야 한다.
 export const dynamic = "force-dynamic";
@@ -22,7 +20,7 @@ export default async function RobotsTxtOpportunityPage() {
   const data = demo ? mock : (await getRealRobotsTxtOpportunity(org.domain)) ?? mock;
   if (!data) return null;
 
-  const sitemaps = demo ? null : await getRealGscSitemaps(OWN_BRAND_ID).catch(() => null);
+  const sitemaps = demo ? null : await getRealGscSitemaps(DEFAULT_BRAND_ID).catch(() => null);
 
   return <RobotsTxtClient data={data} sitemaps={sitemaps} />;
 }

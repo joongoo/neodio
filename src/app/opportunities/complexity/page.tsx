@@ -10,7 +10,7 @@ import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore"
 export const dynamic = "force-dynamic";
 
 export default async function ComplexityOpportunityPage() {
-  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls("complexity")]);
+  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls(DEFAULT_ORG_ID, "complexity")]);
   const history = demo || !org ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
   const data = buildComplexityOpportunity(history, excludedUrls);
 
@@ -23,8 +23,8 @@ export default async function ComplexityOpportunityPage() {
   }
 
   const [guides, indexStatuses, pageSpeedResults] = await Promise.all([
-    getLlmBridgeScope<{ guide: string }>("content-guide-complexity"),
-    getCachedUrlIndexStatuses(),
+    getLlmBridgeScope<{ guide: string }>(DEFAULT_ORG_ID, "content-guide-complexity"),
+    getCachedUrlIndexStatuses(DEFAULT_ORG_ID),
     getCachedPageSpeedResults(),
   ]);
   const dataWithExtras = {

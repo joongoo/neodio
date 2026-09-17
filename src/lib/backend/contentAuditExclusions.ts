@@ -18,18 +18,25 @@ async function readAll(): Promise<Record<string, string[]>> {
   }
 }
 
-export async function getExcludedUrls(metricKey: string): Promise<Set<string>> {
-  const all = await readAll();
-  return new Set(all[metricKey] ?? []);
+// 실 DB로 옮길 때 조직별로 행을 나눠야 하므로, 지금은 조직이 하나뿐이라도
+// 키에 orgId를 미리 섞어 넣는다 — 나중에 orgId 컬럼을 추가하기만 하면 된다.
+function scopedKey(orgId: string, metricKey: string): string {
+  return `${orgId}::${metricKey}`;
 }
 
-export async function setUrlExcluded(metricKey: string, url: string, excluded: boolean): Promise<void> {
+export async function getExcludedUrls(orgId: string, metricKey: string): Promise<Set<string>> {
+  const all = await readAll();
+  return new Set(all[scopedKey(orgId, metricKey)] ?? []);
+}
+
+export async function setUrlExcluded(orgId: string, metricKey: string, url: string, excluded: boolean): Promise<void> {
   const filePath = path.join(process.cwd(), FILE_PATH);
   await mkdir(path.dirname(filePath), { recursive: true });
   const all = await readAll();
-  const set = new Set(all[metricKey] ?? []);
+  const key = scopedKey(orgId, metricKey);
+  const set = new Set(all[key] ?? []);
   if (excluded) set.add(url);
   else set.delete(url);
-  all[metricKey] = [...set];
+  all[key] = [...set];
   await writeFile(filePath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
 }

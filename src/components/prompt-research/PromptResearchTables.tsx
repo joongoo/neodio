@@ -107,6 +107,9 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
   const [trackingTopic, setTrackingTopic] = useState<RelatedTopicRow | null>(null);
   const [trackingPrompt, setTrackingPrompt] = useState<{ sp: RelatedTopicSubPrompt; topicName: string } | null>(null);
 
+  const [search, setSearch] = useState("");
+  const filteredRows = rows.filter((r) => r.topic.toLowerCase().includes(search.trim().toLowerCase()));
+
   const topicColumns = useMemo(
     () => buildTopicColumns(trackedTopicIds, (row) => setTrackingTopic(row)),
     [trackedTopicIds]
@@ -114,10 +117,19 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
   const { filtered, visible, open, setOpen, setVisible } = useColumnVisibility(topicColumns, topicOptional);
 
   return (
-    <TablePanel title="관련 토픽" description="마케팅 자동화와 관련된 모든 토픽입니다." count={0} total={rows.length} onConfigureColumns={() => setOpen(true)}>
+    <TablePanel
+      title="관련 토픽"
+      description="마케팅 자동화와 관련된 모든 토픽입니다."
+      count={filteredRows.length}
+      total={rows.length}
+      onConfigureColumns={() => setOpen(true)}
+      searchValue={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="토픽 검색"
+    >
       <DataTable
         columns={filtered}
-        rows={rows}
+        rows={filteredRows}
         getRowId={(r) => r.id}
         renderExpanded={(row) =>
           row.subPrompts.length === 0 ? (
@@ -179,32 +191,42 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
 }
 
 export function BrandMentionsTable({ rows }: { rows: BrandMentionRow[] }) {
+  const [search, setSearch] = useState("");
+  const filteredRows = rows.filter((r) => r.brand.toLowerCase().includes(search.trim().toLowerCase()));
   const { filtered, visible, open, setOpen, setVisible } = useColumnVisibility(brandColumns, brandOptional);
   return (
     <TablePanel
       title="브랜드"
       description="관련 토픽에 속한 프롬프트 응답에서 언급된 브랜드 집계 목록입니다."
-      count={0}
+      count={filteredRows.length}
       total={rows.length}
       onConfigureColumns={() => setOpen(true)}
+      searchValue={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="브랜드 검색"
     >
-      <DataTable columns={filtered} rows={rows} getRowId={(r) => r.id} />
+      <DataTable columns={filtered} rows={filteredRows} getRowId={(r) => r.id} />
       <ConfigureColumnsModal open={open} onClose={() => setOpen(false)} columns={brandOptional} visible={visible} onApply={setVisible} />
     </TablePanel>
   );
 }
 
 export function SourceDomainsTable({ rows }: { rows: SourceDomainRow[] }) {
+  const [search, setSearch] = useState("");
+  const filteredRows = rows.filter((r) => r.domain.toLowerCase().includes(search.trim().toLowerCase()));
   const { filtered, visible, open, setOpen, setVisible } = useColumnVisibility(sourceColumns, sourceOptional);
   return (
     <TablePanel
       title="소스 도메인"
       description="관련 토픽에 속한 프롬프트 응답에서 인용된 도메인 집계 목록입니다."
-      count={0}
+      count={filteredRows.length}
       total={rows.length}
       onConfigureColumns={() => setOpen(true)}
+      searchValue={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="도메인 검색"
     >
-      <DataTable columns={filtered} rows={rows} getRowId={(r) => r.id} />
+      <DataTable columns={filtered} rows={filteredRows} getRowId={(r) => r.id} />
       <ConfigureColumnsModal open={open} onClose={() => setOpen(false)} columns={sourceOptional} visible={visible} onApply={setVisible} />
     </TablePanel>
   );

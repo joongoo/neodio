@@ -1,16 +1,29 @@
 import { PromptStrategyClient } from "@/components/prompt-strategy/PromptStrategyClient";
-import { DEFAULT_ORG_ID, db, GscCraftedPrompt, LlmBrainstormCard, PromptStrategySuggestion, PromptStrategyTopicRow } from "@/lib/db";
+import { DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db, GscCraftedPrompt, LlmBrainstormCard, PromptStrategySuggestion, PromptStrategyTopicRow } from "@/lib/db";
 import { getRealGscCoverageGaps, getRealGscTopPages } from "@/lib/backend/gscSearchAnalyticsReader";
-import { listTrackedTopics } from "@/lib/backend/trackedTopics";
+import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTopics";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getLlmBridgeEntry, getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { formatTopicBrandMentionsDigest, getRealTopicBrandMentions } from "@/lib/backend/collectionStatsReader";
-
-const DEFAULT_BRAND_ID = "brand-neodigm";
+import { getTopicOptionsByCategory } from "@/lib/backend/promptTopics";
 
 // GSC 연결/추적 프롬프트가 방금 바뀌었을 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
+
+// GSC 응답 순서(배열 인덱스)로 그룹 id를 만들면, 같은 키워드/URL이어도
+// 요청마다(정렬이 흔들리거나 새 키워드가 끼어들면) 다른 id가 붙어서
+// gscKeywordCraftedPrompts/citationTestPrompts에 저장해둔 하위 프롬프트와
+// 매칭이 깨질 수 있다 — 키워드/URL 자체(자연 키)에서 결정적으로 파생시켜
+// 항상 같은 입력이면 같은 id가 나오게 한다. DB로 옮긴 뒤엔 이 문자열이
+// 실제 저장 시점에 부여되는 고정 PK로 바뀌면 된다.
+function stableId(prefix: string, naturalKey: string): string {
+  let hash = 5381;
+  for (let i = 0; i < naturalKey.length; i++) {
+    hash = (hash * 33) ^ naturalKey.charCodeAt(i);
+  }
+  return `${prefix}-${(hash >>> 0).toString(36)}`;
+}
 
 export default async function PromptStrategyPage() {
   const demo = await isDemoMode();
@@ -24,16 +37,18 @@ export default async function PromptStrategyPage() {
     topicBrandMentions,
     citationTestPrompts,
     topPages,
+    topicOptionsByCategory,
   ] = await Promise.all([
     db.promptStrategy.get(DEFAULT_ORG_ID),
-    db.promptLibrary.list(DEFAULT_ORG_ID),
-    listTrackedTopics(),
-    getDeletedLibraryRowIds(),
-    getLlmBridgeScope<GscCraftedPrompt[]>("gsc-keyword-prompts"),
-    getLlmBridgeEntry<LlmBrainstormCard[]>("llm-brainstorm", "current"),
+    listSeedLibraryRows(DEFAULT_ORG_ID),
+    listTrackedTopics(DEFAULT_ORG_ID),
+    getDeletedLibraryRowIds(DEFAULT_ORG_ID),
+    getLlmBridgeScope<GscCraftedPrompt[]>(DEFAULT_ORG_ID, "gsc-keyword-prompts"),
+    getLlmBridgeEntry<LlmBrainstormCard[]>(DEFAULT_ORG_ID, "llm-brainstorm", "current"),
     demo ? Promise.resolve(null) : getRealTopicBrandMentions().catch(() => null),
-    getLlmBridgeScope<GscCraftedPrompt[]>("citation-test-prompts"),
+    getLlmBridgeScope<GscCraftedPrompt[]>(DEFAULT_ORG_ID, "citation-test-prompts"),
     demo ? Promise.resolve(null) : getRealGscTopPages(DEFAULT_BRAND_ID, 5).catch(() => null),
+    getTopicOptionsByCategory(DEFAULT_ORG_ID),
   ]);
   if (!data) return null;
 
@@ -55,7 +70,7 @@ export default async function PromptStrategyPage() {
   // 만 하위 행으로 채운다. 아직 채워지지 않은 키워드는 "아직 만든 프롬프트
   // 없음" 상태로 빈 그룹만 보인다. LLM 브레인스토밍 소스는 그대로 둔다 —
   // GSC와 무관.
-  const gscKeywordGroups = (realGaps ?? []).map((gap, i) => ({ ...gap, id: `gsc-kw-${i}` }));
+  const gscKeywordGroups = (realGaps ?? []).map((gap) => ({ ...gap, id: stableId("gsc-kw", gap.topic) }));
 
   const craftedTopics: PromptStrategyTopicRow[] = gscKeywordGroups.flatMap((gap) =>
     (gscKeywordCraftedPrompts[gap.topic] ?? []).map((crafted, j) => ({
@@ -69,6 +84,8 @@ export default async function PromptStrategyPage() {
       intent: crafted.intent,
       branded: crafted.branded,
       reasoning: crafted.reasoning,
+      category: crafted.category,
+      topicGroup: crafted.topic,
     }))
   );
 
@@ -89,7 +106,7 @@ export default async function PromptStrategyPage() {
   // 타겟 URL을 고르고, 그 URL로 LLM에게 인용 테스트 질문을 만들어달라고
   // 물어본 결과(citation-test-prompts)를 하위 행으로 채운다. GSC 키워드
   // 그룹과 완전히 같은 패턴 — 타겟 선정은 100% 실측, 질문 문장만 LLM 우회.
-  const citationGroups = (topPages ?? []).map((page, i) => ({ ...page, id: `citation-${i}` }));
+  const citationGroups = (topPages ?? []).map((page) => ({ ...page, id: stableId("citation", page.url) }));
   const citationTopics: PromptStrategyTopicRow[] = citationGroups.flatMap((page) =>
     (citationTestPrompts[page.url] ?? []).map((crafted, j) => ({
       id: `${page.id}-prompt-${j}`,
@@ -102,6 +119,8 @@ export default async function PromptStrategyPage() {
       intent: crafted.intent,
       branded: crafted.branded,
       reasoning: crafted.reasoning,
+      category: crafted.category,
+      topicGroup: crafted.topic,
     }))
   );
   const citationSuggestions = citationGroups.map((page) => ({
@@ -129,16 +148,18 @@ export default async function PromptStrategyPage() {
     stat: card.stat,
   }));
   const brainstormTopics: PromptStrategyTopicRow[] = (brainstormCards ?? []).flatMap((card) =>
-    card.topics.map((topic, i) => {
-      const real = topicBrandMentionsByTopic.get(topic);
+    card.topics.map((t, i) => {
+      const real = topicBrandMentionsByTopic.get(t.prompt);
       return {
         id: `${card.id}-topic-${i}`,
         groupId: card.id,
-        topic,
+        topic: t.prompt,
         market: real?.market ?? "KR",
         source: "llm_brainstorm" as const,
         gscImpressions: null,
         brandMentions: real?.brandMentions ?? [],
+        category: t.category,
+        topicGroup: t.topic,
       };
     })
   );
@@ -179,6 +200,8 @@ export default async function PromptStrategyPage() {
       brainstormDigest={brainstormDigest}
       gscKeywordTargets={gscKeywordTargets}
       citationTargets={citationTargets}
+      topicOptionsByCategory={topicOptionsByCategory.byCategory}
+      uncategorizedTopicOptions={topicOptionsByCategory.uncategorized}
     />
   );
 }

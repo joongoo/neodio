@@ -292,5 +292,6 @@ export const db = {
 };
 
 export const DEFAULT_ORG_ID = "neodigm";
+export const DEFAULT_BRAND_ID = "brand-neodigm";
 
 export * from "./types";

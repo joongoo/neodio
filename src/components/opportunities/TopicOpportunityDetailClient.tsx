@@ -32,7 +32,7 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
     await fetch("/api/tracked-topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: row.topic, category, subcategory: "토픽 기회", source: "기회" }),
+      body: JSON.stringify({ prompt: row.topic, category, topic: "토픽 기회", source: "기회" }),
     });
     setTrackOpen(false);
     router.refresh();

@@ -32,6 +32,7 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
     brands: [
       {
         id: "brand-neodigm",
+        organizationId: "neodigm",
         name: "Neodigm",
         url: "https://neodigm.com",
         sitemapUrl: "https://neodigm.com/sitemap.xml",
@@ -55,6 +56,7 @@ export const brandsManagementByOrg: Record<string, BrandsManagementData> = {
       // 데이터가 보이게 한다.
       {
         id: "brand-demo",
+        organizationId: "neodigm",
         name: "Demo",
         url: "https://demo.neodio.app",
         sitemapUrl: "https://demo.neodio.app/sitemap.xml",

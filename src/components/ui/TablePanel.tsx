@@ -12,6 +12,9 @@ export function TablePanel({
   count,
   total,
   onConfigureColumns,
+  searchValue,
+  onSearchChange,
+  searchPlaceholder = "검색",
   children,
 }: {
   title: string;
@@ -20,6 +23,11 @@ export function TablePanel({
   total: number;
   /** Shows the "컬럼 설정" gear button when provided (see ConfigureColumnsModal). */
   onConfigureColumns?: () => void;
+  /** 제공하면 검색창이 실제 입력 가능한 필드로 바뀐다 — 없으면 count/total만
+   *  보여주는 정적 배지로 남는다(검색 기능이 없는 테이블용). */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  searchPlaceholder?: string;
   children: ReactNode;
 }) {
   return (
@@ -40,12 +48,28 @@ export function TablePanel({
               <Settings size={16} />
             </button>
           )}
-          <div className="flex h-9 w-[280px] items-center justify-between gap-2 rounded-full border border-neutral-300 px-3 py-2">
-            <Search size={16} className="shrink-0 text-neutral-400" />
-            <span className="text-[13px] text-neutral-500">
-              {count}/{total}
-            </span>
-          </div>
+          {onSearchChange ? (
+            <div className="flex h-9 w-[280px] items-center gap-2 rounded-full border border-neutral-300 px-3 py-2">
+              <Search size={16} className="shrink-0 text-neutral-400" />
+              <input
+                value={searchValue ?? ""}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                className="min-w-0 flex-1 text-[13px] text-neutral-700 outline-none placeholder:text-neutral-400"
+              />
+              <span className="shrink-0 text-[13px] text-neutral-500">
+                {count}/{total}
+              </span>
+            </div>
+          ) : (
+            <div className="flex h-9 w-[280px] items-center justify-between gap-2 rounded-full border border-neutral-300 px-3 py-2">
+              <Search size={16} className="shrink-0 text-neutral-400" />
+              <span className="text-[13px] text-neutral-500">
+                {count}/{total}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       <div className="mt-4">{children}</div>

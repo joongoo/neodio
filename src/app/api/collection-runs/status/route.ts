@@ -3,7 +3,7 @@ import { getJob } from "@/lib/backend/collectionJobRunner";
 
 export async function GET(request: NextRequest) {
   const jobId = request.nextUrl.searchParams.get("jobId");
-  const job = jobId ? getJob(jobId) : undefined;
+  const job = jobId ? await getJob(jobId) : undefined;
 
   if (!job) {
     return NextResponse.json({ error: "존재하지 않거나 만료된 작업입니다." }, { status: 404 });

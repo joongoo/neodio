@@ -3,6 +3,7 @@ import { GscConnectionCard } from "@/components/brands-management/GscConnectionC
 import { ComingSoonConnectionCard } from "@/components/brands-management/ComingSoonConnectionCard";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
+import { getRealGscSearchPerformance } from "@/lib/backend/gscSearchAnalyticsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 
@@ -26,12 +27,14 @@ export default async function BrandConnectionsPage({
   ]);
   if (!brand) return null;
 
+  const realPerformance = gscToken && !demo ? await getRealGscSearchPerformance(brandId).catch(() => null) : null;
+
   // 실 OAuth 연결(.tmp/gsc-tokens)이 있으면 그걸로 대체. mock(gscConnectionByBrand)
   // 은 "Demo" 브랜드에서만 쓴다 — 예전엔 실 연동이 없을 때 항상 mock의
   // status:"connected"로 폴백해서, 연결 해제를 눌러도(진짜 토큰이 없으니
   // 지울 것도 없이) 화면이 계속 "연결됨"으로 보이는 버그가 있었다. 실
   // OAuth가 생긴 지금은 토큰의 유무 자체가 연결 상태의 유일한 근거여야
-  // 한다.
+  // 한다. "동기화 통계"도 mock 수치가 아니라 실측 GSC 합계를 쓴다.
   const gsc = gscToken
     ? {
         brandId,
@@ -39,9 +42,9 @@ export default async function BrandConnectionsPage({
         accountEmail: gscToken.accountEmail,
         property: gscToken.property,
         lastSyncedAt: gscToken.connectedAt,
-        syncedQueries: gscMock?.syncedQueries ?? 0,
-        syncedImpressions: gscMock?.syncedImpressions ?? 0,
-        syncedClicks: gscMock?.syncedClicks ?? 0,
+        syncedQueries: realPerformance?.totalQueries ?? 0,
+        syncedImpressions: realPerformance?.totalImpressions ?? 0,
+        syncedClicks: realPerformance?.totalClicks ?? 0,
       }
     : demo
       ? gscMock

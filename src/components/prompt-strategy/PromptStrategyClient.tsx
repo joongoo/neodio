@@ -10,6 +10,9 @@ import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBulkBridgeModal } from "@/components/ui/LlmBulkBridgeModal";
 import { BrainstormWizardModal } from "@/components/prompt-strategy/BrainstormWizardModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
+import { CANONICAL_CATEGORIES } from "@/lib/categories";
+
+const CATEGORY_OPTIONS = CANONICAL_CATEGORIES;
 
 const SOURCE_LABEL: Record<StrategySource, string> = {
   gsc: "구글서치콘솔",
@@ -22,12 +25,28 @@ const TAG_LABEL: Record<PromptStrategySuggestion["tag"], { text: string; classNa
   strength: { text: "우위를 점한 토픽", className: "bg-emerald-50 text-emerald-700" },
 };
 
+// 3개 분석 마법사(구글서치콘솔/가상 사용자 질문/인용 테스트) 프롬프트에
+// 공통으로 붙이는 블록 — 기존 카테고리·토픽 목록을 보여주고, 가능하면
+// 거기서 그대로 고르되 정말 새로운 주제일 때만 새로 이름 짓게 한다.
+export function formatExistingTopicsBlock(
+  topicOptionsByCategory: Record<string, string[]>,
+  uncategorizedTopicOptions: string[]
+): string {
+  const categoryLines = Object.entries(topicOptionsByCategory).map(([category, topics]) => `- ${category}: ${topics.join(", ")}`);
+  const uncategorizedLine = uncategorizedTopicOptions.length > 0 ? `- (카테고리 미지정): ${uncategorizedTopicOptions.join(", ")}` : "";
+  const lines = [...categoryLines, uncategorizedLine].filter(Boolean).join("\n");
+  const body = lines || "(아직 등록된 토픽이 없습니다)";
+  return `현재 사용 중인 카테고리와 그 안의 토픽 목록입니다:\n${body}\n\n전체 카테고리 목록: ${CATEGORY_OPTIONS.join(", ")}\n\n각 프롬프트마다 category(위 카테고리 목록 중 하나)와 topic(같은 주제를 가리키는 토픽 이름)을 반드시 함께 답변에 포함하세요. 가능하면 위 목록에 있는 카테고리/토픽을 그대로 재사용하고, 정말 기존 목록에 맞는 게 없을 때만 새 이름을 지어주세요(카테고리도 새로 만들 수 있습니다).`;
+}
+
 export function PromptStrategyClient({
   initial,
   preTrackedIds = [],
   brainstormDigest = "",
   gscKeywordTargets = [],
   citationTargets = [],
+  topicOptionsByCategory = {},
+  uncategorizedTopicOptions = [],
 }: {
   initial: PromptStrategyData;
   /** 이미 프롬프트 라이브러리에 있는 프롬프트 id — 서버가 매 로드마다 계산해서 넘긴다. */
@@ -38,6 +57,9 @@ export function PromptStrategyClient({
   gscKeywordTargets?: { keyword: string; impressions: number }[];
   /** "인용 테스트 분석" 마법사가 한 번에 등록할 실측 저클릭 페이지 목록. */
   citationTargets?: { url: string; impressions: number; clicks: number }[];
+  /** 3개 분석 마법사가 프롬프트에 보여줄 기존 카테고리별 토픽 목록. */
+  topicOptionsByCategory?: Record<string, string[]>;
+  uncategorizedTopicOptions?: string[];
 }) {
   const router = useRouter();
   const topics = initial.topics;
@@ -86,14 +108,14 @@ export function PromptStrategyClient({
     });
   }
 
-  // 프롬프트 라이브러리의 "서브카테고리" 컬럼에 어떤 토픽(키워드/제안)에서
-  // 추적됐는지 남기기 위한 라벨. 이전엔 이 값을 안 넘겨서 모든 프롬프트
-  // 전략발 항목이 전부 "프롬프트 전략에서 추적"으로만 뭉뚱그려 보였다(어느
-  // 키워드/토픽에서 왔는지 알 수 없었음). 그렇다고 제안 카드 제목을 그대로
-  // 쓰면 큰따옴표가 섞인 문장(예: '"디맨드젠 vs 리드젠" 콘텐츠 인용
-  // 테스트')이 그대로 서브카테고리에 들어가 다른 값들("GSC 커버리지 공백",
-  // "Marketo"처럼 짧은 태그)과 형식이 안 맞는다 — 제목에서 따옴표 안 핵심
-  // 키워드만 뽑아 "출처: 키워드" 형태의 짧은 라벨로 만든다.
+  // 프롬프트 라이브러리의 "토픽" 컬럼에 어떤 토픽(키워드/제안)에서 추적됐는지
+  // 남기기 위한 라벨. 이전엔 이 값을 안 넘겨서 모든 프롬프트 전략발 항목이
+  // 전부 "프롬프트 전략에서 추적"으로만 뭉뚱그려 보였다(어느 키워드/토픽에서
+  // 왔는지 알 수 없었음). 그렇다고 제안 카드 제목을 그대로 쓰면 큰따옴표가
+  // 섞인 문장(예: '"디맨드젠 vs 리드젠" 콘텐츠 인용 테스트')이 그대로 토픽에
+  // 들어가 다른 값들("GSC 커버리지 공백", "Marketo"처럼 짧은 태그)과 형식이
+  // 안 맞는다 — 제목에서 따옴표 안 핵심 키워드만 뽑아 "출처: 키워드" 형태의
+  // 짧은 라벨로 만든다.
   function groupTopicLabel(groupId: string | undefined): string | undefined {
     const s = initial.suggestions.find((x) => x.id === groupId);
     if (!s) return undefined;
@@ -105,12 +127,16 @@ export function PromptStrategyClient({
   // 저장하고 프롬프트 라이브러리로 이동한다 — 이전엔 로컬 state만 바뀌고
   // 새로고침하면 사라졌고, 프롬프트 라이브러리에도 반영되지 않았다.
   async function handleTrack(id: string, promptText: string, category: string) {
-    const groupId = topics.find((t) => t.id === id)?.groupId;
+    const strategyRow = topics.find((t) => t.id === id);
+    const groupId = strategyRow?.groupId;
     setTrackedIds((prev) => new Set(prev).add(id));
     const res = await fetch("/api/tracked-topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: promptText, category, subcategory: groupTopicLabel(groupId), source: "프롬프트 전략" }),
+      body: JSON.stringify({ prompt: promptText, category: strategyRow?.category || category,
+        topic: strategyRow?.topicGroup || groupTopicLabel(groupId), source: strategyRow?.source || "strategy",
+        intent: strategyRow?.intent, reasoning: strategyRow?.reasoning,
+        purpose: initial.suggestions.find(s => s.id === groupId)?.tag }),
     });
     if (res.ok) setTrackSuccessCount(1);
   }
@@ -124,13 +150,15 @@ export function PromptStrategyClient({
     if (groupId) {
       setSelectedByGroup((prev) => ({ ...prev, [groupId]: new Set() }));
     }
-    const subcategoryLabel = groupTopicLabel(groupId);
+    const topicLabel = groupTopicLabel(groupId);
     const results = await Promise.all(
       rows.map((r) =>
         fetch("/api/tracked-topics", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: r.topic, category, subcategory: subcategoryLabel, source: "프롬프트 전략" }),
+          body: JSON.stringify({ prompt: r.topic, category: r.category || category, topic: r.topicGroup || topicLabel,
+            source: r.source, intent: r.intent, reasoning: r.reasoning,
+            purpose: initial.suggestions.find(s => s.id === (r.groupId ?? groupId))?.tag }),
         })
       )
     );
@@ -516,7 +544,7 @@ export function PromptStrategyClient({
         promptText={
           gscKeywordTargets.length === 0
             ? "아직 GSC 커버리지 공백 검색어가 없습니다."
-            : `Google Search Console에서 우리 사이트가 실제로 검색 노출을 받고 있지만 아직 프롬프트로 추적하지 않은 검색어들입니다:\n\n${gscKeywordTargets.map((t) => `- "${t.keyword}" (노출 ${t.impressions.toLocaleString("ko-KR")}회)`).join("\n")}\n\n각 검색어마다, 그 검색어로 검색하는 사람이 ChatGPT 같은 AI 챗봇에게 실제로 물어볼 법한 자연어 질문을 5개씩 만들어주세요. 브랜드명을 직접 언급하지 않는 카테고리/업체 추천형 질문 위주로 작성해주세요.\n\n반드시 아래 JSON 형식으로만, 검색어 전체에 대해 한 번에 답변하세요:\n{\n  "검색어1": [{"prompt": "질문 문장", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "근거"}],\n  "검색어2": [...]\n}`
+            : `Google Search Console에서 우리 사이트가 실제로 검색 노출을 받고 있지만 아직 프롬프트로 추적하지 않은 검색어들입니다:\n\n${gscKeywordTargets.map((t) => `- "${t.keyword}" (노출 ${t.impressions.toLocaleString("ko-KR")}회)`).join("\n")}\n\n각 검색어마다, 그 검색어로 검색하는 사람이 ChatGPT 같은 AI 챗봇에게 실제로 물어볼 법한 자연어 질문을 5개씩 만들어주세요. 브랜드명을 직접 언급하지 않는 카테고리/업체 추천형 질문 위주로 작성해주세요.\n\n${formatExistingTopicsBlock(topicOptionsByCategory, uncategorizedTopicOptions)}\n\n반드시 아래 JSON 형식으로만, 검색어 전체에 대해 한 번에 답변하세요:\n{\n  "검색어1": [{"prompt": "질문 문장", "category": "카테고리", "topic": "토픽", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "근거"}],\n  "검색어2": [...]\n}`
         }
         parse={(raw) => {
           try {
@@ -525,8 +553,15 @@ export function PromptStrategyClient({
               return { error: "검색어를 key로 갖는 JSON 객체 형식이어야 합니다." };
             }
             for (const value of Object.values(parsed)) {
-              if (!Array.isArray(value) || value.length === 0 || value.some((item: unknown) => typeof (item as { prompt?: unknown })?.prompt !== "string")) {
-                return { error: "각 검색어 값은 prompt 필드를 가진 항목들의 배열이어야 합니다." };
+              if (
+                !Array.isArray(value) ||
+                value.length === 0 ||
+                value.some((item: unknown) => {
+                  const p = item as { prompt?: unknown; category?: unknown; topic?: unknown };
+                  return typeof p?.prompt !== "string" || typeof p?.category !== "string" || !p.category.trim() || typeof p?.topic !== "string" || !p.topic.trim();
+                })
+              ) {
+                return { error: "각 검색어 값은 prompt/category/topic 필드를 가진 항목들의 배열이어야 합니다." };
               }
             }
             return { entries: parsed };
@@ -546,7 +581,7 @@ export function PromptStrategyClient({
         promptText={
           citationTargets.length === 0
             ? "아직 인용 테스트 대상 페이지가 없습니다."
-            : `다음은 Google Search Console 실측으로 노출은 많은데 클릭이 적은 우리 페이지들입니다:\n\n${citationTargets.map((t) => `- ${t.url} (노출 ${t.impressions.toLocaleString("ko-KR")}회, 클릭 ${t.clicks.toLocaleString("ko-KR")}회)`).join("\n")}\n\n각 URL마다, 그 페이지가 다룰 법한 주제를 URL로 추측해서 AI 챗봇(ChatGPT 등)이 답변의 출처로 이 페이지를 인용할 만한 자연어 질문을 3개씩 만들어주세요.\n\n반드시 아래 JSON 형식으로만, URL 전체에 대해 한 번에 답변하세요:\n{\n  "URL1": [{"prompt": "질문 문장", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "근거"}],\n  "URL2": [...]\n}`
+            : `다음은 Google Search Console 실측으로 노출은 많은데 클릭이 적은 우리 페이지들입니다:\n\n${citationTargets.map((t) => `- ${t.url} (노출 ${t.impressions.toLocaleString("ko-KR")}회, 클릭 ${t.clicks.toLocaleString("ko-KR")}회)`).join("\n")}\n\n각 URL마다, 그 페이지가 다룰 법한 주제를 URL로 추측해서 AI 챗봇(ChatGPT 등)이 답변의 출처로 이 페이지를 인용할 만한 자연어 질문을 3개씩 만들어주세요.\n\n${formatExistingTopicsBlock(topicOptionsByCategory, uncategorizedTopicOptions)}\n\n반드시 아래 JSON 형식으로만, URL 전체에 대해 한 번에 답변하세요:\n{\n  "URL1": [{"prompt": "질문 문장", "category": "카테고리", "topic": "토픽", "intent": "정보 탐색|업체 비교|도입 검토", "branded": false, "reasoning": "근거"}],\n  "URL2": [...]\n}`
         }
         parse={(raw) => {
           try {
@@ -555,8 +590,15 @@ export function PromptStrategyClient({
               return { error: "URL을 key로 갖는 JSON 객체 형식이어야 합니다." };
             }
             for (const value of Object.values(parsed)) {
-              if (!Array.isArray(value) || value.length === 0 || value.some((item: unknown) => typeof (item as { prompt?: unknown })?.prompt !== "string")) {
-                return { error: "각 URL 값은 prompt 필드를 가진 항목들의 배열이어야 합니다." };
+              if (
+                !Array.isArray(value) ||
+                value.length === 0 ||
+                value.some((item: unknown) => {
+                  const p = item as { prompt?: unknown; category?: unknown; topic?: unknown };
+                  return typeof p?.prompt !== "string" || typeof p?.category !== "string" || !p.category.trim() || typeof p?.topic !== "string" || !p.topic.trim();
+                })
+              ) {
+                return { error: "각 URL 값은 prompt/category/topic 필드를 가진 항목들의 배열이어야 합니다." };
               }
             }
             return { entries: parsed };
@@ -571,6 +613,8 @@ export function PromptStrategyClient({
         open={brainstormOpen}
         onClose={() => setBrainstormOpen(false)}
         digest={brainstormDigest || "아직 수집된 데이터가 없습니다."}
+        topicOptionsByCategory={topicOptionsByCategory}
+        uncategorizedTopicOptions={uncategorizedTopicOptions}
         onSaved={() => router.refresh()}
       />
 

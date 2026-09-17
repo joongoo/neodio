@@ -180,7 +180,7 @@ function buildTopicColumns(
     width: "w-[100px]",
     label: "액션",
     render: (r) =>
-      trackedIds.has(r.id) ? (
+      trackedIds.has(r.id) || r.addedToLibrary ? (
         <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
       ) : (
         <button
@@ -287,6 +287,12 @@ function isTopicRow(row: VisibilityTableRow): row is TopicRow {
   return "topic" in row;
 }
 
+function formatRunAt(runAt?: string) {
+  if (!runAt) return "—";
+  const d = new Date(runAt);
+  return Number.isNaN(d.getTime()) ? runAt : d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+}
+
 function allKeys(family: Family) {
   return new Set(OPTIONAL_COLUMNS[family].map((c) => c.key));
 }
@@ -312,6 +318,7 @@ export function TopicsTableSection({
   const [trackedIds, setTrackedIds] = useState<Set<string>>(new Set());
   const [trackTarget, setTrackTarget] = useState<TrackTarget | null>(null);
   const [registeringSource, setRegisteringSource] = useState<CitedSourceRow | null>(null);
+  const [groupingOpen, setGroupingOpen] = useState(false);
 
   // 실제로 프롬프트 라이브러리에 저장(.tmp/tracked-topics)한 뒤 그 화면으로
   // 이동한다 — 이전엔 클라이언트 로컬 state만 바뀌고 새로고침하면 사라졌고,
@@ -360,6 +367,19 @@ export function TopicsTableSection({
   const isSourceFamily = family === "source";
   const visible = visibleByFamily[family];
 
+  // 재그룹핑용 원본 프롬프트 목록 — 이미 토픽으로 묶인 행이 있으면 그 안의
+  // prompts[].prompt(진짜 프롬프트 원문)까지 펼쳐서 전체 목록을 복원한다.
+  const allPromptTexts = useMemo(() => {
+    const texts = new Set<string>();
+    for (const key of ["top-prompts", "topic-opportunities"]) {
+      for (const row of topicsByCategory[key] ?? []) {
+        if (isTopicRow(row)) row.prompts.forEach((p) => texts.add(p.prompt));
+      }
+    }
+    return [...texts];
+  }, [topicsByCategory]);
+  const groupingPromptText = `다음은 우리 브랜드에 대해 수집한 개별 프롬프트(질문) 목록입니다. 의미상 같은 주제를 가리키는 프롬프트끼리 하나의 토픽으로 묶어주세요.\n- 목록에 있는 프롬프트를 빠짐없이, 정확히 하나의 토픽에만 포함하세요.\n- 토픽 이름은 10자 내외의 짧은 명사구로 지어주세요.\n- 서로 뚜렷이 다른 주제를 억지로 묶지 마세요(그런 경우 프롬프트 하나만 있는 토픽이어도 괜찮습니다).\n\n반드시 아래 JSON 배열 형식으로만 답변하세요:\n[{"topic": "토픽 이름", "prompts": ["프롬프트 원문 그대로", "..."]}, ...]\n\n프롬프트 목록:\n${allPromptTexts.map((p) => `- ${p}`).join("\n")}`;
+
   const isTopicOpportunities = categoryId === "topic-opportunities";
   const topicColumns = useMemo(
     () =>
@@ -400,6 +420,11 @@ export function TopicsTableSection({
           <h3 className="text-base font-bold text-neutral-900">{category?.label}</h3>
           <p className="mt-0.5 text-xs text-neutral-500">{CATEGORY_DESCRIPTIONS[categoryId] ?? ""}</p>
         </div>
+        {isTopicFamily && allPromptTexts.length > 0 && (
+          <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setGroupingOpen(true)}>
+            AI로 토픽 묶기
+          </Button>
+        )}
         <button
           type="button"
           aria-label="컬럼 설정"
@@ -436,10 +461,12 @@ export function TopicsTableSection({
             columns={visibleTopicColumns}
             rows={rows.filter(isTopicRow)}
             getRowId={(r) => r.id}
-            renderExpanded={(row) => (
+            renderExpanded={(row) => {
+              return (
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-3 border-b border-neutral-100 pb-2 text-xs font-bold text-neutral-500">
-                  <span className="w-[280px]">프롬프트</span>
+                  <span className="w-[240px]">프롬프트</span>
+                  <span className="w-[70px]">실행일</span>
                   <span className="w-[110px]">모델</span>
                   <span className="w-[70px]">내 브랜드</span>
                   <span className="w-[70px]">브랜드</span>
@@ -451,7 +478,8 @@ export function TopicsTableSection({
                   const trackId = `${row.id}-${p.id}`;
                   return (
                     <div key={p.id} className="flex items-center gap-3 text-xs text-neutral-700">
-                      <span className="w-[280px] truncate">{p.prompt}</span>
+                      <span className="w-[240px] truncate" title={p.prompt}>{p.prompt}</span>
+                      <span className="w-[70px] shrink-0 text-neutral-500">{formatRunAt(p.runAt)}</span>
                       <span className="w-[110px]">{p.model}</span>
                       <span className="w-[70px]">{p.myBrand}</span>
                       <span className="w-[70px]">{p.brand}</span>
@@ -460,7 +488,7 @@ export function TopicsTableSection({
                         <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{p.market}</span>
                       </span>
                       <span className="w-[70px]">
-                        {trackedIds.has(trackId) ? (
+                        {trackedIds.has(trackId) || p.addedToLibrary ? (
                           <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
                         ) : (
                           <button
@@ -484,7 +512,8 @@ export function TopicsTableSection({
                   );
                 })}
               </div>
-            )}
+              );
+            }}
           />
         )}
 
@@ -555,6 +584,41 @@ export function TopicsTableSection({
                 return { error: "recommendation 필드가 없습니다. JSON 형식을 확인해주세요." };
               }
               return { data: { recommendation: parsed.recommendation, reasoning: parsed.reasoning ?? "" } };
+            } catch {
+              return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
+            }
+          }}
+          onSaved={() => router.refresh()}
+        />
+      )}
+
+      {groupingOpen && (
+        <LlmBridgeModal
+          open={groupingOpen}
+          onClose={() => setGroupingOpen(false)}
+          title="AI로 토픽 묶기"
+          instructions="LLM API 연동 전까지, 아래 프롬프트 목록을 LLM에게 그대로 물어본 뒤 답변을 붙여넣으면 프롬프트들이 토픽 단위로 묶여 보입니다. 다시 실행하면 그룹핑 결과가 갱신됩니다."
+          scope="prompt-topic-groups"
+          itemKey="current"
+          promptText={groupingPromptText}
+          parse={(raw) => {
+            try {
+              const parsed = JSON.parse(raw);
+              const isValid =
+                Array.isArray(parsed) &&
+                parsed.length > 0 &&
+                parsed.every(
+                  (g) =>
+                    typeof g?.topic === "string" &&
+                    g.topic.trim() &&
+                    Array.isArray(g?.prompts) &&
+                    g.prompts.length > 0 &&
+                    g.prompts.every((p: unknown) => typeof p === "string" && p.trim())
+                );
+              if (!isValid) {
+                return { error: "topic(문자열)과 prompts(문자열 배열)를 가진 항목의 배열이어야 합니다. JSON 형식을 확인해주세요." };
+              }
+              return { data: parsed };
             } catch {
               return { error: "JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
             }

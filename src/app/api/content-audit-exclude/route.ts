@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setUrlExcluded } from "@/lib/backend/contentAuditExclusions";
+import { DEFAULT_ORG_ID } from "@/lib/db";
 
 const VALID_METRICS = new Set(["complexity", "faq", "toc", "multimedia"]);
 
@@ -13,6 +14,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "metricKey와 url이 필요합니다." }, { status: 400 });
   }
 
-  await setUrlExcluded(metricKey, url, excluded);
+  await setUrlExcluded(DEFAULT_ORG_ID, metricKey, url, excluded);
   return NextResponse.json({ ok: true });
 }

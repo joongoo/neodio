@@ -77,6 +77,7 @@ export interface RawCitationMetadata {
 }
 
 export interface PromptRunMetadata {
+  collectionJobId?: string;
   locale?: string;
   source: "seed" | "naver-ai-search" | "google-ai-overview" | "api" | "headless-browser";
   basedOn?: string[];
@@ -91,7 +92,7 @@ export interface PromptRunMetadata {
   /** Set from "수집 로그"의 분석 모달 (Brand Management 카테고리와 동일 목록) —
    *  수집 시점엔 카테고리를 안 받으므로, 실행을 나중에 분류해 붙인다. */
   category?: string;
-  subcategory?: string;
+  topic?: string;
 }
 
 export interface PromptRunSeed {
@@ -289,6 +290,27 @@ export interface RankedRow {
   display: string;
 }
 
+// 용어 정의 (혼동 이슈 정리, 2026-09 — "서브카테고리" 폐기하고 카테고리>토픽>
+// 프롬프트 3단 구조로 통일, 2026-09 데이터 클렌징에서 단일 DB로 합침):
+// - 카테고리: 브랜드 관리에서 정한 대분류(마케팅/브랜드/여행 등, rawMetadata.category).
+// - 토픽: 의미상 같은 주제를 가리키는 여러 프롬프트의 묶음. 유일한 저장소는
+//   여기(PromptTopicGroup, scope "prompt-topic-groups")뿐이다 — 프롬프트
+//   라이브러리의 "토픽" 입력(추적/수동 추가/CSV/편집)과 가시성 개요의
+//   "AI로 토픽 묶기"가 전부 lib/backend/promptTopics.ts의 setPromptTopic을
+//   거쳐 이 한 저장소에 쓴다(api/tracked-topics, api/llm-bridge 둘 다).
+//   category는 프롬프트 라이브러리 쪽에서 지정될 때만 채워진다 — AI 벌크
+//   그룹핑은 카테고리를 모르는 채로 여러 카테고리에 걸친 프롬프트를 한
+//   토픽으로 묶을 수 있어서 필수로 강제하지 않는다. 아직 아무 토픽에도
+//   안 묶인 프롬프트는 자기 자신 하나짜리 토픽으로 남는다
+//   (TopicRow.topic === 그 프롬프트 원문).
+// - 프롬프트: LLM에 실제로 입력한 문장 원문 (TopicPromptRow.prompt).
+export interface PromptTopicGroup {
+  topic: string;
+  /** 이 토픽이 속한 카테고리 — 프롬프트 라이브러리에서 지정된 경우에만 있음. */
+  category?: string;
+  prompts: string[];
+}
+
 export interface TopicPromptRow {
   id: string;
   prompt: string;
@@ -299,6 +321,10 @@ export interface TopicPromptRow {
   market: string;
   /** 이 실행이 수집된 시각(ISO) — 토픽 상세의 "수집 로그별 변화" 표에 씀. */
   runAt?: string;
+  /** 이 프롬프트 원문이 이미 프롬프트 라이브러리에 추가됐는지 — 토픽이
+   *  여러 프롬프트로 묶인 경우 프롬프트별 "추적" 액션 상태를 정확히
+   *  보여주는 데 쓴다(TopicRow.addedToLibrary는 토픽 전체 기준이라 부족함). */
+  addedToLibrary?: boolean;
 }
 
 // searchVolume/difficulty dropped for P0 (neodigm_p0_scope.md §2) — those
@@ -488,6 +514,10 @@ export interface GscSearchPerformanceResult {
   devices?: GscDeviceRow[];
   /** country 차원 실적 — 마켓 확장 우선순위를 실측으로 뒷받침하는 근거. */
   countries?: GscCountryRow[];
+  /** trend 집계 기간(5주) 동안의 실측 합계 — "동기화 통계" 카드용. */
+  totalClicks: number;
+  totalImpressions: number;
+  totalQueries: number;
 }
 
 // ---- GSC 추가 신호 (docs/gsc-additional-signals.md) ----
@@ -507,7 +537,25 @@ export interface GscUrlIndexStatus {
   googleCanonical: string | null;
   userCanonical: string | null;
   sitemaps: string[];
+  /** 이 URL을 링크하는 페이지 — 없으면 내부 링크가 전혀 없는 "고아 페이지"일 수 있음. */
+  referringUrls: string[];
+  /** 구글이 이 URL에서 실제로 감지·검증한 구조화 데이터(FAQ 스키마 등).
+   *  urlInspection.index:inspect를 이미 호출하는 김에 같은 응답에서 얻는다 —
+   *  추가 API 호출/쿼터 없음. */
+  richResults: GscRichResultsStatus;
   checkedAt: string;
+}
+
+export interface GscRichResultsStatus {
+  /** VERDICT_UNSPECIFIED/PASS/PARTIAL/FAIL/NEUTRAL — 감지된 리치 결과가
+   *  하나도 없으면 VERDICT_UNSPECIFIED. */
+  verdict: string;
+  items: {
+    /** 예: "FAQPage" */
+    richResultType: string;
+    itemName: string;
+    issues: { message: string; severity: "WARNING" | "ERROR" }[];
+  }[];
 }
 
 // searchAnalytics.query의 searchAppearance 차원 — FAQ/사이트링크 같은 리치
@@ -562,10 +610,15 @@ export interface PageSpeedResult {
 
 export interface PromptLibraryRow {
   id: string;
+  promptId?: string;
+  searchIntent?: string | null;
+  trackingStatus?: "active" | "paused" | "archived";
+  addedAt?: string;
+  addedBy?: string | null;
   prompt: string;
   origin: "manual" | "ai_generated" | "csv_import";
   category: string;
-  subcategory: string;
+  topic: string;
   lastModifiedAt: string | null;
   lastModifiedBy: string | null;
 }
@@ -783,6 +836,8 @@ export interface OwnCitedUrlRow {
   url: string;
   citations: number;
   citedPrompts: number;
+  /** Prompt texts that cited this URL, for the "상세" detail view. */
+  citedPromptTitles: string[];
   /** null when there's no real source for this yet (실 인용 집계엔 없고 사이트맵 크롤과 별도 매칭이 필요) */
   contentVisibility: number | null;
   category: string;
@@ -795,6 +850,8 @@ export interface ThirdPartyUrlRow {
   contentType: string;
   citations: number;
   citedPrompts: number;
+  /** Prompt texts that cited this URL, for the "상세" detail view. */
+  citedPromptTitles: string[];
   category: string;
   market: string;
 }
@@ -830,6 +887,9 @@ export interface SocialAccount {
 
 export interface ManagedBrand {
   id: string;
+  /** 지금은 조직이 하나뿐이라 항상 DEFAULT_ORG_ID지만, 실 DB로 옮길 때 FK로
+   *  쓰기 위해 미리 필드로 갖고 있는다. */
+  organizationId: string;
   name: string;
   url: string;
   /** Sitemap XML URL — drives the real content-visibility crawler (scripts/crawl-sitemap.mjs). */
@@ -880,6 +940,7 @@ export interface SitemapCrawlResult {
 
 export interface ManagedCategory {
   id: string;
+  topics?: { id: string; name: string; promptCount: number }[];
   name: string;
   promptCount: number;
   origin: "system" | "user";
@@ -935,8 +996,10 @@ export interface LlmBrainstormCard {
   title: string;
   summary: string;
   stat: string;
-  /** LLM이 이 카드의 근거로 인용한 실측 토픽 문자열 목록. */
-  topics: string[];
+  /** LLM이 이 카드의 근거로 인용한 실측 프롬프트와, 그걸 기존/신규 카테고리
+   *  ·토픽 중 어디에 묶었는지 — lib/backend/promptTopics.ts의 단일 DB에
+   *  그대로 반영된다. */
+  topics: { prompt: string; category: string; topic: string }[];
 }
 
 export interface PromptStrategyTopicRow {
@@ -952,6 +1015,10 @@ export interface PromptStrategyTopicRow {
   intent?: string;
   /** 이 프롬프트 문장 자체가 브랜드명을 직접 언급하는지 여부. */
   branded?: boolean;
+  /** LLM 분석 마법사(GSC/인용 테스트/브레인스토밍)가 배정한 카테고리·토픽 —
+   *  저장 시점에 lib/backend/promptTopics.ts의 단일 DB에 이미 반영됐다. */
+  category?: string;
+  topicGroup?: string;
   /** 왜 이 프롬프트를 추천하는지에 대한 짧은 근거. */
   reasoning?: string;
   /** GSC 커버리지 공백 행(source==="gsc")에서만 채워지는, 이 검색어로 이미
@@ -969,6 +1036,10 @@ export interface PromptStrategyData {
 // 실 스케줄러가 붙으면 이 값을 자동으로 채우도록 같은 모양을 유지한다.
 export interface GscCraftedPrompt {
   prompt: string;
+  /** 이 프롬프트를 어느 카테고리·토픽으로 묶었는지 — 기존 목록 중에서
+   *  고르거나, 새 카테고리/토픽이면 LLM이 새로 이름 지은 값. */
+  category: string;
+  topic: string;
   market?: string;
   brandMentions?: StrategyBrandMention[];
   intent?: string;

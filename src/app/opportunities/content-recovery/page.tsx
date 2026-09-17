@@ -30,8 +30,8 @@ export default async function ContentRecoveryOpportunityPage() {
   // LLM API 연동 전까지 "DB 등록" 모달로 사람이 채운 URL별 수정 가이드 +
   // URL Inspection API로 마지막에 확인해둔 구글 인덱싱 상태(캐시).
   const [guides, indexStatuses, pageSpeedResults] = await Promise.all([
-    getLlmBridgeScope<{ guide: string }>("content-guide-content-recovery"),
-    getCachedUrlIndexStatuses(),
+    getLlmBridgeScope<{ guide: string }>(DEFAULT_ORG_ID, "content-guide-content-recovery"),
+    getCachedUrlIndexStatuses(DEFAULT_ORG_ID),
     getCachedPageSpeedResults(),
   ]);
   const dataWithExtras = {

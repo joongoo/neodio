@@ -1,6 +1,6 @@
 import { CollectionRunsClient } from "@/components/collection-runs/CollectionRunsClient";
 import { listCollectedRuns } from "@/lib/backend/collectionRuns";
-import { processPromptRuns } from "@/lib/backend/processing";
+import { processStoredPromptRuns as processPromptRuns } from "@/lib/backend/database/analysis";
 import { seedBrands } from "@/lib/db/data/seed";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
 
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CollectionRunsPage() {
   const [runFiles, brandsData] = await Promise.all([listCollectedRuns(), db.brandsManagement.get(DEFAULT_ORG_ID)]);
-  const processed = processPromptRuns({
+  const processed = await processPromptRuns({
     organizationId: "neodigm",
     ownBrandId: "brand-neodigm",
     promptRuns: runFiles.map((f) => f.promptRun),

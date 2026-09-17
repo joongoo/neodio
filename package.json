@@ -2,11 +2,14 @@
   "name": "neodio",
   "version": "0.1.0",
   "private": true,
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "db:migrate": "tsx scripts/migrate-db.ts",
+    "test:db": "tsx --test src/lib/backend/database/*.test.ts",
     "collect:naver-ai": "node scripts/collect-naver-ai.mjs",
     "open:naver-ai-chrome": "node scripts/open-naver-ai-chrome.mjs",
     "collect:google-ai": "node scripts/collect-google-ai.mjs",
@@ -25,7 +28,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22.20.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

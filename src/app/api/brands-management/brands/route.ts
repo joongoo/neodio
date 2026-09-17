@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { DEFAULT_ORG_ID } from "@/lib/db";
 import { ManagedBrand } from "@/lib/db/types";
 
 export async function POST(request: NextRequest) {
@@ -10,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "브랜드 이름과 URL은 필수입니다." }, { status: 400 });
   }
 
-  const brand: Omit<ManagedBrand, "id"> = {
+  const brand: Omit<ManagedBrand, "id" | "organizationId"> = {
     name,
     url,
     sitemapUrl: typeof body?.sitemapUrl === "string" ? body.sitemapUrl.trim() : "",
@@ -28,6 +29,6 @@ export async function POST(request: NextRequest) {
     analyticsConnected: false,
   };
 
-  const created = await createManagedBrand(brand);
+  const created = await createManagedBrand(DEFAULT_ORG_ID, brand);
   return NextResponse.json({ brand: created });
 }

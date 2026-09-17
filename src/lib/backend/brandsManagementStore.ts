@@ -44,7 +44,7 @@ async function readDeleted(): Promise<Set<string>> {
 export async function getManagedBrands(orgId: string): Promise<ManagedBrand[]> {
   const seedBrands = brandsManagementByOrg[orgId]?.brands ?? [];
   const [added, patches, deleted] = await Promise.all([readAdded(), readPatches(), readDeleted()]);
-  return [...seedBrands, ...added]
+  return [...seedBrands, ...added.filter((b) => b.organizationId === orgId)]
     .filter((b) => !deleted.has(b.id))
     .map((b) => ({ ...b, ...(patches[b.id] ?? {}) }));
 }
@@ -54,9 +54,9 @@ export async function getManagedBrand(orgId: string, brandId: string): Promise<M
   return brands.find((b) => b.id === brandId) ?? null;
 }
 
-export async function createManagedBrand(brand: Omit<ManagedBrand, "id">): Promise<ManagedBrand> {
+export async function createManagedBrand(orgId: string, brand: Omit<ManagedBrand, "id" | "organizationId">): Promise<ManagedBrand> {
   const added = await readAdded();
-  const newBrand: ManagedBrand = { id: `brand-${Date.now()}`, ...brand };
+  const newBrand: ManagedBrand = { id: `brand-${Date.now()}`, organizationId: orgId, ...brand };
   added.push(newBrand);
   await writeJson(ADDED_FILE, added);
   return newBrand;

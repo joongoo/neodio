@@ -13,7 +13,7 @@ import {
 } from "@/lib/backend/sitemapCrawlReader";
 import { ContentAuditOpportunity } from "@/lib/db";
 import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTargets";
-import { listTrackedTopics } from "@/lib/backend/trackedTopics";
+import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
 
@@ -51,13 +51,16 @@ export default async function OpportunitiesPage() {
     : await Promise.all([
         org ? getRealRobotsTxtOpportunity(org.domain).catch(() => null) : Promise.resolve(null),
         org ? getSitemapCrawlHistory(org.domain).catch(() => []) : Promise.resolve([]),
-        db.promptLibrary.list(DEFAULT_ORG_ID),
-        listTrackedTopics(),
-        getDeletedLibraryRowIds(),
-        getTopicOpportunityTargets(),
-        Promise.all([getExcludedUrls("complexity"), getExcludedUrls("faq"), getExcludedUrls("toc"), getExcludedUrls("multimedia")]).then(
-          ([complexity, faq, toc, multimedia]) => ({ complexity, faq, toc, multimedia })
-        ),
+        listSeedLibraryRows(DEFAULT_ORG_ID),
+        listTrackedTopics(DEFAULT_ORG_ID),
+        getDeletedLibraryRowIds(DEFAULT_ORG_ID),
+        getTopicOpportunityTargets(DEFAULT_ORG_ID),
+        Promise.all([
+          getExcludedUrls(DEFAULT_ORG_ID, "complexity"),
+          getExcludedUrls(DEFAULT_ORG_ID, "faq"),
+          getExcludedUrls(DEFAULT_ORG_ID, "toc"),
+          getExcludedUrls(DEFAULT_ORG_ID, "multimedia"),
+        ]).then(([complexity, faq, toc, multimedia]) => ({ complexity, faq, toc, multimedia })),
       ]);
 
   const libraryPrompts = [...promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id)), ...trackedRows].map((r) => r.prompt);

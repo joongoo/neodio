@@ -145,10 +145,23 @@ export function CollectionRunsClient({
 }) {
   const router = useRouter();
   const [analyzingFile, setAnalyzingFile] = useState<CollectedRunFile | null>(null);
+  const [search, setSearch] = useState("");
   const ownBrand = brands.find((b) => b.isOwnBrand);
   const ownMentions = processed.mentions.filter((m) => m.brandId === ownBrand?.id && m.isPresent);
   const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
   const columns = runColumns((file) => setAnalyzingFile(file));
+
+  const filteredRunFiles = runFiles.filter((f) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    const { rawMetadata } = f.promptRun;
+    return (
+      (rawMetadata.query ?? "").toLowerCase().includes(q) ||
+      (ENGINE_LABEL[rawMetadata.source] ?? rawMetadata.source).toLowerCase().includes(q) ||
+      (rawMetadata.category ?? "").toLowerCase().includes(q) ||
+      (rawMetadata.topic ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
@@ -183,15 +196,22 @@ export function CollectionRunsClient({
           <TablePanel
             title="수집 실행 목록"
             description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
-            count={runFiles.length}
+            count={filteredRunFiles.length}
             total={runFiles.length}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="키워드/엔진/카테고리 검색"
           >
-            <DataTable
-              columns={columns}
-              rows={runFiles}
-              getRowId={(f) => `${f.dir}/${f.filename}`}
-              renderExpanded={(f) => <RunDetail file={f} />}
-            />
+            {filteredRunFiles.length === 0 ? (
+              <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p>
+            ) : (
+              <DataTable
+                columns={columns}
+                rows={filteredRunFiles}
+                getRowId={(f) => `${f.dir}/${f.filename}`}
+                renderExpanded={(f) => <RunDetail file={f} />}
+              />
+            )}
           </TablePanel>
 
           <InfoBanner
@@ -233,13 +253,13 @@ function CategorizeRunModal({
   onSaved: () => void;
 }) {
   const [category, setCategory] = useState("");
-  const [subcategory, setSubcategory] = useState("");
+  const [topic, setTopic] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setCategory(file?.promptRun.rawMetadata.category ?? "");
-    setSubcategory(file?.promptRun.rawMetadata.subcategory ?? "");
+    setTopic(file?.promptRun.rawMetadata.topic ?? "");
     setError(null);
   }, [file]);
 
@@ -251,7 +271,7 @@ function CategorizeRunModal({
     const res = await fetch("/api/collection-runs/categorize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dir: file.dir, filename: file.filename, category, subcategory }),
+      body: JSON.stringify({ dir: file.dir, filename: file.filename, category, topic }),
     });
     const data = await res.json();
     setSaving(false);
@@ -260,13 +280,13 @@ function CategorizeRunModal({
       return;
     }
     setCategory("");
-    setSubcategory("");
+    setTopic("");
     onSaved();
   }
 
   function close() {
     setCategory("");
-    setSubcategory("");
+    setTopic("");
     setError(null);
     onClose();
   }
@@ -300,10 +320,10 @@ function CategorizeRunModal({
           </select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-neutral-500">서브카테고리</label>
+          <label className="text-xs font-medium text-neutral-500">토픽</label>
           <input
-            value={subcategory}
-            onChange={(e) => setSubcategory(e.target.value)}
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
             className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
             placeholder="예: 캠페인 운영 기법"
           />

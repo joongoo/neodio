@@ -21,5 +21,8 @@ export const gscSearchPerformanceByBrand: Record<string, GscSearchPerformanceRes
       { id: "q-4", query: "b2b crm 자동화", clicks: 74, impressions: 2_410, ctr: 0.0307, position: 7.4 },
       { id: "q-5", query: "네오다임 요금제", clicks: 61, impressions: 890, ctr: 0.0685, position: 2.3 },
     ],
+    totalClicks: 4_338,
+    totalImpressions: 137_100,
+    totalQueries: 1_842,
   },
 };

@@ -11,6 +11,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
 import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow } from "@/components/prompt-library/PromptLibraryModals";
+import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
 import { downloadCsv } from "@/lib/csv";
 
@@ -23,9 +24,14 @@ const ORIGIN_LABEL: Record<PromptLibraryRow["origin"], string> = {
 export function PromptLibraryClient({
   initialRows,
   health,
+  topicOptionsByCategory,
+  uncategorizedTopicOptions,
 }: {
   initialRows: PromptLibraryRow[];
   health: PromptLibraryHealth | null;
+  /** 카테고리별 기존 토픽 목록 — 추적/편집 모달의 토픽 드롭다운에 쓴다. */
+  topicOptionsByCategory: Record<string, string[]>;
+  uncategorizedTopicOptions: string[];
 }) {
   const [rows, setRows] = useState(initialRows);
   // 오늘 추가/수정된 항목을 "NEW"로 표시 — 프롬프트 전략/가시성 개요에서
@@ -34,7 +40,7 @@ export function PromptLibraryClient({
   const today = new Date().toISOString().slice(0, 10);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("전체");
-  const [subcategory, setSubcategory] = useState("전체");
+  const [topic, setTopic] = useState("전체");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -42,35 +48,36 @@ export function PromptLibraryClient({
   const [importOpen, setImportOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<PromptLibraryRow | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [collectOpen, setCollectOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    new Set(["origin", "category", "subcategory", "lastModifiedAt", "lastModifiedBy"])
+    new Set(["origin", "category", "topic", "lastModifiedAt", "lastModifiedBy"])
   );
 
   const categoryOptions = ["전체", ...new Set(rows.map((r) => r.category))];
-  const subcategoryOptions = [
+  const topicOptions = [
     "전체",
-    ...new Set(rows.filter((r) => category === "전체" || r.category === category).map((r) => r.subcategory)),
+    ...new Set(rows.filter((r) => category === "전체" || r.category === category).map((r) => r.topic)),
   ];
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (category !== "전체" && r.category !== category) return false;
-      if (subcategory !== "전체" && r.subcategory !== subcategory) return false;
+      if (topic !== "전체" && r.topic !== topic) return false;
       if (search && !r.prompt.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [rows, category, subcategory, search]);
+  }, [rows, category, topic, search]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  // 현재 필터(검색어/카테고리/서브카테고리) 적용된 결과만 내보낸다 — 화면에
+  // 현재 필터(검색어/카테고리/토픽) 적용된 결과만 내보낸다 — 화면에
   // 보이는 것과 CSV가 일치해야 하므로 전체 rows가 아니라 filtered 기준.
   function exportCsv() {
     downloadCsv(
       "prompt-library.csv",
-      ["prompt", "category", "subcategory", "origin", "lastModifiedAt", "lastModifiedBy"],
-      filtered.map((r) => [r.prompt, r.category, r.subcategory, r.origin, r.lastModifiedAt ?? "", r.lastModifiedBy ?? ""])
+      ["prompt", "category", "topic", "origin", "lastModifiedAt", "lastModifiedBy"],
+      filtered.map((r) => [r.prompt, r.category, r.topic, r.origin, r.lastModifiedAt ?? "", r.lastModifiedBy ?? ""])
     );
   }
 
@@ -82,12 +89,12 @@ export function PromptLibraryClient({
         fetch("/api/tracked-topics", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: r.prompt, category: r.category, subcategory: r.subcategory, origin: "csv_import" }),
+          body: JSON.stringify({ prompt: r.prompt, category: r.category, topic: r.topic, origin: "csv_import" }),
         }).then((res) => res.json())
       )
     );
     const newRows = results.filter((r) => r.ok).map((r) => r.row as PromptLibraryRow);
-    setRows((prev) => [...newRows, ...prev]);
+    setRows((prev) => [...new Map([...prev, ...newRows].map(row => [row.id, row])).values()]);
   }
 
   function toggleSelected(id: string) {
@@ -118,7 +125,7 @@ export function PromptLibraryClient({
   const optionalColumns = [
     { key: "origin", label: "출처" },
     { key: "category", label: "카테고리" },
-    { key: "subcategory", label: "서브카테고리" },
+    { key: "topic", label: "토픽" },
     { key: "lastModifiedAt", label: "최종 수정일" },
     { key: "lastModifiedBy", label: "수정자" },
   ];
@@ -175,7 +182,7 @@ export function PromptLibraryClient({
       render: (r) => <span className="text-xs text-neutral-500">{ORIGIN_LABEL[r.origin]}</span>,
     },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => <span className="text-neutral-600">{r.category}</span> },
-    { key: "subcategory", label: "서브카테고리", width: "w-[130px]", render: (r) => <span className="truncate text-neutral-600">{r.subcategory}</span> },
+    { key: "topic", label: "토픽", width: "w-[130px]", render: (r) => <span className="truncate text-neutral-600">{r.topic}</span> },
     { key: "lastModifiedAt", label: "최종 수정일", width: "w-[100px]", render: (r) => <span className="text-neutral-500">{r.lastModifiedAt ?? "—"}</span> },
     { key: "lastModifiedBy", label: "수정자", width: "w-[90px]", render: (r) => <span className="text-neutral-500">{r.lastModifiedBy ?? "—"}</span> },
     {
@@ -283,29 +290,34 @@ export function PromptLibraryClient({
             options={categoryOptions}
             onChange={(v) => {
               setCategory(v);
-              setSubcategory("전체");
+              setTopic("전체");
               setPage(1);
             }}
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-neutral-500">서브카테고리</span>
+          <span className="text-xs text-neutral-500">토픽</span>
           <Dropdown
             variant="solid"
             label=""
-            value={subcategory}
-            options={subcategoryOptions}
+            value={topic}
+            options={topicOptions}
             onChange={(v) => {
-              setSubcategory(v);
+              setTopic(v);
               setPage(1);
             }}
           />
         </div>
         <div className="flex-1" />
         {selected.size > 0 && (
-          <Button variant="secondary" onClick={deleteSelected}>
-            선택 삭제 ({selected.size})
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => setCollectOpen(true)}>
+              선택 수집 ({selected.size})
+            </Button>
+            <Button variant="secondary" onClick={deleteSelected}>
+              선택 삭제 ({selected.size})
+            </Button>
+          </>
         )}
         <button
           type="button"
@@ -343,22 +355,21 @@ export function PromptLibraryClient({
           const res = await fetch("/api/tracked-topics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: row.prompt, category: row.category, subcategory: row.subcategory, origin: "manual" }),
+            body: JSON.stringify({ prompt: row.prompt, category: row.category, topic: row.topic, origin: "manual" }),
           });
           const data = await res.json();
-          if (data.ok) setRows((prev) => [data.row as PromptLibraryRow, ...prev]);
+          if (data.ok) setRows((prev) => [data.row as PromptLibraryRow, ...prev.filter(r => r.id !== data.row.id)]);
         }}
         existingPrompts={rows.map((r) => r.prompt)}
+        topicOptionsByCategory={topicOptionsByCategory}
+        uncategorizedTopicOptions={uncategorizedTopicOptions}
       />
       <EditPromptModal
         row={editingRow}
         onClose={() => setEditingRow(null)}
         onSave={async (id, patch) => {
-          // tracked-*(추적/수동 추가/CSV 가져오기로 실 파일이 있는 행)는
-          // 서버에도 반영한다 — mock 시드 행(pl-*)은 저장할 파일이 없으니
-          // 로컬 state만 바뀐다(새로고침하면 원래 시드 값으로 돌아감, 기존
-          // 동작 그대로 유지).
-          if (id.startsWith("tracked-")) {
+          // Imported rows and newly tracked rows use the same database update.
+          if (id.startsWith("tracked-") || id.startsWith("pl-")) {
             const res = await fetch(`/api/tracked-topics?id=${encodeURIComponent(id)}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
@@ -369,6 +380,8 @@ export function PromptLibraryClient({
               setRows((prev) => prev.map((r) => (r.id === id ? (data.row as PromptLibraryRow) : r)));
               return;
             }
+            window.alert(data.error ?? "프롬프트를 저장하지 못했습니다.");
+            return;
           }
           setRows((prev) =>
             prev.map((r) =>
@@ -379,8 +392,16 @@ export function PromptLibraryClient({
           );
         }}
         existingPrompts={rows.filter((r) => r.id !== editingRow?.id).map((r) => r.prompt)}
+        topicOptionsByCategory={topicOptionsByCategory}
+        uncategorizedTopicOptions={uncategorizedTopicOptions}
       />
       <ImportPromptsModal open={importOpen} onClose={() => setImportOpen(false)} onImport={importCsv} existingPrompts={rows.map((r) => r.prompt)} />
+      <BulkCollectionModal
+        open={collectOpen}
+        onClose={() => setCollectOpen(false)}
+        keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
+        onDone={() => setSelected(new Set())}
+      />
       <ConfigureColumnsModal
         open={columnsOpen}
         onClose={() => setColumnsOpen(false)}

@@ -1,56 +1,18 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { PromptRunSeed } from "@/lib/db/types";
-import { CollectedRunFile } from "./collectionRunsTypes";
-
-// Reads the actual files scripts/collect-naver-ai.mjs and
-// scripts/collect-google-ai.mjs write to disk (.tmp/*-ai/*.json, PromptRunSeed
-// shape) — no mock data. This is the real collector output, listed live.
-// Server-only (imports node:fs) — import from a page/server component, never
-// from a "use client" component; see collectionRunsTypes.ts for the client-safe half.
-const RUN_DIRS = [".tmp/naver-ai", ".tmp/google-ai"];
-
-async function readDirRuns(dir: string): Promise<CollectedRunFile[]> {
-  const filenames = await readdir(path.join(process.cwd(), dir)).catch(() => []);
-  const jsonFiles = filenames.filter((f) => f.endsWith(".json"));
-
-  const files = await Promise.all(
-    jsonFiles.map(async (filename) => {
-      try {
-        const raw = await readFile(path.join(process.cwd(), dir, filename), "utf8");
-        const parsed = JSON.parse(raw) as { promptRun?: PromptRunSeed };
-        return parsed.promptRun ? { filename, dir, promptRun: parsed.promptRun } : null;
-      } catch {
-        return null;
-      }
-    })
-  );
-
-  return files.filter((f): f is CollectedRunFile => f !== null);
-}
+import { getPromptStore, syncCollectedFiles } from "./database";
+import type { CollectedRunFile } from "./collectionRunsTypes";
 
 export async function listCollectedRuns(): Promise<CollectedRunFile[]> {
-  const perDir = await Promise.all(RUN_DIRS.map(readDirRuns));
-  return perDir.flat().sort((a, b) => b.promptRun.runAt.localeCompare(a.promptRun.runAt));
+  const store = await getPromptStore();
+  await syncCollectedFiles(store);
+  return store.runs("neodigm");
 }
 
-// Collection ("수집 로그") doesn't ask for a category up front — only a
-// keyword — so tagging happens after the fact, from the run's "분석" modal
-// (same category list as Brand Management/Prompt Library, see
-// brandsManagement.ts). Rewrites the same .tmp JSON file in place; this is
-// the one write path into otherwise-read-only collector output.
-export async function categorizeRun(dir: string, filename: string, category: string, subcategory: string) {
-  if (!RUN_DIRS.includes(dir) || filename.includes("/") || filename.includes("\\") || !filename.endsWith(".json")) {
-    throw new Error("Invalid run file reference.");
-  }
-  const filePath = path.join(process.cwd(), dir, filename);
-  const raw = await readFile(filePath, "utf8");
-  const parsed = JSON.parse(raw) as { promptRun?: PromptRunSeed };
-  if (!parsed.promptRun) throw new Error(`Not a valid collected run: ${filePath}`);
-
-  parsed.promptRun.rawMetadata.category = category;
-  parsed.promptRun.rawMetadata.subcategory = subcategory || undefined;
-  await writeFile(filePath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+export async function categorizeRun(dir: string, filename: string, category: string, topic: string) {
+  const store = await getPromptStore();
+  const run = store.sql.prepare("SELECT prompt_id FROM prompt_runs WHERE organization_id=? AND source_dir=? AND source_filename=?").get("neodigm", dir, filename);
+  if (!run) throw new Error("Unknown collected run");
+  const prompt = store.getPrompt("neodigm", run.prompt_id as string)!;
+  store.upsertPrompt("neodigm", { text: prompt.text, category, topic }, true);
 }
 
 export type { CollectedRunFile };

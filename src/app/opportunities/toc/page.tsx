@@ -1,5 +1,5 @@
 import { ContentAuditClient } from "@/components/opportunities/ContentAuditClient";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+import { DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db } from "@/lib/db";
 import { buildTocOpportunity, getSitemapCrawlHistory } from "@/lib/backend/sitemapCrawlReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
@@ -8,12 +8,10 @@ import { getCachedUrlIndexStatuses } from "@/lib/backend/gscUrlInspectionStore";
 import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore";
 import { getRealGscSearchAppearance } from "@/lib/backend/gscSearchAnalyticsReader";
 
-const OWN_BRAND_ID = "brand-neodigm";
-
 export const dynamic = "force-dynamic";
 
 export default async function TocOpportunityPage() {
-  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls("toc")]);
+  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls(DEFAULT_ORG_ID, "toc")]);
   const history = demo || !org ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
   const data = buildTocOpportunity(history, excludedUrls);
 
@@ -26,9 +24,9 @@ export default async function TocOpportunityPage() {
   }
 
   const [guides, indexStatuses, searchAppearance, pageSpeedResults] = await Promise.all([
-    getLlmBridgeScope<{ guide: string }>("content-guide-toc"),
-    getCachedUrlIndexStatuses(),
-    getRealGscSearchAppearance(OWN_BRAND_ID).catch(() => null),
+    getLlmBridgeScope<{ guide: string }>(DEFAULT_ORG_ID, "content-guide-toc"),
+    getCachedUrlIndexStatuses(DEFAULT_ORG_ID),
+    getRealGscSearchAppearance(DEFAULT_BRAND_ID).catch(() => null),
     getCachedPageSpeedResults(),
   ]);
   const dataWithExtras = {

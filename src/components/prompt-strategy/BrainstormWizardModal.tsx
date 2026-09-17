@@ -4,10 +4,23 @@ import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { formatExistingTopicsBlock } from "@/components/prompt-strategy/PromptStrategyClient";
 
 const STEPS = ["패턴 발굴", "카드 초안", "최종 JSON"] as const;
 
 const VALID_TAGS = new Set(["coverage_gap", "strength"]);
+
+function isValidTopicItem(item: unknown): boolean {
+  const t = item as Record<string, unknown>;
+  return (
+    typeof t?.prompt === "string" &&
+    (t.prompt as string).trim().length > 0 &&
+    typeof t?.category === "string" &&
+    (t.category as string).trim().length > 0 &&
+    typeof t?.topic === "string" &&
+    (t.topic as string).trim().length > 0
+  );
+}
 
 function isValidCard(item: unknown): boolean {
   const c = item as Record<string, unknown>;
@@ -21,7 +34,7 @@ function isValidCard(item: unknown): boolean {
     typeof c?.stat === "string" &&
     Array.isArray(c?.topics) &&
     (c.topics as unknown[]).length > 0 &&
-    (c.topics as unknown[]).every((t) => typeof t === "string" && t.trim().length > 0)
+    (c.topics as unknown[]).every(isValidTopicItem)
   );
 }
 
@@ -35,12 +48,17 @@ export function BrainstormWizardModal({
   open,
   onClose,
   digest,
+  topicOptionsByCategory,
+  uncategorizedTopicOptions,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   /** 실측 토픽별 브랜드 언급 표 — 1단계 프롬프트의 근거 데이터. */
   digest: string;
+  /** 최종 JSON 프롬프트에 보여줄 기존 카테고리별 토픽 목록. */
+  topicOptionsByCategory: Record<string, string[]>;
+  uncategorizedTopicOptions: string[];
   onSaved: () => void;
 }) {
   const [step, setStep] = useState(0);
@@ -63,7 +81,7 @@ export function BrainstormWizardModal({
     if (step === 1) {
       return `아래는 방금 찾은 강점/공백 패턴입니다:\n\n${answers[0]}\n\n각 패턴을 카드 형태로 다듬어주세요 — 카드마다 (1) 한 줄 제목, (2) 왜 이 패턴이 중요한지 2~3문장 요약, (3) 근거가 되는 한 줄 통계(stat), (4) 이 패턴의 근거가 된 토픽 목록. 아직 JSON일 필요는 없고, 사람이 읽기 좋은 형태로 정리해주세요.`;
     }
-    return `아래는 방금 다듬은 카드 초안입니다:\n\n${answers[1]}\n\n이제 이 카드들을 반드시 아래 JSON 배열 형식으로만 답변해주세요. 다른 설명 없이 JSON만 출력하세요:\n\n[{"tag": "strength 또는 coverage_gap", "title": "카드 제목", "summary": "2~3문장 요약", "stat": "근거 통계 한 줄", "topics": ["이 카드의 근거가 된 토픽 문자열 — 반드시 위 실측 데이터 표에 있던 토픽 이름을 정확히 그대로 사용"]}]\n\n주의: topics에는 실측 데이터 표에 있는 토픽 이름만 정확히 그대로 쓰세요. 언급 수 같은 숫자는 절대 만들어내지 마세요 — 어차피 저장할 때 실측 데이터에서 다시 채웁니다.`;
+    return `아래는 방금 다듬은 카드 초안입니다:\n\n${answers[1]}\n\n${formatExistingTopicsBlock(topicOptionsByCategory, uncategorizedTopicOptions)}\n\n이제 이 카드들을 반드시 아래 JSON 배열 형식으로만 답변해주세요. 다른 설명 없이 JSON만 출력하세요:\n\n[{"tag": "strength 또는 coverage_gap", "title": "카드 제목", "summary": "2~3문장 요약", "stat": "근거 통계 한 줄", "topics": [{"prompt": "이 카드의 근거가 된 토픽 문자열 — 반드시 위 실측 데이터 표에 있던 토픽 이름을 정확히 그대로 사용", "category": "카테고리", "topic": "토픽"}]}]\n\n주의: topics[].prompt에는 실측 데이터 표에 있는 토픽 이름만 정확히 그대로 쓰세요. 언급 수 같은 숫자는 절대 만들어내지 마세요 — 어차피 저장할 때 실측 데이터에서 다시 채웁니다.`;
   }
 
   async function copyPrompt() {
@@ -93,7 +111,15 @@ export function BrainstormWizardModal({
     // 여기서 직접 부여한다. 카드 인용 토픽의 groupId로도 쓰이므로 배치
     // 시각+순번으로 매번 고유하게 만든다.
     const batchId = Date.now();
-    const withIds = (parsed as { tag: string; title: string; summary: string; stat: string; topics: string[] }[]).map((card, i) => ({
+    const withIds = (
+      parsed as {
+        tag: string;
+        title: string;
+        summary: string;
+        stat: string;
+        topics: { prompt: string; category: string; topic: string }[];
+      }[]
+    ).map((card, i) => ({
       id: `brainstorm-${batchId}-${i}`,
       ...card,
     }));
