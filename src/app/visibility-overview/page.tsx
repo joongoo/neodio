@@ -17,6 +17,7 @@ import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTop
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
+import { listDetectedBrandDecisions } from "@/lib/backend/detectedBrandDecisions";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다 —
@@ -35,7 +36,7 @@ export default async function VisibilityOverviewPage({
     : "4w";
   const demo = await isDemoMode();
 
-  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand, sourceRecommendations] =
+  const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand, sourceRecommendations, brandDecisions] =
     await Promise.all([
       db.organizations.get(orgId),
       db.visibilityOverview.getStatCards(orgId, range),
@@ -48,6 +49,7 @@ export default async function VisibilityOverviewPage({
       getTopicOpportunityTargets(orgId),
       getManagedBrand(orgId, DEFAULT_BRAND_ID),
       getLlmBridgeScope<SourceOpportunityRecommendation>(DEFAULT_ORG_ID, "source-recommendation"),
+      listDetectedBrandDecisions(orgId, DEFAULT_BRAND_ID),
     ]);
   // 토픽 기회에 "이미 프롬프트 라이브러리에 추가됐는지" 배지를 달기 위한
   // 실제 라이브러리 프롬프트 문장 전체 — 프롬프트 전략 페이지와 동일한
@@ -64,7 +66,7 @@ export default async function VisibilityOverviewPage({
         getRealMentionsByModel(range),
         getRealMentionsByMarket(range),
         getRealTopicRows({}, { libraryPrompts, targetUrls }),
-        getRealTopBrands(),
+        getRealTopBrands({ range }),
         getRealCitedPages(),
         getRealCitedSources({}, { trackedDomains }),
         getRealSourceOpportunities({}, { trackedDomains }),
@@ -95,7 +97,12 @@ export default async function VisibilityOverviewPage({
     topicsByCategory["top-prompts"] = realTopicRows.topPrompts;
     topicsByCategory["topic-opportunities"] = realTopicRows.opportunities;
   }
-  if (realTopBrands) topicsByCategory["latest-top-brands"] = realTopBrands;
+  if (realTopBrands) {
+    topicsByCategory["latest-top-brands"] = realTopBrands.map((row) => {
+      const decision = brandDecisions.get(row.brand.toLocaleLowerCase("ko-KR").replace(/\s+/g, " ").trim());
+      return { ...row, decisionStatus: decision?.status, evidenceDomain: row.evidenceDomain ?? decision?.evidenceDomain };
+    });
+  }
   if (realCitedPages) topicsByCategory["cited-pages"] = realCitedPages;
   // 도메인별 LLM 추천(DB 등록 모달로 채운 .tmp/llm-bridge/source-recommendation.json)이
   // 있으면 실측 집계 행에 recommendation/reasoning을 덧붙인다 — LLM API 연동
@@ -119,6 +126,7 @@ export default async function VisibilityOverviewPage({
       mentionsByMarket={mentionsByMarket}
       categories={topicCategories}
       topicsByCategory={topicsByCategory}
+      competitorBrandNames={ownBrand?.otherBrands.map((b) => b.name) ?? []}
     />
   );
 }

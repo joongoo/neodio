@@ -113,6 +113,14 @@ CREATE TABLE IF NOT EXISTS brands (
   analytics_connected INTEGER NOT NULL CHECK(analytics_connected IN (0,1)),
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS detected_brand_decisions (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
+  brand_id TEXT NOT NULL REFERENCES brands(id),
+  name TEXT NOT NULL, normalized_name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('approved','excluded')),
+  evidence_domain TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(organization_id,brand_id,normalized_name)
+);
 CREATE TABLE IF NOT EXISTS imported_files (path TEXT PRIMARY KEY, signature TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS prompts_topic ON prompts(organization_id,topic_id);
@@ -122,4 +130,5 @@ CREATE INDEX IF NOT EXISTS runs_dimensions ON prompt_runs(organization_id,model_
 CREATE INDEX IF NOT EXISTS analyses_run ON run_analyses(run_id,analyzed_at);
 CREATE INDEX IF NOT EXISTS observations_brand ON brand_observations(brand_id,analysis_id);
 CREATE INDEX IF NOT EXISTS citations_domain ON citations(domain,analysis_id);
+CREATE INDEX IF NOT EXISTS detected_brand_decisions_status ON detected_brand_decisions(organization_id,brand_id,status);
 `;

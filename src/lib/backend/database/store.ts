@@ -381,4 +381,35 @@ export class PromptStore {
   deleteBrand(orgId: string, brandId: string): boolean {
     return this.sql.prepare("DELETE FROM brands WHERE organization_id=? AND id=?").run(orgId, brandId).changes > 0;
   }
+
+  listDetectedBrandDecisions(orgId: string, brandId: string): Map<string, { status: "approved" | "excluded"; evidenceDomain?: string }> {
+    const rows = this.sql.prepare("SELECT normalized_name,status,evidence_domain FROM detected_brand_decisions WHERE organization_id=? AND brand_id=?").all(orgId, brandId);
+    return new Map(
+      rows.map((row) => [
+        row.normalized_name as string,
+        { status: row.status as "approved" | "excluded", evidenceDomain: (row.evidence_domain as string | null) ?? undefined },
+      ])
+    );
+  }
+
+  setDetectedBrandDecision(
+    orgId: string,
+    brandId: string,
+    params: { name: string; status: "approved" | "excluded"; evidenceDomain?: string | null }
+  ): void {
+    this.ensureOrg(orgId);
+    const normalizedName = normalize(params.name);
+    const at = now();
+    this.sql
+      .prepare(
+        `INSERT INTO detected_brand_decisions VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(organization_id,brand_id,normalized_name)
+        DO UPDATE SET name=excluded.name,status=excluded.status,evidence_domain=excluded.evidence_domain,updated_at=excluded.updated_at`
+      )
+      .run(id("decision"), orgId, brandId, params.name.trim(), normalizedName, params.status, params.evidenceDomain ?? null, at, at);
+  }
+
+  clearDetectedBrandDecision(orgId: string, brandId: string, name: string): void {
+    this.sql.prepare("DELETE FROM detected_brand_decisions WHERE organization_id=? AND brand_id=? AND normalized_name=?").run(orgId, brandId, normalize(name));
+  }
 }

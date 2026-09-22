@@ -42,6 +42,7 @@ export function VisibilityOverviewClient({
   mentionsByMarket,
   categories,
   topicsByCategory,
+  competitorBrandNames,
 }: {
   org: Organization;
   range: DateRange;
@@ -50,6 +51,7 @@ export function VisibilityOverviewClient({
   mentionsByMarket: Record<string, RankedRow[]>;
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
+  competitorBrandNames: string[];
 }) {
   const [market, setMarket] = useState("전체");
   const [model, setModel] = useState("전체");
@@ -95,7 +97,11 @@ export function VisibilityOverviewClient({
         <RankedBarList panelTitle="Mentions by Market" listTitle="마켓별 언급 수" tabs={MODEL_TABS} data={mentionsByMarket} />
       </div>
 
-      <TopicsTableSection categories={filteredCategories} topicsByCategory={filteredTopicsByCategory} />
+      <TopicsTableSection
+        categories={filteredCategories}
+        topicsByCategory={filteredTopicsByCategory}
+        competitorBrandNames={competitorBrandNames}
+      />
     </div>
   );
 }

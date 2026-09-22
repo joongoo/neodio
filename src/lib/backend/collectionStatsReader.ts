@@ -1,6 +1,7 @@
 import { listCollectedRuns } from "./collectionRuns";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
+import { brandPatterns } from "./processing/text";
 import { getPromptTopicGroups } from "./promptTopics";
 import { seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
 import { getRealBrandSeeds } from "./brandSeeds";
@@ -34,6 +35,43 @@ const RANGE_WEEKS: Record<DateRange, number> = { "1w": 1, "2w": 2, "4w": 4 };
 const OWN_BRAND_ID = "brand-neodigm";
 const ORG_ID = "neodigm";
 
+const COMPANY_SUFFIX_PATTERN =
+  "(?:AI|CRM|SEO|GEO|LLMO|SaaS|Labs?|Studio|Cloud|Hub|Works|Marketing|Automation|Analytics|Search|Console|Ads|Suite|Platform|Partners?|Agency|Group|Inc\\.?|Corp\\.?|Corporation|Co\\.?|Company|Solutions|Technologies|테크|랩스|소프트|마케팅|파트너스|컴퍼니|그룹)";
+const COMPANY_NAME_RE = new RegExp(
+  `\\b([A-Z][A-Za-z0-9&.+-]*(?:\\s+[A-Z][A-Za-z0-9&.+-]*){0,3}\\s+${COMPANY_SUFFIX_PATTERN}|[A-Z][A-Za-z0-9&.+-]{2,}(?:\\s+[A-Z][A-Za-z0-9&.+-]{2,}){0,2})\\b`,
+  "g"
+);
+const COMPANY_BLOCKLIST = new Set([
+  "AI",
+  "API",
+  "B2B",
+  "CRM",
+  "FAQ",
+  "GEO",
+  "GSC",
+  "HTML",
+  "LLM",
+  "LLMO",
+  "SEO",
+  "URL",
+  "Google",
+  "Google Search",
+  "Google Search Console",
+  "Naver",
+  "ChatGPT",
+  "Gemini",
+  "Claude",
+  "Perplexity",
+  "Sales",
+  "Marketing",
+  "Automation",
+  "Nurturing",
+  "Business",
+  "Lead",
+  "Lead Generation",
+  "ERP",
+]);
+
 export interface RealMetric {
   value: number;
   trend: StatCard["trend"];
@@ -54,6 +92,76 @@ function trend(current: number, previous: number | undefined): StatCard["trend"]
 
 function average(values: number[]) {
   return values.length > 0 ? Number((values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(1)) : 0;
+}
+
+function normalizeDetectedCompanyName(value: string) {
+  return value
+    .replace(/[“”"'`()[\]{}]/g, "")
+    .replace(/[,.。]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function countBrandPatternHits(text: string, patterns: string[]) {
+  return patterns.reduce((sum, pattern) => {
+    const normalized = pattern.trim();
+    if (!normalized) return sum;
+    const matches = text.match(new RegExp(`${escapeRegex(normalized)}(?:은|는|이|가|을|를|의|과|와|로|으로)?`, "gi"));
+    return sum + (matches?.length ?? 0);
+  }, 0);
+}
+
+function contextAround(text: string, index: number, length: number) {
+  const start = Math.max(0, index - 90);
+  const end = Math.min(text.length, index + length + 140);
+  return `${start > 0 ? "..." : ""}${text.slice(start, end).replace(/\s+/g, " ").trim()}${end < text.length ? "..." : ""}`;
+}
+
+function normalizeDomain(value: string) {
+  return value.toLocaleLowerCase("en-US").replace(/^www\./, "");
+}
+
+function compactCompanyName(value: string) {
+  return value.toLocaleLowerCase("en-US").replace(/[^a-z0-9가-힣]/g, "");
+}
+
+function evidenceDomainForCandidate(name: string, domains: string[]) {
+  const compact = compactCompanyName(name);
+  if (compact.length < 3) return null;
+  return (
+    domains.find((domain) => {
+      const labels = normalizeDomain(domain).split(".");
+      const registrable = labels.length >= 2 ? labels[labels.length - 2] : labels[0];
+      return registrable === compact || compact.includes(registrable);
+    }) ?? null
+  );
+}
+
+function detectCompanyCandidates(text: string, knownBrandNames: Set<string>, citationDomains: string[]) {
+  const candidates = new Map<string, { name: string; count: number; sampleContext: string; evidenceDomain: string }>();
+  for (const match of text.matchAll(COMPANY_NAME_RE)) {
+    if (match.index === undefined) continue;
+    const name = normalizeDetectedCompanyName(match[1]);
+    if (name.length < 3 || name.length > 60) continue;
+    if (COMPANY_BLOCKLIST.has(name) || knownBrandNames.has(name.toLocaleLowerCase("ko-KR"))) continue;
+    if (/^(?:The|This|That|For|And|But|With|Without|When|Where|How|What|Why)\b/.test(name)) continue;
+    const evidenceDomain = evidenceDomainForCandidate(name, citationDomains);
+    if (!evidenceDomain) continue;
+
+    const key = name.toLocaleLowerCase("ko-KR");
+    const current = candidates.get(key);
+    candidates.set(key, {
+      name: current?.name ?? name,
+      count: (current?.count ?? 0) + 1,
+      sampleContext: current?.sampleContext ?? contextAround(text, match.index, match[1].length),
+      evidenceDomain: current?.evidenceDomain ?? evidenceDomain,
+    });
+  }
+  return [...candidates.values()];
 }
 
 export interface RealDataFilters {
@@ -879,36 +987,76 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
 // 가시성 개요의 "최신 상위 브랜드" — 전체 기간 언급 수 기준 브랜드 랭킹.
 // 우리 브랜드도 포함해서 실제 언급 순위 그대로 보여준다 (share-of-voice와
 // 달리 여기는 순위표라 자사 제외 안 함).
-export async function getRealTopBrands(filters: RealDataFilters = {}): Promise<BrandRankRow[] | null> {
+export async function getRealTopBrands(filters: RealDataFilters & { range?: DateRange } = {}): Promise<BrandRankRow[] | null> {
   const runFiles = await listCollectedRuns();
   if (runFiles.length === 0) return null;
 
-  const promptRuns = runFiles
+  const filteredRuns = runFiles
     .map((f) => f.promptRun)
     .filter((run) => run.status === "success")
     .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
     .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
+  const weeks = [...new Set(filteredRuns.map((run) => toUtcSundayWeekStart(run.runAt)))].sort();
+  const currentWeeks = filters.range ? weeks.slice(-RANGE_WEEKS[filters.range]) : weeks;
+  const currentWeekSet = new Set(currentWeeks);
+  const promptRuns = filteredRuns.filter((run) => !filters.range || currentWeekSet.has(toUtcSundayWeekStart(run.runAt)));
   if (promptRuns.length === 0) return null;
 
   const brands = await getRealBrandSeeds(ORG_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
-  if (processed.mentions.length === 0) return null;
 
-  const mentionsByBrand = new Map<string, number>();
-  for (const m of processed.mentions) {
-    if (!m.isPresent) continue;
-    mentionsByBrand.set(m.brandId, (mentionsByBrand.get(m.brandId) ?? 0) + 1);
+  const knownBrandNames = new Set(
+    brands.flatMap((brand) => [brand.name, brand.domain, ...brand.aliases].filter(Boolean)).map((name) => name.toLocaleLowerCase("ko-KR"))
+  );
+  const mentionsByBrand = new Map<string, { mentions: number; sampleContext?: string }>();
+  for (const brand of brands) {
+    const patterns = brandPatterns(brand);
+    for (const run of promptRuns) {
+      const count = countBrandPatternHits(run.rawResponse, patterns);
+      if (count === 0) continue;
+      const firstPattern = patterns.find((pattern) => run.rawResponse.toLocaleLowerCase("ko-KR").includes(pattern.toLocaleLowerCase("ko-KR")));
+      const index = firstPattern ? run.rawResponse.toLocaleLowerCase("ko-KR").indexOf(firstPattern.toLocaleLowerCase("ko-KR")) : -1;
+      const current = mentionsByBrand.get(brand.id);
+      mentionsByBrand.set(brand.id, {
+        mentions: (current?.mentions ?? 0) + count,
+        sampleContext: current?.sampleContext ?? (index >= 0 ? contextAround(run.rawResponse, index, firstPattern?.length ?? brand.name.length) : undefined),
+      });
+    }
   }
-  if (mentionsByBrand.size === 0) return null;
 
-  return [...mentionsByBrand.entries()]
-    .map(([brandId, mentions]) => ({
+  const trackedRows: BrandRankRow[] = [...mentionsByBrand.entries()].map(([brandId, agg]) => ({
       id: `real-brand-${brandId}`,
       brand: brands.find((b) => b.id === brandId)?.name ?? brandId,
-      mentions,
-    }))
-    .sort((a, b) => b.mentions - a.mentions);
+      mentions: agg.mentions,
+      source: "tracked" as const,
+      sampleContext: agg.sampleContext,
+    })).filter((row) => row.id !== `real-brand-${OWN_BRAND_ID}`);
+
+  const detectedByName = new Map<string, BrandRankRow>();
+  const citationDomainsByRun = new Map<string, string[]>();
+  for (const citation of processed.citations) {
+    const domains = citationDomainsByRun.get(citation.promptRunId) ?? [];
+    domains.push(citation.domain);
+    citationDomainsByRun.set(citation.promptRunId, domains);
+  }
+  for (const run of promptRuns) {
+    for (const candidate of detectCompanyCandidates(run.rawResponse, knownBrandNames, citationDomainsByRun.get(run.id) ?? [])) {
+      const key = candidate.name.toLocaleLowerCase("ko-KR");
+      const current = detectedByName.get(key);
+      detectedByName.set(key, {
+        id: `detected-brand-${key.replace(/[^a-z0-9가-힣]+/gi, "-")}`,
+        brand: current?.brand ?? candidate.name,
+        mentions: (current?.mentions ?? 0) + candidate.count,
+        source: "detected",
+        sampleContext: current?.sampleContext ?? candidate.sampleContext,
+        evidenceDomain: current?.evidenceDomain ?? candidate.evidenceDomain,
+      });
+    }
+  }
+
+  const rows = [...trackedRows, ...detectedByName.values()].sort((a, b) => b.mentions - a.mentions);
+  return rows.length > 0 ? rows : null;
 }
 
 // 가시성 개요의 "인용된 페이지" — 자사 도메인 URL별로 응답 수(그 URL을

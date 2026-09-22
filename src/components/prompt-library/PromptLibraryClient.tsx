@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Upload, Plus, Pencil, Trash2, Settings } from "lucide-react";
+import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
 import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow } from "@/components/prompt-library/PromptLibraryModals";
+import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
 import { downloadCsv } from "@/lib/csv";
@@ -51,6 +52,7 @@ export function PromptLibraryClient({
   const [editingRow, setEditingRow] = useState<PromptLibraryRow | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
     new Set(["origin", "category", "topic", "lastModifiedAt", "lastModifiedBy"])
   );
@@ -272,6 +274,9 @@ export function PromptLibraryClient({
           className="h-10 w-[260px] rounded-md border border-neutral-300 px-3 text-sm outline-none focus:border-slate-500"
         />
         <div className="flex-1" />
+        <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setOptimizeOpen(true)}>
+          라이브러리 최적화
+        </Button>
         <Button variant="secondary" icon={<Upload size={14} />} onClick={() => setImportOpen(true)}>
           CSV 가져오기
         </Button>
@@ -399,6 +404,21 @@ export function PromptLibraryClient({
         uncategorizedTopicOptions={uncategorizedTopicOptions}
       />
       <ImportPromptsModal open={importOpen} onClose={() => setImportOpen(false)} onImport={importCsv} existingPrompts={rows.map((r) => r.prompt)} />
+      <PromptLibraryOptimizeModal
+        open={optimizeOpen}
+        onClose={() => setOptimizeOpen(false)}
+        rows={rows}
+        onApplied={({ deletedIds, updatedRows }) => {
+          const deleted = new Set(deletedIds);
+          const updatedById = new Map(updatedRows.map((r) => [r.id, r]));
+          setRows((prev) => prev.filter((r) => !deleted.has(r.id)).map((r) => updatedById.get(r.id) ?? r));
+          setSelected((prev) => {
+            const next = new Set(prev);
+            deleted.forEach((id) => next.delete(id));
+            return next;
+          });
+        }}
+      />
       <BulkCollectionModal
         open={collectOpen}
         onClose={() => setCollectOpen(false)}

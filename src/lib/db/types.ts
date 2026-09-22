@@ -360,6 +360,10 @@ export interface BrandRankRow {
   id: string;
   brand: string;
   mentions: number;
+  source?: "tracked" | "detected";
+  sampleContext?: string;
+  evidenceDomain?: string;
+  decisionStatus?: "approved" | "excluded";
 }
 
 export interface CitedPageRow {

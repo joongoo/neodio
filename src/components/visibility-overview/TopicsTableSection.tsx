@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Settings, Download, Sparkles } from "lucide-react";
+import { Ban, Check, Copy, Download, GitMerge, Plus, RotateCcw, Settings, Sparkles } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -12,6 +12,7 @@ import { Pagination } from "@/components/ui/Pagination";
 import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import {
   BrandRankRow,
   CitedPageRow,
@@ -24,7 +25,7 @@ import {
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   "top-prompts": "이미 브랜드가 언급된 토픽의 프롬프트입니다.",
   "topic-opportunities": "아직 브랜드가 언급되지 않은 토픽 기회입니다.",
-  "latest-top-brands": "이 토픽에서 최근 가장 많이 언급된 브랜드입니다.",
+  "latest-top-brands": "수집된 답변 로그에서 많이 언급된 등록 브랜드와 신규 업체 후보입니다.",
   "cited-pages": "AI 답변에 가장 많이 인용된 페이지입니다.",
   "cited-sources": "AI 답변이 가장 많이 인용한 출처입니다.",
   "source-opportunities": "아직 우리 브랜드가 인용되지 않은 출처 기회입니다.",
@@ -145,10 +146,106 @@ function buildTopicColumns(
   return base;
 }
 
-const brandColumns: DataTableColumn<BrandRankRow>[] = [
-  { key: "brand", label: "브랜드", width: "w-[320px]", render: (r) => <span className="text-neutral-700">{r.brand}</span> },
-  { key: "mentions", label: "언급 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
-];
+function buildBrandColumns(
+  competitorBrandNames: Set<string>,
+  onApprove: (row: BrandRankRow) => void,
+  onExclude: (row: BrandRankRow, excluded: boolean) => void,
+  onRemoveCompetitor: (row: BrandRankRow) => void,
+  onMerge: (row: BrandRankRow) => void
+): DataTableColumn<BrandRankRow>[] {
+  return [
+    { key: "brand", label: "브랜드", width: "w-[320px]", render: (r) => <span className="truncate text-neutral-700">{r.brand}</span> },
+    { key: "mentions", label: "언급 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
+    {
+      key: "action",
+      label: "액션",
+      width: "w-[220px]",
+      render: (r) => {
+        const registeredCompetitor = competitorBrandNames.has(r.brand.toLocaleLowerCase("ko-KR"));
+        if (r.decisionStatus === "excluded") {
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onExclude(r, false);
+              }}
+              className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
+            >
+              <RotateCcw size={12} />
+              제외 해제
+            </button>
+          );
+        }
+        if (registeredCompetitor) {
+          return (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveCompetitor(r);
+                }}
+                className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
+              >
+                <Ban size={12} />
+                경쟁사 제외
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMerge(r);
+                }}
+                className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
+              >
+                <GitMerge size={12} />
+                병합
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onApprove(r);
+              }}
+              className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-700"
+            >
+              <Plus size={12} />
+              경쟁사 등록
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onExclude(r, true);
+              }}
+              className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
+            >
+              <Ban size={12} />
+              제외
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMerge(r);
+              }}
+              className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
+            >
+              <GitMerge size={12} />
+              병합
+            </button>
+          </div>
+        );
+      },
+    },
+  ];
+}
 
 function hostnameOf(url: string) {
   try {
@@ -239,6 +336,213 @@ function formatRunAt(runAt?: string) {
   return Number.isNaN(d.getTime()) ? runAt : d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 }
 
+function MergeBrandModal({
+  target,
+  candidates,
+  onClose,
+  onMerge,
+}: {
+  target: BrandRankRow;
+  candidates: BrandRankRow[];
+  onClose: () => void;
+  onMerge: (rows: BrandRankRow[], target: "competitor" | "own") => void;
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set([target.id]));
+  const [query, setQuery] = useState("");
+  const filteredCandidates = candidates.filter((row) => row.brand.toLocaleLowerCase("ko-KR").includes(query.toLocaleLowerCase("ko-KR").trim()));
+  const selectedRows = candidates.filter((row) => selectedIds.has(row.id));
+  const canonical = [...selectedRows].sort((a, b) => b.mentions - a.mentions || a.brand.localeCompare(b.brand, "ko-KR"))[0] ?? target;
+  const aliases = selectedRows.filter((row) => row.id !== canonical.id).map((row) => row.brand);
+
+  function toggle(row: BrandRankRow) {
+    if (row.id === target.id) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.id)) next.delete(row.id);
+      else next.add(row.id);
+      return next;
+    });
+  }
+
+  return (
+    <Modal open onClose={onClose}>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-neutral-900">브랜드 병합</h2>
+        <ModalCloseButton onClose={onClose} />
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">현재 노출된 업체 중 같은 브랜드로 볼 항목을 선택하세요. 언급 수가 가장 높은 항목이 대표 이름이 됩니다.</p>
+
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="업체 검색"
+        className="mt-4 h-10 w-full rounded-md border border-neutral-300 px-3 text-sm text-neutral-800"
+      />
+
+      <div className="mt-3 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+        <span className="font-bold">경쟁사 대표</span>
+        <span className="ml-2">{canonical.brand}</span>
+        {aliases.length > 0 && <span className="ml-2 text-neutral-500">별칭: {aliases.join(", ")}</span>}
+      </div>
+
+      <div className="mt-4 flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
+        {filteredCandidates.length === 0 && <p className="rounded-md bg-neutral-50 px-3 py-3 text-xs text-neutral-400">검색 결과가 없습니다.</p>}
+        {filteredCandidates.map((row) => {
+          const selected = selectedIds.has(row.id);
+          return (
+            <button
+              key={row.id}
+              type="button"
+              onClick={() => toggle(row)}
+              className={`flex items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-xs transition-colors ${
+                selected ? "bg-slate-100 text-slate-900" : "bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className={`grid size-4 place-items-center rounded border ${selected ? "border-slate-800 bg-slate-800" : "border-neutral-300 bg-white"}`}>
+                  {selected && <span className="size-1.5 rounded-full bg-white" />}
+                </span>
+                <span className="truncate">{row.brand}</span>
+              </span>
+              <span className="shrink-0 text-neutral-500">언급 {row.mentions.toLocaleString("ko-KR")}회</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          취소
+        </Button>
+        <Button variant="secondary" onClick={() => onMerge(selectedRows, "own")} disabled={selectedRows.length < 1}>
+          내 브랜드로 등록
+        </Button>
+        <Button variant="primary" onClick={() => onMerge(selectedRows, "competitor")} disabled={selectedRows.length < 2}>
+          경쟁사로 병합
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function BrandOptimizationBridgeModal({
+  rows,
+  onClose,
+  onSaved,
+}: {
+  rows: BrandRankRow[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [pasted, setPasted] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const promptText = `다음은 AI 답변 수집 로그에서 발견된 업체 후보 목록입니다. 실제 브랜드/업체만 정리해주세요.
+
+규칙:
+- 우리 브랜드의 다른 표기라고 판단되는 항목은 ownAliases에 넣으세요.
+- 같은 경쟁사의 다른 표기는 competitors에 대표 name과 aliases로 묶으세요.
+- 업체명이 아니라 일반 개념어/부서명/기능명/분야명은 exclude에 넣으세요.
+- 목록에 없는 새 이름은 만들지 마세요.
+- 반드시 JSON 하나만 답하세요.
+
+응답 형식:
+{
+  "ownAliases": ["우리 브랜드의 다른 표기"],
+  "competitors": [{"name": "대표 경쟁사명", "aliases": ["다른 표기"]}],
+  "exclude": [{"name": "제외할 후보명"}]
+}
+
+후보 목록:
+${rows.map((row) => `- ${row.brand} | 언급 ${row.mentions}회${row.evidenceDomain ? ` | 근거 도메인 ${row.evidenceDomain}` : ""}`).join("\n")}`;
+
+  async function copyPrompt() {
+    await navigator.clipboard.writeText(promptText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function save() {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(pasted);
+    } catch {
+      setError("JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요.");
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      setError("JSON 객체 형식이어야 합니다.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/detected-brand-decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "optimized", data: parsed }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "브랜드 최적화 결과를 저장하지 못했습니다.");
+        return;
+      }
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-slate-500" />
+          <h2 className="text-lg font-bold text-neutral-900">브랜드 최적화</h2>
+        </div>
+        <ModalCloseButton onClose={onClose} />
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">현재 노출된 업체 후보를 LLM으로 정리해 내 브랜드 별칭, 경쟁사 병합, 제외 상태에 반영합니다.</p>
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-neutral-700">1. 프롬프트 복사</span>
+          <button
+            type="button"
+            onClick={copyPrompt}
+            className="flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-200"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? "복사됨" : "복사"}
+          </button>
+        </div>
+        <textarea readOnly value={promptText} rows={8} className="w-full rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600" />
+      </div>
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        <span className="text-xs font-bold text-neutral-700">2. LLM 답변 붙여넣기</span>
+        <textarea
+          value={pasted}
+          onChange={(e) => setPasted(e.target.value)}
+          rows={8}
+          placeholder="JSON 답변을 붙여넣으세요"
+          className="w-full rounded-md border border-neutral-300 p-3 text-xs text-neutral-800"
+        />
+      </div>
+      {error && <p className="mt-2 text-xs font-medium text-red-600">{error}</p>}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          취소
+        </Button>
+        <Button variant="primary" onClick={save} disabled={saving}>
+          {saving ? "저장 중..." : "결과 반영"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 function allKeys(family: Family) {
   return new Set(OPTIONAL_COLUMNS[family].map((c) => c.key));
 }
@@ -246,9 +550,11 @@ function allKeys(family: Family) {
 export function TopicsTableSection({
   categories,
   topicsByCategory,
+  competitorBrandNames,
 }: {
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
+  competitorBrandNames: string[];
 }) {
   const router = useRouter();
   // "기회" 페이지의 "토픽 기회" 카드처럼 ?category=topic-opportunities로
@@ -265,6 +571,9 @@ export function TopicsTableSection({
   const [trackTarget, setTrackTarget] = useState<TrackTarget | null>(null);
   const [registeringSource, setRegisteringSource] = useState<CitedSourceRow | null>(null);
   const [groupingOpen, setGroupingOpen] = useState(false);
+  const [includeExcludedBrands, setIncludeExcludedBrands] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<BrandRankRow | null>(null);
+  const [brandOptimizationOpen, setBrandOptimizationOpen] = useState(false);
 
   // 실제로 프롬프트 라이브러리에 저장(.tmp/tracked-topics)한 뒤 그 화면으로
   // 이동한다 — 이전엔 클라이언트 로컬 state만 바뀌고 새로고침하면 사라졌고,
@@ -297,7 +606,11 @@ export function TopicsTableSection({
   });
 
   const category = categories.find((c) => c.id === categoryId);
-  const allRows = useMemo(() => topicsByCategory[categoryId] ?? [], [topicsByCategory, categoryId]);
+  const allRows = useMemo(() => {
+    const sourceRows = topicsByCategory[categoryId] ?? [];
+    if (categoryId !== "latest-top-brands" || includeExcludedBrands) return sourceRows;
+    return sourceRows.filter((row) => !("brand" in row) || row.decisionStatus !== "excluded");
+  }, [topicsByCategory, categoryId, includeExcludedBrands]);
   const pageCount = Math.max(1, Math.ceil(allRows.length / pageSize));
   const rows = useMemo(() => allRows.slice((page - 1) * pageSize, page * pageSize), [allRows, page, pageSize]);
 
@@ -344,7 +657,52 @@ export function TopicsTableSection({
     [trackedIds, isTopicOpportunities]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
-  const visibleBrandColumns = brandColumns.filter((c) => c.key !== "mentions" || visible.has(c.key));
+  const competitorBrandNameSet = useMemo(() => new Set(competitorBrandNames.map((name) => name.toLocaleLowerCase("ko-KR"))), [competitorBrandNames]);
+  const setBrandDecision = useCallback(async (row: BrandRankRow, status: "approved" | "excluded" | "competitor_removed" | null) => {
+    const res = await fetch("/api/detected-brand-decisions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: row.brand, evidenceDomain: row.evidenceDomain, status }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      window.alert(body.error ?? "브랜드 상태를 저장하지 못했습니다.");
+      return;
+    }
+    router.refresh();
+  }, [router]);
+  const brandRows = useMemo(() => allRows.filter((row): row is BrandRankRow => "brand" in row), [allRows]);
+  const mergeCandidates = useMemo(() => brandRows.filter((row) => row.decisionStatus !== "excluded"), [brandRows]);
+  async function mergeBrands(selectedRows: BrandRankRow[], mergeTarget: "competitor" | "own") {
+    const res = await fetch("/api/detected-brand-decisions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "merged",
+        mergeTarget,
+        brands: selectedRows.map((row) => ({ name: row.brand, mentions: row.mentions, evidenceDomain: row.evidenceDomain })),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      window.alert(body.error ?? "브랜드를 병합하지 못했습니다.");
+      return;
+    }
+    setMergeTarget(null);
+    router.refresh();
+  }
+  const brandColumns = useMemo(
+    () =>
+      buildBrandColumns(
+        competitorBrandNameSet,
+        (row) => setBrandDecision(row, "approved"),
+        (row, excluded) => setBrandDecision(row, excluded ? "excluded" : null),
+        (row) => setBrandDecision(row, "competitor_removed"),
+        (row) => setMergeTarget(row)
+      ),
+    [competitorBrandNameSet, setBrandDecision]
+  );
+  const visibleBrandColumns = brandColumns.filter((c) => !["mentions"].includes(c.key) || visible.has(c.key));
   const visiblePageColumns = pageColumns.filter((c) => !["responses", "market"].includes(c.key) || visible.has(c.key));
   const sourceColumns = useMemo(() => buildSourceColumns((row) => setRegisteringSource(row)), []);
   const visibleSourceColumns = sourceColumns.filter(
@@ -378,6 +736,11 @@ export function TopicsTableSection({
         >
           <Settings size={16} />
         </button>
+        {isBrandFamily && mergeCandidates.length > 0 && (
+          <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setBrandOptimizationOpen(true)}>
+            브랜드 최적화
+          </Button>
+        )}
         <Button variant="primary" icon={<Download size={16} />}>
           내보내기
         </Button>
@@ -387,9 +750,26 @@ export function TopicsTableSection({
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-4 py-3">
           <Sparkles size={16} className="shrink-0 text-neutral-400" />
           <p className="text-xs text-neutral-500">
-            토픽 이름을 눌러 상세 페이지로 들어가면 "가이드 등록" 버튼으로 이 토픽에 어떤 콘텐츠를 만들면 좋을지 LLM에게 물어본
+            토픽 이름을 눌러 상세 페이지로 들어가면 가이드 등록 버튼으로 이 토픽에 어떤 콘텐츠를 만들면 좋을지 LLM에게 물어본
             답변을 등록할 수 있습니다.
           </p>
+        </div>
+      )}
+
+      {isBrandFamily && (
+        <div className="mt-3 flex items-center justify-end gap-3">
+          <span className="text-xs font-medium text-neutral-500">제외 포함 전체 보기</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={includeExcludedBrands}
+            onClick={() => setIncludeExcludedBrands((v) => !v)}
+            className={`flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors ${
+              includeExcludedBrands ? "justify-end bg-slate-800" : "justify-start bg-neutral-300"
+            }`}
+          >
+            <span className="size-4 rounded-full bg-white" />
+          </button>
         </div>
       )}
 
@@ -463,7 +843,32 @@ export function TopicsTableSection({
         )}
 
         {isBrandFamily && (
-          <DataTable columns={visibleBrandColumns} rows={rows as BrandRankRow[]} getRowId={(r) => r.id} />
+          <DataTable
+            columns={visibleBrandColumns}
+            rows={rows as BrandRankRow[]}
+            getRowId={(r) => r.id}
+            renderExpanded={(row) => (
+              <div className="flex flex-col gap-1 text-xs text-neutral-700">
+                <span className="font-semibold text-neutral-500">감지 기준</span>
+                <span>{row.source === "detected" ? "수집 답변 원문에서 새 업체 후보로 감지됨" : "브랜드 설정/별칭 사전에 등록된 업체와 매칭됨"}</span>
+                {row.evidenceDomain && (
+                  <>
+                    <span className="mt-2 font-semibold text-neutral-500">근거 도메인</span>
+                    <span className="flex items-center gap-2 text-neutral-600">
+                      <FaviconIcon domain={row.evidenceDomain} />
+                      {row.evidenceDomain}
+                    </span>
+                  </>
+                )}
+                {row.sampleContext && (
+                  <>
+                    <span className="mt-2 font-semibold text-neutral-500">샘플 문맥</span>
+                    <span className="leading-5 text-neutral-600">{row.sampleContext}</span>
+                  </>
+                )}
+              </div>
+            )}
+          />
         )}
 
         {isPageFamily && (
@@ -512,6 +917,26 @@ export function TopicsTableSection({
         onClose={() => setTrackTarget(null)}
         onTrack={(target, category) => handleTrack(target, category)}
       />
+
+      {mergeTarget && (
+        <MergeBrandModal
+          target={mergeTarget}
+          candidates={mergeCandidates}
+          onClose={() => setMergeTarget(null)}
+          onMerge={mergeBrands}
+        />
+      )}
+
+      {brandOptimizationOpen && (
+        <BrandOptimizationBridgeModal
+          rows={mergeCandidates}
+          onClose={() => setBrandOptimizationOpen(false)}
+          onSaved={() => {
+            setBrandOptimizationOpen(false);
+            router.refresh();
+          }}
+        />
+      )}
 
       {registeringSource && (
         <LlmBridgeModal
