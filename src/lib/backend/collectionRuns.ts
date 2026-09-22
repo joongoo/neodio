@@ -9,10 +9,11 @@ export async function listCollectedRuns(): Promise<CollectedRunFile[]> {
 
 export async function categorizeRun(dir: string, filename: string, category: string, topic: string) {
   const store = await getPromptStore();
-  const run = store.sql.prepare("SELECT prompt_id FROM prompt_runs WHERE organization_id=? AND source_dir=? AND source_filename=?").get("neodigm", dir, filename);
+  const [run] = await store.query<{ prompt_id: string }>(
+    "SELECT prompt_id FROM prompt_runs WHERE organization_id=$1 AND source_dir=$2 AND source_filename=$3", ["neodigm", dir, filename]);
   if (!run) throw new Error("Unknown collected run");
-  const prompt = store.getPrompt("neodigm", run.prompt_id as string)!;
-  store.upsertPrompt("neodigm", { text: prompt.text, category, topic }, true);
+  const prompt = (await store.getPrompt("neodigm", run.prompt_id))!;
+  await store.upsertPrompt("neodigm", { text: prompt.text, category, topic }, true);
 }
 
 export type { CollectedRunFile };

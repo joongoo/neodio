@@ -2,14 +2,16 @@
   "name": "neodio",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "tsx scripts/migrate-db.ts",
-    "test:db": "tsx --test src/lib/backend/database/*.test.ts",
+    "test:db": "node scripts/test-pg-harness.mjs",
     "collect:naver-ai": "node scripts/collect-naver-ai.mjs",
     "open:naver-ai-chrome": "node scripts/open-naver-ai-chrome.mjs",
     "collect:google-ai": "node scripts/collect-google-ai.mjs",
@@ -19,9 +21,11 @@
     "crawl:sitemap": "node scripts/crawl-sitemap.mjs"
   },
   "dependencies": {
+    "@vercel/postgres": "^0.10.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.34.0",
     "next": "16.3.3",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1"
@@ -29,6 +33,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.3",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

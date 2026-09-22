@@ -1,19 +1,46 @@
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { after, before, test } from "node:test";
+import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
 import { NextRequest } from "next/server";
-import * as prompts from "../../../app/api/prompts/route";
-import * as tracking from "../../../app/api/tracked-topics/route";
-import * as categories from "../../../app/api/categories/route";
-import * as bridge from "../../../app/api/llm-bridge/route";
-import { getPromptStore } from "./index";
 import { listPromptLibrary } from "../trackedTopics";
 
-const directory = mkdtempSync(path.join(os.tmpdir(), "neodio-db-api-"));
-process.env.NEODIO_DB_PATH = path.join(directory, "test.sqlite");
-after(async () => { (await getPromptStore()).sql.close(); rmSync(directory, { recursive: true, force: true }); });
+// Each test file gets its own Postgres schema (tsx --test runs this file in
+// its own process, so the env vars below don't leak into store.test.ts) —
+// same isolation the old ":memory:"/temp-sqlite-file setup gave the API
+// tests, now against a real schema instead of a real file.
+const baseUrl = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+if (!baseUrl) throw new Error("POSTGRES_URL is required to run API tests — see docs/database.md");
+const schema = `test_api_${randomUUID().replaceAll("-", "_")}`;
+const scopedUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}`;
+process.env.POSTGRES_URL = scopedUrl;
+process.env.POSTGRES_URL_NON_POOLING = scopedUrl;
+
+let prompts: typeof import("../../../app/api/prompts/route");
+let tracking: typeof import("../../../app/api/tracked-topics/route");
+let categories: typeof import("../../../app/api/categories/route");
+let bridge: typeof import("../../../app/api/llm-bridge/route");
+let getPromptStore: typeof import("./index").getPromptStore;
+
+before(async () => {
+  const setup = new Pool({ connectionString: baseUrl });
+  await setup.query(`CREATE SCHEMA "${schema}"`);
+  await setup.end();
+  // Imported after the schema exists and env vars point at it, since these
+  // modules resolve the connection/pool at import/first-call time.
+  prompts = await import("../../../app/api/prompts/route");
+  tracking = await import("../../../app/api/tracked-topics/route");
+  categories = await import("../../../app/api/categories/route");
+  bridge = await import("../../../app/api/llm-bridge/route");
+  ({ getPromptStore } = await import("./index"));
+});
+
+after(async () => {
+  await (await getPromptStore()).close();
+  const cleanup = new Pool({ connectionString: baseUrl });
+  await cleanup.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+  await cleanup.end();
+});
 const request = (pathname: string, method = "GET", body?: unknown) => new NextRequest(`http://localhost${pathname}`, {
   method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
 });

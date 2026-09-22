@@ -3,7 +3,7 @@ import { DEFAULT_ORG_ID } from "@/lib/db";
 import { ManagedBrand } from "@/lib/db/types";
 
 // 브랜드 관리의 브랜드 추가/편집/삭제 — 프롬프트/카테고리/토픽과 같은
-// SQLite(.data/neodio.sqlite)의 brands 테이블에 저장한다. 예전엔
+// Postgres의 brands 테이블에 저장한다. 예전엔
 // .tmp/brands-management-{added,patches,deleted}.json 세 파일을 시드 위에
 // 얹어 계산했지만(하나만 지울 방법이 없는 mock 시드 특성상), 이제 시드
 // 브랜드도 최초 1회 마이그레이션 때 실제 행으로 들어가 있어 다른 테이블과
@@ -25,5 +25,5 @@ export async function updateManagedBrand(brandId: string, patch: Partial<Managed
 }
 
 export async function deleteManagedBrand(brandId: string): Promise<void> {
-  (await getPromptStore()).deleteBrand(DEFAULT_ORG_ID, brandId);
+  await (await getPromptStore()).deleteBrand(DEFAULT_ORG_ID, brandId);
 }
