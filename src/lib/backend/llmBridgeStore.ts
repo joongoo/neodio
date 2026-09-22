@@ -9,9 +9,9 @@ export async function getLlmBridgeEntry<T>(orgId: string, scope: string, key: st
 }
 
 export async function setLlmBridgeEntry<T>(orgId: string, scope: string, key: string, data: T): Promise<void> {
-  (await getPromptStore()).putBridge(orgId, scope, { [key]: data });
+  await (await getPromptStore()).putBridge(orgId, scope, { [key]: data });
 }
 
 export async function setLlmBridgeEntries<T>(orgId: string, scope: string, entries: Record<string, T>): Promise<void> {
-  (await getPromptStore()).putBridge(orgId, scope, entries);
+  await (await getPromptStore()).putBridge(orgId, scope, entries);
 }

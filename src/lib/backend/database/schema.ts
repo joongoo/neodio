@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS prompts (
 CREATE TABLE IF NOT EXISTS prompt_sources (
   id TEXT PRIMARY KEY, prompt_id TEXT NOT NULL REFERENCES prompts(id),
   source_type TEXT NOT NULL, source_key TEXT NOT NULL, generation_purpose TEXT,
-  generation_reasoning TEXT, metadata_json TEXT NOT NULL CHECK(json_valid(metadata_json)),
+  generation_reasoning TEXT, metadata_json JSONB NOT NULL,
   created_at TEXT NOT NULL, UNIQUE(prompt_id,source_type,source_key)
 );
 CREATE TABLE IF NOT EXISTS prompt_tracking (
@@ -55,14 +55,14 @@ CREATE TABLE IF NOT EXISTS legacy_library_ids (
 );
 CREATE TABLE IF NOT EXISTS bridge_entries (
   organization_id TEXT NOT NULL REFERENCES organizations(id), scope TEXT NOT NULL, entry_key TEXT NOT NULL,
-  data_json TEXT NOT NULL CHECK(json_valid(data_json)), updated_at TEXT NOT NULL,
+  data_json JSONB NOT NULL, updated_at TEXT NOT NULL,
   PRIMARY KEY(organization_id,scope,entry_key)
 );
 CREATE TABLE IF NOT EXISTS collection_jobs (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
   trigger_type TEXT NOT NULL CHECK(trigger_type IN ('manual','scheduled','legacy_import')),
   requested_by TEXT REFERENCES actors(id), status TEXT NOT NULL,
-  started_at TEXT NOT NULL, finished_at TEXT, data_json TEXT NOT NULL CHECK(json_valid(data_json))
+  started_at TEXT NOT NULL, finished_at TEXT, data_json JSONB NOT NULL
 );
 CREATE TABLE IF NOT EXISTS prompt_runs (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, prompt_id TEXT NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS prompt_runs (
   market_id TEXT NOT NULL, locale TEXT, run_at TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('success','failed','pending','paused')),
   raw_response TEXT NOT NULL, error_message TEXT,
-  original_json TEXT NOT NULL CHECK(json_valid(original_json)), source_dir TEXT NOT NULL, source_filename TEXT NOT NULL,
+  original_json JSONB NOT NULL, source_dir TEXT NOT NULL, source_filename TEXT NOT NULL,
   FOREIGN KEY(organization_id,prompt_id) REFERENCES prompts(organization_id,id),
   UNIQUE(organization_id,id), UNIQUE(source_dir,source_filename)
 );
@@ -79,38 +79,38 @@ CREATE TABLE IF NOT EXISTS run_analyses (
   id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES prompt_runs(id),
   version TEXT NOT NULL, input_hash TEXT NOT NULL, method TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('success','failed')), analyzed_at TEXT NOT NULL,
-  error_message TEXT, result_json TEXT CHECK(result_json IS NULL OR json_valid(result_json)),
+  error_message TEXT, result_json JSONB,
   UNIQUE(run_id,version,input_hash)
 );
 CREATE TABLE IF NOT EXISTS brand_observations (
   analysis_id TEXT NOT NULL REFERENCES run_analyses(id), brand_id TEXT NOT NULL,
-  brand_snapshot_json TEXT NOT NULL CHECK(json_valid(brand_snapshot_json)),
-  is_present INTEGER NOT NULL CHECK(is_present IN (0,1)), first_mention_position INTEGER,
+  brand_snapshot_json JSONB NOT NULL,
+  is_present BOOLEAN NOT NULL, first_mention_position INTEGER,
   recommendation_rank INTEGER,
   sentiment TEXT CHECK(sentiment IN ('positive','neutral','negative','mixed')),
   sentiment_score REAL CHECK(sentiment_score BETWEEN -1 AND 1), evidence TEXT,
-  CHECK(is_present=1 OR (sentiment IS NULL AND sentiment_score IS NULL AND first_mention_position IS NULL)),
+  CHECK(is_present=true OR (sentiment IS NULL AND sentiment_score IS NULL AND first_mention_position IS NULL)),
   PRIMARY KEY(analysis_id,brand_id)
 );
 CREATE TABLE IF NOT EXISTS citations (
   id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL REFERENCES run_analyses(id),
   brand_id TEXT, url TEXT NOT NULL, domain TEXT NOT NULL, title TEXT NOT NULL,
-  position INTEGER NOT NULL, is_own_domain INTEGER NOT NULL CHECK(is_own_domain IN (0,1)),
+  position INTEGER NOT NULL, is_own_domain BOOLEAN NOT NULL,
   UNIQUE(analysis_id,url)
 );
 CREATE TABLE IF NOT EXISTS brands (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
   name TEXT NOT NULL, url TEXT NOT NULL, sitemap_url TEXT NOT NULL, description TEXT NOT NULL,
   industry TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','pending')),
-  markets_json TEXT NOT NULL CHECK(json_valid(markets_json)),
-  aliases_json TEXT NOT NULL CHECK(json_valid(aliases_json)),
-  other_brands_json TEXT NOT NULL CHECK(json_valid(other_brands_json)),
-  urls_json TEXT NOT NULL CHECK(json_valid(urls_json)),
-  social_accounts_json TEXT NOT NULL CHECK(json_valid(social_accounts_json)),
-  earned_content_sources_json TEXT NOT NULL CHECK(json_valid(earned_content_sources_json)),
-  cdn_connected INTEGER NOT NULL CHECK(cdn_connected IN (0,1)),
-  gsc_connected INTEGER NOT NULL CHECK(gsc_connected IN (0,1)),
-  analytics_connected INTEGER NOT NULL CHECK(analytics_connected IN (0,1)),
+  markets_json JSONB NOT NULL,
+  aliases_json JSONB NOT NULL,
+  other_brands_json JSONB NOT NULL,
+  urls_json JSONB NOT NULL,
+  social_accounts_json JSONB NOT NULL,
+  earned_content_sources_json JSONB NOT NULL,
+  cdn_connected BOOLEAN NOT NULL,
+  gsc_connected BOOLEAN NOT NULL,
+  analytics_connected BOOLEAN NOT NULL,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS detected_brand_decisions (

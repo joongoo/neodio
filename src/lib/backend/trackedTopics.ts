@@ -38,8 +38,8 @@ export async function deleteTrackedTopic(orgId: string, rowId: string) {
 
 export async function updateLibraryRowsByPrompt(orgId: string, prompt: string, patch: Partial<Pick<PromptLibraryRow, "topic" | "category">>) {
   const store = await getPromptStore();
-  const promptId = store.upsertPrompt(orgId, { text: prompt });
-  const existing = store.getPrompt(orgId, promptId)!;
-  store.upsertPrompt(orgId, { text: prompt, topic: patch.topic ?? existing.topic ?? undefined,
+  const promptId = await store.upsertPrompt(orgId, { text: prompt });
+  const existing = (await store.getPrompt(orgId, promptId))!;
+  await store.upsertPrompt(orgId, { text: prompt, topic: patch.topic ?? existing.topic ?? undefined,
     category: patch.category ?? existing.category ?? undefined }, true);
 }

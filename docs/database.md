@@ -1,11 +1,35 @@
 # Prompt and collection database
 
 The prompt catalog, taxonomy, tracking, strategy provenance, collection results,
-and versioned analysis use SQLite at `.data/neodio.sqlite`. Set `NEODIO_DB_PATH`
-to use another persistent file. Node >=22.13 is required for `node:sqlite`.
-Use a persistent local disk and a Node server; this is not a shared multi-host
-or ephemeral serverless database. The server-only entry point is
-`src/lib/backend/database/index.ts`; do not import it into the client mock barrel.
+and versioned analysis use **Postgres** (Vercel Postgres in production; any
+standard Postgres works locally). Set `POSTGRES_URL` (and, if your provider
+gives you both a pooled and a direct connection string, `POSTGRES_URL_NON_POOLING`
+— the store prefers the non-pooling one, since it holds a session per
+transaction) to a reachable Postgres instance. There is no on-disk fallback:
+`getPromptStore()` throws immediately if neither is set. The server-only entry
+point is `src/lib/backend/database/index.ts`; do not import it into the client
+mock barrel.
+
+This previously ran on `node:sqlite` (`DatabaseSync`) against a local file.
+That broke in Vercel's serverless functions, whose deployment bundle
+(`process.cwd()`) is read-only — the file couldn't even be created, let alone
+persisted across cold starts. Postgres removes both problems: no local file,
+and the data survives restarts/cold starts because it lives outside the
+serverless instance.
+
+**Driver note:** the store's queries run through `pg` (`node-postgres`), not
+`@vercel/postgres`. `@vercel/postgres` is still a listed dependency (Vercel's
+official client, and the one whose env var names — `POSTGRES_URL`,
+`POSTGRES_URL_NON_POOLING` — this store reads), but its actual client is
+`@neondatabase/serverless`, which speaks Neon's WebSocket proxy protocol and
+refuses a plain TCP connection to a non-Neon Postgres. That makes it
+impossible to run store tests against a real local Postgres, which is what
+this migration prioritized (see "Tests" below). `pg` speaks the standard
+Postgres wire protocol and works identically against Vercel Postgres, a local
+`postgres` install, or any other standard server, using the exact same
+`POSTGRES_URL`/`POSTGRES_URL_NON_POOLING` values Vercel injects. If Vercel
+Postgres is ever swapped for a different provider, only the connection string
+needs to change.
 
 ## Model
 
@@ -67,16 +91,55 @@ is no materialized `metric_snapshots` table yet.
 ## Migration and operation
 
 ```sh
-npm run db:migrate
+POSTGRES_URL=postgres://user:pass@host:5432/db npm run db:migrate
 npm run test:db
-npm run dev
+POSTGRES_URL=postgres://user:pass@host:5432/db npm run dev
 ```
+
+`npm run db:migrate` (`scripts/migrate-db.ts`) needs a reachable `POSTGRES_URL`
+— it runs against whatever database that URL points to, real Vercel Postgres
+included. It calls `store.init()` (idempotent `CREATE TABLE IF NOT EXISTS` DDL,
+safe to rerun) before importing legacy data and analyzing collected runs.
+
+**Production (Vercel):** attach a Postgres storage integration to the project
+from the Vercel dashboard (Storage tab) — this is a manual step outside what
+this codebase can do, since it provisions the database. Once attached, Vercel
+auto-injects `POSTGRES_URL`/`POSTGRES_URL_NON_POOLING` (and a few other
+`POSTGRES_*` vars) into the project's environment, and `getPromptStore()`
+picks them up with no further config.
+
+**Local dev:** install Postgres (e.g. `brew install postgresql@18`), run it,
+create a database, and put `POSTGRES_URL=postgres://user@localhost:5432/neodio`
+in `.env.local`. `npm run build`/`npm run dev` need this set — pages that
+never touch the store still route through `src/components/layout/TopBar.tsx`,
+which reads brand data at render time.
+
+### Tests
+
+`npm run test:db` (`scripts/test-pg-harness.mjs`) does **not** use a mock —
+this sandbox and CI have no reachable Vercel Postgres, so the harness
+`initdb`s and starts a disposable local Postgres cluster in a temp directory,
+points `POSTGRES_URL`/`POSTGRES_URL_NON_POOLING` at it, runs the `node:test`
+files, then tears the cluster down. This requires a local Postgres install
+(`initdb`/`pg_ctl` on `PATH`, or set `PG_BIN_DIR`); `pg-mem` and other
+Postgres-compatible mocks were considered but a real server gives higher
+confidence for JSONB/constraint/transaction behavior at negligible extra cost
+here. Each test gets its own Postgres **schema** (`CREATE SCHEMA test_<uuid>`,
+via `src/lib/backend/database/testHelpers.ts`) for the same per-test isolation
+SQLite's `":memory:"` used to give, then drops it in `afterEach`.
+
+If you already have `POSTGRES_URL` pointed at a real (non-throwaway) Postgres
+instance and want to run the test files directly against it instead of the
+harness's disposable cluster, run
+`npx tsx --test src/lib/backend/database/*.test.ts` — but note the tests
+create and drop schemas on whatever database that URL points to.
 
 Initialization imports library seed rows, saved tracked rows and deletion flags,
 strategy seeds, LLM bridge data, and real Naver/Google collector results. It runs
 once transactionally for legacy catalog data. Each collector file is subsequently
 checked by mtime/size and imported idempotently, preserving run IDs. `db:migrate`
-also computes missing analyses and checks foreign keys. Re-running it does not
+also computes missing analyses; foreign keys are enforced by Postgres on every
+write, not checked separately after the fact. Re-running it does not
 recreate archived tracking or duplicate executions/analyses. Legacy files are never
 deleted or overwritten. Malformed import JSON stops migration with the filename.
 
@@ -86,10 +149,10 @@ source metadata. Names such as "나" become actors of kind `legacy`, not verifie
 users. New unauthenticated writes use NULL actor IDs instead of inventing identities.
 Authentication and mapping actors to real user accounts remain a separate task.
 
-Back up the database with SQLite's backup API or with the app stopped; WAL mode
-means copying only the main file while writes are active is not a valid backup.
-Keep `.tmp` artifacts until the migration is accepted. Going back to legacy code
-will not include new SQLite writes; do not treat legacy files as a current backup.
+Back up the database with `pg_dump` (or your Postgres provider's managed
+backups/point-in-time recovery — Vercel Postgres includes this). Keep `.tmp`
+artifacts until the migration is accepted. Going back to legacy code will not
+include new Postgres writes; do not treat legacy files as a current backup.
 
 ## API and compatibility
 
@@ -106,7 +169,7 @@ will not include new SQLite writes; do not treat legacy files as a current backu
   New brainstorm topics use `{prompt,category,topic}`; old strings are adapted on read.
 
 Library pages temporarily partition imported `pl-*` rows and other tracked rows
-for compatibility, but both partitions come from SQLite. The client-safe mock `db`
+for compatibility, but both partitions come from Postgres. The client-safe mock `db`
 module still serves demo/research data. Brand configuration, GSC secrets, crawl
 artifacts, diagnostic caches and opportunity targets retain their existing stores.
 Current routes use the existing default organization/brand; multi-brand account

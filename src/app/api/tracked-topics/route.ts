@@ -66,7 +66,7 @@ export async function PATCH(request: NextRequest) {
   }
   const body = await request.json().catch(() => null);
   if (body?.status === "active" || body?.status === "paused" || body?.status === "archived") {
-    const found = (await getPromptStore()).setTrackingStatus(DEFAULT_ORG_ID, id, body.status);
+    const found = await (await getPromptStore()).setTrackingStatus(DEFAULT_ORG_ID, id, body.status);
     return NextResponse.json(found ? { ok: true } : { error: "해당 프롬프트를 찾을 수 없습니다." }, { status: found ? 200 : 404 });
   }
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
