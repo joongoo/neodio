@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { listCollectedRuns } from "./collectionRuns";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
@@ -186,7 +187,11 @@ export interface RealDataFilters {
 // bucketed by the run's week, just aggregated differently per caller.
 // Returns null when nothing's been collected yet (or nothing survives the
 // filter), so callers fall back to the seeded mock.
-async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters = {}) {
+// Wrapped in React's per-request cache: Overview alone calls this three times
+// (stat cards, sentiment, market comparison) with the same range+filters —
+// without this they'd each independently re-fetch and re-analyze every
+// collected run.
+const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFilters = {}) => {
   const runFiles = await listCollectedRuns();
   if (runFiles.length === 0) return null;
 
@@ -214,7 +219,7 @@ async function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters 
   const previousWeeks = weeks.slice(-windowSize * 2, -windowSize);
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
   return { processed, weekOfRun, currentWeeks, previousWeeks, runsById, brands };
-}
+});
 
 // Same "우리 브랜드가 언급된 프롬프트 실행의 감성" the mentions pipeline
 // already classifies per-run (see processing/mentions.ts) — just bucketed

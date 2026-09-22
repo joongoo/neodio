@@ -96,9 +96,14 @@ async function importLegacyBrands(store: PromptStore) {
 // 영속성이 없었다 — 이 클래스의 git 히스토리 참고). 로컬 개발/테스트도 같은
 // 환경변수로 실제(로컬) Postgres를 가리키면 된다.
 function createPool(): Pool {
-  const connectionString = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  // Prefer the pooled (pgbouncer) endpoint — every request here is a short
+  // borrow-query-return, exactly what Neon's pooler is for. The non-pooling
+  // URL opens a direct connection per serverless invocation, which is both
+  // slower (extra handshake, risks waking a suspended compute) and burns
+  // through Neon's direct-connection limit under concurrent traffic.
+  const connectionString = process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING;
   if (!connectionString) throw new Error("POSTGRES_URL (or POSTGRES_URL_NON_POOLING) is required — see docs/database.md");
-  return new Pool({ connectionString });
+  return new Pool({ connectionString, max: 5, idleTimeoutMillis: 10_000 });
 }
 
 export function getPromptStore(): Promise<PromptStore> {

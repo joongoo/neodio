@@ -9,11 +9,10 @@ export async function processStoredPromptRuns(params: {
   const ownBrand = params.brands.find(b => b.id === params.ownBrandId);
   if (!ownBrand) throw new Error(`Unknown own brand: ${params.ownBrandId}`);
   const runs = params.promptRuns.filter(run => run.status === "success");
-  for (const run of runs) {
-    if (!(await store.query("SELECT id FROM prompt_runs WHERE id=$1 AND organization_id=$2", [run.id, params.organizationId])).length) {
-      throw new Error(`Run not found in organization: ${run.id}`);
-    }
-  }
+  const found = await store.query<{ id: string }>(
+    "SELECT id FROM prompt_runs WHERE organization_id=$1 AND id = ANY($2)", [params.organizationId, runs.map(run => run.id)]);
+  const foundIds = new Set(found.map(row => row.id));
+  for (const run of runs) if (!foundIds.has(run.id)) throw new Error(`Run not found in organization: ${run.id}`);
   const analyzed = await Promise.all(runs.map(run => store.analyze(run, params.brands)));
   const mentions = analyzed.flatMap(result => result.mentions);
   const citations = analyzed.flatMap(result => result.citations);
