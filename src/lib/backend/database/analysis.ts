@@ -13,7 +13,7 @@ export async function processStoredPromptRuns(params: {
     "SELECT id FROM prompt_runs WHERE organization_id=$1 AND id = ANY($2)", [params.organizationId, runs.map(run => run.id)]);
   const foundIds = new Set(found.map(row => row.id));
   for (const run of runs) if (!foundIds.has(run.id)) throw new Error(`Run not found in organization: ${run.id}`);
-  const analyzed = await Promise.all(runs.map(run => store.analyze(run, params.brands)));
+  const analyzed = await store.analyzeMany(runs, params.brands);
   const mentions = analyzed.flatMap(result => result.mentions);
   const citations = analyzed.flatMap(result => result.citations);
   return { promptRuns: params.promptRuns, mentions, citations,

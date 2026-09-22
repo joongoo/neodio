@@ -339,6 +339,28 @@ export class PromptStore {
     });
   }
 
+  // Same result as calling analyze() per run, but fetches every already-cached
+  // result in one round trip instead of one SELECT per run — the common case
+  // once a run has been analyzed at least once (e.g. every page that renders
+  // real stats from a large run history).
+  async analyzeMany(runs: PromptRunSeed[], brands: BrandSeed[]): Promise<{ mentions: ReturnType<typeof extractMentionsFromRun>; citations: ReturnType<typeof extractCitationsFromRun> }[]> {
+    const successful = runs.filter(run => run.status === "success");
+    const inputHashByRun = new Map(successful.map(run => [run.id, hash([run.rawResponse, run.rawMetadata.citations, brands])]));
+    const cachedRows = successful.length
+      ? await this.query<{ run_id: string; input_hash: string; result_json: unknown }>(
+          "SELECT run_id,input_hash,result_json FROM run_analyses WHERE version=$1 AND status='success' AND run_id = ANY($2)",
+          [ANALYSIS_VERSION, successful.map(run => run.id)])
+      : [];
+    const cacheByRun = new Map(cachedRows.map(row => [row.run_id, row]));
+    return Promise.all(successful.map(run => {
+      const cached = cacheByRun.get(run.id);
+      if (cached && cached.input_hash === inputHashByRun.get(run.id)) {
+        return cached.result_json as { mentions: ReturnType<typeof extractMentionsFromRun>; citations: ReturnType<typeof extractCitationsFromRun> };
+      }
+      return this.analyze(run, brands);
+    }));
+  }
+
   async analyze(run: PromptRunSeed, brands: BrandSeed[]): Promise<{ mentions: ReturnType<typeof extractMentionsFromRun>; citations: ReturnType<typeof extractCitationsFromRun> }> {
     if (run.status !== "success") throw new Error("Only successful runs can be analyzed");
     const inputHash = hash([run.rawResponse, run.rawMetadata.citations, brands]);

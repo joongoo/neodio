@@ -103,7 +103,7 @@ function createPool(): Pool {
   // through Neon's direct-connection limit under concurrent traffic.
   const connectionString = process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING;
   if (!connectionString) throw new Error("POSTGRES_URL (or POSTGRES_URL_NON_POOLING) is required — see docs/database.md");
-  return new Pool({ connectionString, max: 5, idleTimeoutMillis: 10_000 });
+  return new Pool({ connectionString, max: 10, idleTimeoutMillis: 10_000 });
 }
 
 export function getPromptStore(): Promise<PromptStore> {
