@@ -55,7 +55,8 @@ async function main() {
   const limit = Number(argValue("limit", "0")) || undefined;
 
   const store = await getPromptStore();
-  const keywords = shuffle(store.library(ORG_ID).map((row) => row.prompt)).slice(0, limit);
+  const library = await store.library(ORG_ID);
+  const keywords = shuffle(library.map((row) => row.prompt)).slice(0, limit);
 
   console.log(`[collect-scheduled] ${keywords.length}개 키워드, 엔진: ${engines.join(",")}`);
 
@@ -77,7 +78,7 @@ async function main() {
     }
   }
 
-  store.sql.close();
+  await store.close();
   console.log("[collect-scheduled] 전체 완료");
 }
 

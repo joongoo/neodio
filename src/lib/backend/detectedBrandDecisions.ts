@@ -7,19 +7,19 @@ export async function listDetectedBrandDecisions(orgId = DEFAULT_ORG_ID, brandId
 
 export async function approveDetectedBrand(params: { name: string; evidenceDomain?: string | null }, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
   const store = await getPromptStore();
-  store.transaction(() => {
-    const brand = store.getBrand(orgId, brandId);
+  await store.transaction(async () => {
+    const brand = await store.getBrand(orgId, brandId);
     if (!brand) throw new Error(`Unknown brand: ${brandId}`);
     const exists = brand.otherBrands.some((other) => other.name.toLocaleLowerCase("ko-KR") === params.name.toLocaleLowerCase("ko-KR"));
     if (!exists) {
-      store.updateBrand(orgId, brandId, { otherBrands: [...brand.otherBrands, { name: params.name, aliases: [] }] });
+      await store.updateBrand(orgId, brandId, { otherBrands: [...brand.otherBrands, { name: params.name, aliases: [] }] });
     }
-    store.setDetectedBrandDecision(orgId, brandId, { name: params.name, status: "approved", evidenceDomain: params.evidenceDomain });
+    await store.setDetectedBrandDecision(orgId, brandId, { name: params.name, status: "approved", evidenceDomain: params.evidenceDomain });
   });
 }
 
 export async function excludeDetectedBrand(params: { name: string; evidenceDomain?: string | null }, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
-  (await getPromptStore()).setDetectedBrandDecision(orgId, brandId, {
+  await (await getPromptStore()).setDetectedBrandDecision(orgId, brandId, {
     name: params.name,
     status: "excluded",
     evidenceDomain: params.evidenceDomain,
@@ -27,18 +27,18 @@ export async function excludeDetectedBrand(params: { name: string; evidenceDomai
 }
 
 export async function clearDetectedBrandDecision(name: string, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
-  (await getPromptStore()).clearDetectedBrandDecision(orgId, brandId, name);
+  await (await getPromptStore()).clearDetectedBrandDecision(orgId, brandId, name);
 }
 
 export async function removeDetectedCompetitor(name: string, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
   const store = await getPromptStore();
-  store.transaction(() => {
-    const brand = store.getBrand(orgId, brandId);
+  await store.transaction(async () => {
+    const brand = await store.getBrand(orgId, brandId);
     if (!brand) throw new Error(`Unknown brand: ${brandId}`);
-    store.updateBrand(orgId, brandId, {
+    await store.updateBrand(orgId, brandId, {
       otherBrands: brand.otherBrands.filter((other) => other.name.toLocaleLowerCase("ko-KR") !== name.toLocaleLowerCase("ko-KR")),
     });
-    store.clearDetectedBrandDecision(orgId, brandId, name);
+    await store.clearDetectedBrandDecision(orgId, brandId, name);
   });
 }
 
@@ -52,19 +52,19 @@ export async function mergeDetectedBrands(
     throw new Error(target === "own" ? "내 브랜드로 등록할 브랜드를 선택해주세요." : "병합할 브랜드를 2개 이상 선택해주세요.");
   }
   const store = await getPromptStore();
-  store.transaction(() => {
-    const brand = store.getBrand(orgId, brandId);
+  await store.transaction(async () => {
+    const brand = await store.getBrand(orgId, brandId);
     if (!brand) throw new Error(`Unknown brand: ${brandId}`);
 
     const uniqueBrands = [...new Map(brands.map((item) => [item.name.toLocaleLowerCase("ko-KR"), item])).values()];
     if (target === "own") {
       const aliases = uniqueBrands.map((item) => item.name);
       const aliasSet = new Set(aliases.map((name) => name.toLocaleLowerCase("ko-KR")));
-      store.updateBrand(orgId, brandId, {
+      await store.updateBrand(orgId, brandId, {
         aliases: [...new Set([...brand.aliases, ...aliases])],
         otherBrands: brand.otherBrands.filter((other) => !aliasSet.has(other.name.toLocaleLowerCase("ko-KR"))),
       });
-      for (const alias of aliases) store.clearDetectedBrandDecision(orgId, brandId, alias);
+      for (const alias of aliases) await store.clearDetectedBrandDecision(orgId, brandId, alias);
       return;
     }
 
@@ -81,9 +81,9 @@ export async function mergeDetectedBrands(
       name: existingCanonical?.name ?? canonical.name,
       aliases: [...new Set([...(existingCanonical?.aliases ?? []), ...aliases])],
     };
-    store.updateBrand(orgId, brandId, { otherBrands: [...remaining, nextCanonical] });
-    store.setDetectedBrandDecision(orgId, brandId, { name: canonical.name, status: "approved", evidenceDomain: canonical.evidenceDomain });
-    for (const alias of aliases) store.clearDetectedBrandDecision(orgId, brandId, alias);
+    await store.updateBrand(orgId, brandId, { otherBrands: [...remaining, nextCanonical] });
+    await store.setDetectedBrandDecision(orgId, brandId, { name: canonical.name, status: "approved", evidenceDomain: canonical.evidenceDomain });
+    for (const alias of aliases) await store.clearDetectedBrandDecision(orgId, brandId, alias);
   });
 }
 
@@ -97,8 +97,8 @@ export async function applyDetectedBrandOptimization(
   brandId = DEFAULT_BRAND_ID
 ) {
   const store = await getPromptStore();
-  store.transaction(() => {
-    const brand = store.getBrand(orgId, brandId);
+  await store.transaction(async () => {
+    const brand = await store.getBrand(orgId, brandId);
     if (!brand) throw new Error(`Unknown brand: ${brandId}`);
 
     const ownAliases = [...new Set((params.ownAliases ?? []).map((name) => name.trim()).filter(Boolean))];
@@ -119,17 +119,17 @@ export async function applyDetectedBrandOptimization(
       const next = { name: existing?.name ?? name, aliases: [...new Set([...(existing?.aliases ?? []), ...aliases])] };
       if (existing) otherBrands = otherBrands.map((other) => (other.name === existing.name ? next : other));
       else otherBrands.push(next);
-      store.setDetectedBrandDecision(orgId, brandId, { name, status: "approved", evidenceDomain: item.evidenceDomain });
-      for (const alias of aliases) store.clearDetectedBrandDecision(orgId, brandId, alias);
+      await store.setDetectedBrandDecision(orgId, brandId, { name, status: "approved", evidenceDomain: item.evidenceDomain });
+      for (const alias of aliases) await store.clearDetectedBrandDecision(orgId, brandId, alias);
     }
 
-    store.updateBrand(orgId, brandId, {
+    await store.updateBrand(orgId, brandId, {
       aliases: [...new Set([...brand.aliases, ...ownAliases])],
       otherBrands: otherBrands.filter((other) => !ownAliasSet.has(other.name.toLocaleLowerCase("ko-KR"))),
     });
-    for (const alias of ownAliases) store.clearDetectedBrandDecision(orgId, brandId, alias);
+    for (const alias of ownAliases) await store.clearDetectedBrandDecision(orgId, brandId, alias);
     for (const item of params.exclude ?? []) {
-      if (item.name.trim()) store.setDetectedBrandDecision(orgId, brandId, { name: item.name.trim(), status: "excluded", evidenceDomain: item.evidenceDomain });
+      if (item.name.trim()) await store.setDetectedBrandDecision(orgId, brandId, { name: item.name.trim(), status: "excluded", evidenceDomain: item.evidenceDomain });
     }
   });
 }

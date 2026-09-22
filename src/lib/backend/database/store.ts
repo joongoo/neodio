@@ -435,34 +435,31 @@ export class PromptStore {
     return (await this.run("DELETE FROM brands WHERE organization_id=$1 AND id=$2", [orgId, brandId])) > 0;
   }
 
-  listDetectedBrandDecisions(orgId: string, brandId: string): Map<string, { status: "approved" | "excluded"; evidenceDomain?: string }> {
-    const rows = this.sql.prepare("SELECT normalized_name,status,evidence_domain FROM detected_brand_decisions WHERE organization_id=? AND brand_id=?").all(orgId, brandId);
+  async listDetectedBrandDecisions(orgId: string, brandId: string): Promise<Map<string, { status: "approved" | "excluded"; evidenceDomain?: string }>> {
+    const rows = await this.query<{ normalized_name: string; status: "approved" | "excluded"; evidence_domain: string | null }>(
+      "SELECT normalized_name,status,evidence_domain FROM detected_brand_decisions WHERE organization_id=$1 AND brand_id=$2", [orgId, brandId]);
     return new Map(
-      rows.map((row) => [
-        row.normalized_name as string,
-        { status: row.status as "approved" | "excluded", evidenceDomain: (row.evidence_domain as string | null) ?? undefined },
-      ])
+      rows.map((row) => [row.normalized_name, { status: row.status, evidenceDomain: row.evidence_domain ?? undefined }])
     );
   }
 
-  setDetectedBrandDecision(
+  async setDetectedBrandDecision(
     orgId: string,
     brandId: string,
     params: { name: string; status: "approved" | "excluded"; evidenceDomain?: string | null }
-  ): void {
-    this.ensureOrg(orgId);
+  ): Promise<void> {
+    await this.ensureOrg(orgId);
     const normalizedName = normalize(params.name);
     const at = now();
-    this.sql
-      .prepare(
-        `INSERT INTO detected_brand_decisions VALUES (?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(organization_id,brand_id,normalized_name)
-        DO UPDATE SET name=excluded.name,status=excluded.status,evidence_domain=excluded.evidence_domain,updated_at=excluded.updated_at`
-      )
-      .run(id("decision"), orgId, brandId, params.name.trim(), normalizedName, params.status, params.evidenceDomain ?? null, at, at);
+    await this.run(
+      `INSERT INTO detected_brand_decisions VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT(organization_id,brand_id,normalized_name)
+      DO UPDATE SET name=excluded.name,status=excluded.status,evidence_domain=excluded.evidence_domain,updated_at=excluded.updated_at`,
+      [id("decision"), orgId, brandId, params.name.trim(), normalizedName, params.status, params.evidenceDomain ?? null, at, at]
+    );
   }
 
-  clearDetectedBrandDecision(orgId: string, brandId: string, name: string): void {
-    this.sql.prepare("DELETE FROM detected_brand_decisions WHERE organization_id=? AND brand_id=? AND normalized_name=?").run(orgId, brandId, normalize(name));
+  async clearDetectedBrandDecision(orgId: string, brandId: string, name: string): Promise<void> {
+    await this.run("DELETE FROM detected_brand_decisions WHERE organization_id=$1 AND brand_id=$2 AND normalized_name=$3", [orgId, brandId, normalize(name)]);
   }
 }
