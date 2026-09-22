@@ -88,9 +88,21 @@ async function importLegacyBrands(store: PromptStore) {
   });
 }
 
+// Vercel(그리고 다른 서버리스 런타임)은 배포 번들 경로(process.cwd())가
+// 읽기 전용이라 여기 mkdir/쓰기를 시도하면 ENOENT/EROFS로 매 요청마다
+// 죽는다 — /tmp만 쓰기 가능하다. 다만 /tmp는 인스턴스별로 분리되고
+// 콜드스타트마다 초기화되는 휘발성 저장소라, 이 경로에서는 실제 영속성이
+// 보장되지 않는다(레거시 임포트가 매번 다시 돌 뿐). 진짜 영속화하려면
+// Turso/Postgres 같은 호스팅 DB로 옮겨야 한다 — 이건 그 전까지 배포가
+// 최소한 죽지 않게 하는 임시 조치.
+function defaultDbPath(): string {
+  if (process.env.VERCEL) return "/tmp/neodio.sqlite";
+  return path.join(process.cwd(), ".data/neodio.sqlite");
+}
+
 export function getPromptStore(): Promise<PromptStore> {
   if (!initializing) initializing = (async () => {
-    const store = new PromptStore(process.env.NEODIO_DB_PATH ?? path.join(process.cwd(), ".data/neodio.sqlite"));
+    const store = new PromptStore(process.env.NEODIO_DB_PATH ?? defaultDbPath());
     try { await importLegacy(store); await importLegacyBrands(store); await syncCollectedFiles(store); return store; }
     catch (error) { store.sql.close(); throw error; }
   })().catch(error => { initializing = undefined; throw error; });
