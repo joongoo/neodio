@@ -138,13 +138,15 @@ export class PromptStore {
     return this.transaction(async () => {
       if (!normalize(input.text)) throw new Error("Prompt text is required");
       await this.ensureOrg(orgId);
-      const existing = await this.one<{ id: string }>("SELECT id FROM prompts WHERE organization_id=$1 AND normalized_text=$2", [orgId, normalize(input.text)]);
-      const promptId = existing?.id ?? id("prompt");
-      if (!existing) {
-        await this.run(`INSERT INTO prompts(id,organization_id,text,normalized_text,created_by,updated_by,created_at,updated_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [promptId, orgId, input.text.trim(), normalize(input.text), input.actorId ?? null, input.actorId ?? null, input.createdAt ?? now(), input.createdAt ?? now()]);
-      }
+      const newId = id("prompt");
+      const inserted = await this.one<{ id: string }>(
+        `INSERT INTO prompts(id,organization_id,text,normalized_text,created_by,updated_by,created_at,updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          ON CONFLICT(organization_id,normalized_text) DO NOTHING
+          RETURNING id`,
+        [newId, orgId, input.text.trim(), normalize(input.text), input.actorId ?? null, input.actorId ?? null, input.createdAt ?? now(), input.createdAt ?? now()]);
+      const existing = inserted ? undefined : await this.one<{ id: string }>("SELECT id FROM prompts WHERE organization_id=$1 AND normalized_text=$2", [orgId, normalize(input.text)]);
+      const promptId = inserted?.id ?? existing!.id;
       if (!existing || replaceClassification) await this.classify(orgId, promptId, input.category, input.topic);
       if (input.searchIntent) await this.run("UPDATE prompts SET search_intent=$1 WHERE id=$2", [input.searchIntent, promptId]);
       if (input.sourceType) {
