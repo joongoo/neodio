@@ -113,7 +113,7 @@ export function BrandDetailClient({
   function applyListChange(patch: Partial<ManagedBrand>) {
     setBrand((b) => ({ ...b, ...patch }));
     setDraft((d) => ({ ...d, ...patch }));
-    persist(patch);
+    persist(patch).then(() => showToast("변경사항을 저장했습니다."));
   }
 
   // "기본 정보" 카드의 입력 필드만 patch로 보낸다 — 이전엔 draft 전체를

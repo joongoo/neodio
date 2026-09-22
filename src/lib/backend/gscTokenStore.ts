@@ -1,11 +1,13 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { getPromptStore } from "./database";
+import { DEFAULT_ORG_ID } from "@/lib/db";
 
-// 브랜드별 GSC refresh_token을 저장 — 수집 로그/추적 토픽과 같은 .tmp 실
-// 파일 패턴. 실 서비스라면 암호화된 DB 컬럼에 둬야 하지만, 로컬 개발
-// 단계에서는 .tmp(gitignore됨)로 충분하다. refresh_token은 절대 클라이언트
-// 로 내려보내지 않는다 — 이 파일은 서버 전용 코드에서만 import.
-const TOKEN_DIR = ".tmp/gsc-tokens";
+// 브랜드별 GSC refresh_token 저장소. 예전엔 .tmp/gsc-tokens/*.json 파일로
+// 뒀는데(수집 로그와 같은 패턴), Vercel의 읽기 전용 파일시스템에서
+// mkdir ENOENT로 깨졌다 — DB 이관 때 이 파일은 놓쳤던 것. bridge_entries
+// 테이블(조직/스코프/키 기반 범용 저장소)을 그대로 재사용한다.
+// refresh_token은 절대 클라이언트로 내려보내지 않는다 — 이 파일은 서버
+// 전용 코드에서만 import.
+const SCOPE = "gsc-tokens";
 
 export interface GscTokenRecord {
   brandId: string;
@@ -15,23 +17,18 @@ export interface GscTokenRecord {
   connectedAt: string;
 }
 
-function filePathFor(brandId: string) {
-  return path.join(process.cwd(), TOKEN_DIR, `${brandId}.json`);
-}
-
 export async function saveGscToken(record: GscTokenRecord): Promise<void> {
-  await mkdir(path.join(process.cwd(), TOKEN_DIR), { recursive: true });
-  await writeFile(filePathFor(record.brandId), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  const store = await getPromptStore();
+  await store.putBridge(DEFAULT_ORG_ID, SCOPE, { [record.brandId]: record });
 }
 
 export async function getGscToken(brandId: string): Promise<GscTokenRecord | null> {
-  try {
-    return JSON.parse(await readFile(filePathFor(brandId), "utf8")) as GscTokenRecord;
-  } catch {
-    return null;
-  }
+  const store = await getPromptStore();
+  const entries = await store.bridgeScope<GscTokenRecord>(DEFAULT_ORG_ID, SCOPE);
+  return entries[brandId] ?? null;
 }
 
 export async function deleteGscToken(brandId: string): Promise<void> {
-  await unlink(filePathFor(brandId)).catch(() => {});
+  const store = await getPromptStore();
+  await store.query("DELETE FROM bridge_entries WHERE organization_id=$1 AND scope=$2 AND entry_key=$3", [DEFAULT_ORG_ID, SCOPE, brandId]);
 }

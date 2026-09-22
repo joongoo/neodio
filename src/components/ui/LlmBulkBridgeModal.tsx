@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Check, Sparkles } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -33,6 +33,16 @@ export function LlmBulkBridgeModal({
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current); }, []);
+
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 2500);
+  }
 
   function close() {
     setPasted("");
@@ -68,12 +78,14 @@ export function LlmBulkBridgeModal({
       }
       onSaved?.();
       close();
+      showToast("저장했습니다.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
+    <>
     <Modal open={open} onClose={close}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -126,5 +138,11 @@ export function LlmBulkBridgeModal({
         </Button>
       </div>
     </Modal>
+    {toast && (
+      <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white shadow-lg">
+        {toast}
+      </div>
+    )}
+    </>
   );
 }

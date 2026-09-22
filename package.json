@@ -11,6 +11,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "tsx scripts/migrate-db.ts",
+    "db:push-to-prod": "set -a && . ./.env.neon.local && set +a && tsx scripts/migrate-db.ts",
+    "db:sync-to-prod": "set -a && . ./.env.local && SOURCE_POSTGRES_URL=$POSTGRES_URL && . ./.env.neon.local && set +a && tsx scripts/sync-local-to-remote.ts",
     "test:db": "node scripts/test-pg-harness.mjs",
     "collect:naver-ai": "node scripts/collect-naver-ai.mjs",
     "open:naver-ai-chrome": "node scripts/open-naver-ai-chrome.mjs",
