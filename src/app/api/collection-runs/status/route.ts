@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     stage: job.stage,
     log: job.log.slice(-20),
     error: job.error,
-    done: job.stage === "done" || job.stage === "error",
+    done: job.stage === "done" || job.stage === "error" || job.stage === "cancelled",
     engines: job.engines,
     keyword: job.keyword,
   });

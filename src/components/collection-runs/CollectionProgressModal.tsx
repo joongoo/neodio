@@ -1,10 +1,10 @@
 "use client";
 
-import { Check, CircleCheck, Loader2, TriangleAlert } from "lucide-react";
+import { Check, CircleCheck, Loader2, TriangleAlert, Ban } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { CollectionStage } from "@/lib/backend/collectionJobTypes";
 
-const STAGE_LABEL: Record<Exclude<CollectionStage, "done" | "error">, string> = {
+const STAGE_LABEL: Record<Exclude<CollectionStage, "done" | "error" | "cancelled">, string> = {
   install: "수집 도구 설치 중",
   naver: "네이버 엔진 검색 수집 중",
   google: "구글 엔진 검색 수집 중",
@@ -38,6 +38,8 @@ export function CollectionProgressModal({
   log,
   error,
   onClose,
+  onCancel,
+  cancelling,
 }: {
   open: boolean;
   keyword: string;
@@ -46,6 +48,9 @@ export function CollectionProgressModal({
   log: string[];
   error: string | null;
   onClose: () => void;
+  /** 진행 중 "중단" 버튼 — 서버에서 실행 중인 프로세스를 실제로 죽인다. 없으면 버튼을 숨긴다. */
+  onCancel?: () => void;
+  cancelling?: boolean;
 }) {
   if (stage === "done") {
     return (
@@ -64,6 +69,27 @@ export function CollectionProgressModal({
             className="mt-2 h-10 rounded-md bg-slate-800 px-6 text-sm font-bold text-white cursor-pointer hover:opacity-90"
           >
             확인
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (stage === "cancelled") {
+    return (
+      <Modal open={open} onClose={onClose}>
+        <div className="flex flex-col items-center gap-3 py-2 text-center">
+          <Ban size={40} className="text-neutral-400" />
+          <h2 className="text-lg font-bold text-neutral-900">수집을 중단했습니다</h2>
+          <p className="text-sm text-neutral-500">
+            &quot;{keyword}&quot; 수집이 중간에 멈췄어요. 지금까지 저장된 결과는 없습니다.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-2 h-10 rounded-md bg-neutral-200 px-6 text-sm font-bold text-neutral-700 cursor-pointer hover:bg-neutral-300"
+          >
+            닫기
           </button>
         </div>
       </Modal>
@@ -131,6 +157,19 @@ export function CollectionProgressModal({
           <pre className="max-h-32 overflow-y-auto rounded-md bg-neutral-50 p-3 text-[11px] leading-relaxed text-neutral-500">
             {log.slice(-8).join("\n")}
           </pre>
+        )}
+
+        {onCancel && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={cancelling}
+              className="h-9 rounded-md border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 cursor-pointer hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {cancelling ? "중단하는 중..." : "수집 중단"}
+            </button>
+          </div>
         )}
 
         {CAUTION_NOTE}

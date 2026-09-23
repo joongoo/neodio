@@ -18,6 +18,7 @@ const STAGE_LABEL: Record<CollectionStage, string> = {
   save: "결과 저장 중",
   done: "완료",
   error: "실패",
+  cancelled: "중단됨",
 };
 
 type ItemState = "pending" | "running" | "done" | "error";
@@ -51,6 +52,7 @@ export function BulkCollectionModal({
   const [running, setRunning] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const cancelRef = useRef(false);
+  const currentJobIdRef = useRef<string | null>(null);
 
   function toggleEngine(id: "naver" | "google") {
     setEngines((prev) => {
@@ -67,7 +69,7 @@ export function BulkCollectionModal({
       if (!res.ok) return { error: "작업 상태를 확인하지 못했습니다." };
       const data: { stage: CollectionStage; error: string | null; done: boolean } = await res.json();
       onUpdate(data.stage);
-      if (data.done) return { error: data.error };
+      if (data.done) return { error: data.stage === "cancelled" ? "중단됨" : data.error };
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
     return { error: "취소됨" };
@@ -97,6 +99,7 @@ export function BulkCollectionModal({
         setItems((prev) => prev!.map((it, idx) => (idx === i ? { ...it, state: "error", error: res?.error ?? "수집을 시작하지 못했습니다." } : it)));
         continue;
       }
+      currentJobIdRef.current = res.jobId;
 
       const { error } = await pollUntilDone(res.jobId, (stage) => {
         setItems((prev) => prev!.map((it, idx) => (idx === i ? { ...it, stage } : it)));
@@ -110,7 +113,19 @@ export function BulkCollectionModal({
   }
 
   function close() {
-    if (running) cancelRef.current = true;
+    if (running) {
+      cancelRef.current = true;
+      // 다음 순서로 넘어가는 것만 막는 걸로는 부족하다 — 지금 서버에서 돌고
+      // 있는 프로세스도 실제로 죽여야 한다.
+      const jobId = currentJobIdRef.current;
+      if (jobId) {
+        fetch("/api/collection-runs/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        }).catch(() => null);
+      }
+    }
     setItems(null);
     setRunning(false);
     setSubmitError(null);

@@ -24,6 +24,7 @@ export function CollectionRunForm() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function toggleEngine(id: "naver" | "google") {
@@ -79,6 +80,18 @@ export function CollectionRunForm() {
   function closeModal() {
     setJobId(null);
     setStatus(null);
+    setCancelling(false);
+  }
+
+  async function cancel() {
+    if (!jobId) return;
+    setCancelling(true);
+    await fetch("/api/collection-runs/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+    }).catch(() => null);
+    setCancelling(false);
   }
 
   return (
@@ -134,6 +147,8 @@ export function CollectionRunForm() {
           log={status.log}
           error={status.error}
           onClose={closeModal}
+          onCancel={cancel}
+          cancelling={cancelling}
         />
       )}
     </div>
