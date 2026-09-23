@@ -10,6 +10,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
 import { FaviconIcon } from "@/components/ui/FaviconIcon";
+import { Sparkline } from "@/components/ui/Sparkline";
 import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
@@ -75,6 +76,26 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
 // 상세 페이지(TopicOpportunityDetailClient)에만 둔다 — 테이블 행마다 입력
 // 필드를 두면 좁아서 실제로 잘 안 쓰였고, 토픽 이름을 눌러 상세로 들어가면
 // 어차피 같은 기능을 더 넓은 화면에서 쓸 수 있다.
+// 실행들을 주(일요일 시작) 단위로 묶어 각 주의 언급률(0~100)을 시간순
+// 배열로 만든다 — Sparkline 하나가 이 배열을 그대로 그린다.
+function weeklyMentionTrend(prompts: TopicRow["prompts"]): number[] {
+  const withDates = prompts.filter((p) => p.runAt);
+  if (withDates.length < 2) return [];
+  const byWeek = new Map<string, { total: number; mentioned: number }>();
+  for (const p of withDates) {
+    const d = new Date(p.runAt!);
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    const week = d.toISOString().slice(0, 10);
+    const bucket = byWeek.get(week) ?? { total: 0, mentioned: 0 };
+    bucket.total += 1;
+    if (p.myBrand === "노출") bucket.mentioned += 1;
+    byWeek.set(week, bucket);
+  }
+  return Array.from(byWeek.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, { total, mentioned }]) => Math.round((mentioned / total) * 100));
+}
+
 function buildTopicColumns(
   trackedIds: Set<string>,
   onTrack: (row: TopicRow) => void,
@@ -100,6 +121,12 @@ function buildTopicColumns(
     },
     { key: "mentions", label: "언급 수", width: "w-[100px]", render: (r) => r.mentions },
     { key: "visibility", label: "가시성", width: "w-[100px]", render: (r) => `${r.visibility}%` },
+    {
+      key: "trend",
+      label: "추이",
+      width: "w-[80px]",
+      render: (r) => <Sparkline values={weeklyMentionTrend(r.prompts)} />,
+    },
     {
       key: "market",
       label: "마켓",

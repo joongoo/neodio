@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
 import { TablePanel } from "@/components/ui/TablePanel";
@@ -52,15 +53,50 @@ function DetailButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function buildOwnColumns(onDetail: (row: OwnCitedUrlRow) => void): DataTableColumn<OwnCitedUrlRow>[] {
+function buildOwnColumns(
+  onDetail: (row: OwnCitedUrlRow) => void,
+  onUnregister: (row: OwnCitedUrlRow) => void
+): DataTableColumn<OwnCitedUrlRow>[] {
   return [
-    { key: "url", label: "URL", render: (r) => <UrlLink url={r.url} /> },
+    {
+      key: "url",
+      label: "URL",
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          <UrlLink url={r.url} />
+          {r.id.startsWith("registered-") && (
+            <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
+              등록됨 · 아직 인용 안 됨
+            </span>
+          )}
+        </div>
+      ),
+    },
     { key: "citations", label: "인용 횟수", width: "w-[90px]", render: (r) => r.citations },
     { key: "citedPrompts", label: "인용된 프롬프트 수", width: "w-[130px]", render: (r) => r.citedPrompts },
     { key: "contentVisibility", label: "콘텐츠 가시성", width: "w-[110px]", render: (r) => (r.contentVisibility === null ? "—" : `${r.contentVisibility}%`) },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
     { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
-    { key: "detail", label: "", width: "w-[64px]", render: (r) => <DetailButton onClick={() => onDetail(r)} /> },
+    {
+      key: "detail",
+      label: "",
+      width: "w-[120px]",
+      render: (r) =>
+        r.id.startsWith("registered-") ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnregister(r);
+            }}
+            className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] text-neutral-500 hover:bg-neutral-50 cursor-pointer"
+          >
+            등록 해제
+          </button>
+        ) : (
+          <DetailButton onClick={() => onDetail(r)} />
+        ),
+    },
   ];
 }
 const ownOptional: ColumnOption[] = [
@@ -123,12 +159,41 @@ function usePagedRows<T>(rows: T[]) {
 }
 
 export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
+  const router = useRouter();
   const [market, setMarket] = useState(MARKET_OPTIONS[0]);
   const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
   const [ownSearch, setOwnSearch] = useState("");
   const [thirdPartySearch, setThirdPartySearch] = useState("");
   const [domainSearch, setDomainSearch] = useState("");
   const [detailRow, setDetailRow] = useState<{ url: string; prompts: string[] } | null>(null);
+  const [newUrl, setNewUrl] = useState("");
+  const [registering, setRegistering] = useState(false);
+
+  async function registerNewUrl() {
+    const url = newUrl.trim();
+    if (!url) return;
+    setRegistering(true);
+    await fetch("/api/registered-urls", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    setNewUrl("");
+    setRegistering(false);
+    router.refresh();
+  }
+
+  const unregisterUrl = useCallback(
+    async (url: string) => {
+      await fetch("/api/registered-urls", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      router.refresh();
+    },
+    [router]
+  );
 
   const ownRowsBase = data.ownUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
   const thirdPartyRowsBase = data.thirdPartyUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
@@ -137,8 +202,12 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
   const domainRows = data.citedDomains.filter((r) => r.domain.toLowerCase().includes(domainSearch.trim().toLowerCase()));
 
   const ownColumns = useMemo(
-    () => buildOwnColumns((r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles })),
-    []
+    () =>
+      buildOwnColumns(
+        (r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles }),
+        (r) => unregisterUrl(r.url)
+      ),
+    [unregisterUrl]
   );
   const thirdPartyColumns = useMemo(
     () => buildThirdPartyColumns((r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles })),
@@ -174,7 +243,7 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
 
       <TablePanel
         title="자사 인용 URL"
-        description="AI 답변에 인용된 우리 사이트 URL입니다."
+        description="AI 답변에 인용된 우리 사이트 URL입니다. 아직 인용 안 됐어도 추적하고 싶은 새 콘텐츠는 직접 등록해두세요."
         count={ownRows.length}
         total={ownRowsBase.length}
         onConfigureColumns={() => own.setOpen(true)}
@@ -182,6 +251,23 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
         onSearchChange={setOwnSearch}
         searchPlaceholder="URL 검색"
       >
+        <div className="mb-3 flex items-center gap-2">
+          <input
+            value={newUrl}
+            onChange={(e) => setNewUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && registerNewUrl()}
+            placeholder="https://... — 추적할 URL 등록"
+            className="h-9 flex-1 rounded-md border border-neutral-300 px-3 text-sm"
+          />
+          <button
+            type="button"
+            disabled={registering || !newUrl.trim()}
+            onClick={registerNewUrl}
+            className="h-9 shrink-0 rounded-md bg-slate-800 px-3 text-sm font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-40"
+          >
+            등록
+          </button>
+        </div>
         <DataTable columns={own.filtered} rows={ownPaged.pageRows} getRowId={(r) => r.id} />
         <div className="mt-3">
           <Pagination
