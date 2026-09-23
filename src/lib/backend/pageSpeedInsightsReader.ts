@@ -17,7 +17,10 @@ export async function getRealPageSpeedInsights(
   endpoint.searchParams.set("category", "PERFORMANCE");
 
   const res = await fetch(endpoint.toString());
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error(`[pagespeed] ${res.status} for ${url}: ${(await res.text().catch(() => "")).slice(0, 500)}`);
+    return null;
+  }
 
   const data = (await res.json()) as {
     loadingExperience?: { metrics?: Record<string, { percentile?: number }> };

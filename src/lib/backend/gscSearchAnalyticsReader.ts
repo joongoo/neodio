@@ -76,20 +76,20 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
       endDate: isoDate(end),
       dimensions: ["query"],
       rowLimit: 25000,
-    }).catch(() => []),
+    }).catch((error) => { console.error("[gsc] searchAnalytics.query 실패, 빈 결과로 대체:", error); return []; }),
     // device/country 차원 — 콘텐츠 포맷·마켓 확장 우선순위를 실측으로
     // 뒷받침하는 참고 지표. (docs/gsc-additional-signals.md §3-⑤,⑥)
     querySearchAnalytics(accessToken, token.property, {
       startDate: isoDate(start),
       endDate: isoDate(end),
       dimensions: ["device"],
-    }).catch(() => []),
+    }).catch((error) => { console.error("[gsc] searchAnalytics.query 실패, 빈 결과로 대체:", error); return []; }),
     querySearchAnalytics(accessToken, token.property, {
       startDate: isoDate(start),
       endDate: isoDate(end),
       dimensions: ["country"],
       rowLimit: 5,
-    }).catch(() => []),
+    }).catch((error) => { console.error("[gsc] searchAnalytics.query 실패, 빈 결과로 대체:", error); return []; }),
   ]);
 
   // 일별 결과를 주 단위로 묶는다 (일요일 시작) — Overview/브랜드 가시성의
@@ -183,7 +183,7 @@ export async function getRealGscCoverageGaps(
       endDate: isoDate(end),
       dimensions: ["query", "page"],
       rowLimit: 1000,
-    }).catch(() => []),
+    }).catch((error) => { console.error("[gsc] searchAnalytics.query 실패, 빈 결과로 대체:", error); return []; }),
   ]);
 
   // 검색어별로 클릭이 가장 많은 페이지 하나만 남긴다.

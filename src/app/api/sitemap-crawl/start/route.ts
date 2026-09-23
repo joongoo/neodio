@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startSitemapCrawlJob, startUrlRecrawlJob } from "@/lib/backend/sitemapCrawlJobRunner";
 
+// 실제 크롤(Playwright 브라우저 설치 + npm run crawl:sitemap 자식 프로세스)은
+// 로컬 프로세스 전제로 짜여있어서 Vercel 서버리스에서 못 돈다 (읽기전용
+// 파일시스템이라 브라우저 설치 불가, 실행시간 제한, 프로세스 스폰 제약).
+// 조용히 타임아웃/500으로 죽는 대신 여기서 바로 명확한 이유를 준다.
+function refuseOnServerless() {
+  if (!process.env.VERCEL) return null;
+  return NextResponse.json(
+    { error: "사이트맵 크롤은 로컬 개발 환경에서만 실행할 수 있어요. 로컬에서 `npm run crawl:sitemap`을 실행해주세요." },
+    { status: 501 }
+  );
+}
+
 export async function POST(request: NextRequest) {
+  const refused = refuseOnServerless();
+  if (refused) return refused;
   const body = await request.json().catch(() => null);
   const domain = typeof body?.domain === "string" ? body.domain.trim() : "";
   const sitemapUrl = typeof body?.sitemapUrl === "string" ? body.sitemapUrl.trim() : "";
