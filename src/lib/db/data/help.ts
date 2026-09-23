@@ -156,6 +156,32 @@ export const roadmapGroups: RoadmapGroup[] = [
       },
     ],
   },
+  {
+    id: "geo-feature-ideas",
+    trigger: "상세 기획 예정 (경쟁 제품 벤치마킹, 2026-09-23)",
+    description:
+      "경쟁 GEO 제품(VIVI 등) 랜딩페이지를 검토하며 우리 제품에 없는 개념 중 반영을 고려할 만한 것들을 우선 수집했다. 아직 상세 기획 전이라 트리거/우선순위가 확정되지 않은 아이디어 목록이며, 기획이 끝나면 각 항목을 적절한 그룹으로 옮기거나 실제 작업으로 전환한다.",
+    items: [
+      {
+        id: "structured-data-opportunity",
+        title: "구조화 데이터(JSON-LD) 체크/생성을 새 '기회' 유형으로 추가",
+        description:
+          "현재 온사이트 콘텐츠 최적화 기회는 복잡도/FAQ/목차/멀티미디어/콘텐츠 가시성 회복 5종뿐이고, schema.org 구조화 데이터(JSON-LD) 항목이 없다. AI 크롤러가 페이지 의미를 파악하는 데 구조화 데이터가 실질적으로 기여하므로, URL별 JSON-LD 존재 여부를 진단하고(크롤 결과에서 바로 확인 가능, LLM 없이도 1차 체크 가능) LLM 연동 후에는 자동 생성까지 이어지는 새 기회 카드를 검토한다.",
+      },
+      {
+        id: "visibility-funnel-chart",
+        title: "언급/인용을 퍼널(단계별 이탈) 형태로 보여주는 차트",
+        description:
+          "지금은 언급 수/인용 수를 각각 독립된 숫자·차트로만 보여준다. '전체 실행 → 언급 → 인용' 단계별로 어디서 새는지 한눈에 보여주는 퍼널 뷰를 가시성 개요 또는 브랜드 가시성에 추가하면, 개선 우선순위(언급은 되는데 인용이 안 되는지, 언급 자체가 안 되는지)를 더 직관적으로 파악할 수 있다.",
+      },
+      {
+        id: "additional-ai-engines",
+        title: "수집 대상 AI 엔진 확장 로드맵 (Perplexity/ChatGPT/Gemini 등)",
+        description:
+          "지금은 네이버 AI검색·구글 AI Overview 2개 엔진만 수집한다. 경쟁 제품은 Perplexity/ChatGPT/Gemini까지 커버하고 Bing/Claude를 '지원 예정'으로 명시한다. 각 엔진별로 봇 차단 회피 난이도와 API 유무가 다르므로, 엔진별 수집 가능성 조사부터 시작해 확장 우선순위를 정한다.",
+      },
+    ],
+  },
 ];
 
 // 실 유저가 소비하는 도움말 — 카드 목록 → 상세 페이지 흐름.
