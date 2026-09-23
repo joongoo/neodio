@@ -14,7 +14,7 @@ function unauthorized() {
   });
 }
 
-export function proxy(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const password = process.env.SITE_PASSWORD;
   if (!password) return NextResponse.next();
 

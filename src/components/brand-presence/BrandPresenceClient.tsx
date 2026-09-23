@@ -207,7 +207,7 @@ export function BrandPresenceClient({
       </div>
 
       <InfoBanner
-        title="브랜드 가시성는 어떻게 동작하나요"
+        title="브랜드 가시성은 어떻게 동작하나요"
         description="브랜드가 어디서, 얼마나 자주, 어떤 토픽에서 언급되는지 파악하고, 놓친 기회와 최적화 기회를 발견하세요."
         actionLabel="도움말 보기"
         onAction={() => router.push("/help/brand-presence")}
