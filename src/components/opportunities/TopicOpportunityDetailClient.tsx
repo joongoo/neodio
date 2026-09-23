@@ -7,7 +7,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
-import { TopicRow } from "@/lib/db";
+import { TopicRow, TopicVisibilityFunnel } from "@/lib/db";
 
 export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
   const router = useRouter();
@@ -75,10 +75,12 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
 
       <div className="flex gap-7 rounded-xl border border-neutral-200 bg-white px-6 py-5">
         <StatPair value={row.mentions} label="언급 수" />
-        <StatPair value={`${row.visibility}%`} label="가시성" />
+        <StatPair value={row.funnel && row.funnel.totalResponses === 0 ? "–" : `${row.visibility}%`} label="가시성" />
         <StatPair value={row.market} label="마켓" />
         <StatPair value={row.prompts.length} label="수집된 실행 수" />
       </div>
+
+      {row.funnel && <VisibilityFunnel funnel={row.funnel} />}
 
       <section className="rounded-xl border border-neutral-200 bg-white px-6 py-5">
         <h2 className="text-[15px] font-bold text-neutral-900">프롬프트 라이브러리</h2>
@@ -217,5 +219,54 @@ function StatPair({ value, label }: { value: number | string; label: string }) {
       <span className="text-xl font-bold text-neutral-900">{value}</span>
       <span className="text-[11px] text-neutral-500">{label}</span>
     </div>
+  );
+}
+
+// 4단계 중첩 퍼널 — "미노출"의 원인이 프롬프트 자체(AI가 답을 잘 안 만듦)
+// 인지 콘텐츠(경쟁사는 언급되는데 자사만 빠짐)인지 구간별로 구분해서
+// 보여준다. 각 단계는 앞 단계의 부분집합이라 % 표시는 항상 "전체 대비".
+function VisibilityFunnel({ funnel }: { funnel: TopicVisibilityFunnel }) {
+  const { totalResponses, aiExistResponses, commercialOpportunityResponses, mentionedResponses } = funnel;
+  const pct = (n: number) => (totalResponses === 0 ? "–" : `${Math.round((n / totalResponses) * 100)}%`);
+
+  const stages = [
+    { label: "전체 실행", value: totalResponses, pct: totalResponses === 0 ? "–" : "100%" },
+    { label: "AI 답변 존재", value: aiExistResponses, pct: pct(aiExistResponses) },
+    { label: "브랜드 언급 (자사+경쟁사)", value: commercialOpportunityResponses, pct: pct(commercialOpportunityResponses) },
+    { label: "자사 언급", value: mentionedResponses, pct: pct(mentionedResponses) },
+  ];
+
+  // 가장 크게 줄어든 구간을 찾아 원인별 처방을 다르게 안내한다.
+  const drops = [
+    { from: 0, to: 1, hint: "AI가 이 질문엔 답변 자체를 잘 안 만듭니다 — 콘텐츠로는 못 고치는 구간입니다. 질문 세트 자체를 재검토해보세요." },
+    { from: 1, to: 2, hint: "AI는 답하지만 브랜드 자체가 잘 안 나오는 개념 설명형 질문입니다 — 이 구간도 콘텐츠보다 질문 성격의 문제일 가능성이 높습니다." },
+    { from: 2, to: 3, hint: "다른 브랜드는 언급되는데 자사만 빠지고 있습니다 — 콘텐츠 보강이 효과 있을 가능성이 높은 구간입니다." },
+  ]
+    .map((d) => ({ ...d, size: stages[d.from].value - stages[d.to].value }))
+    .filter((d) => stages[d.from].value > 0);
+  const biggestDrop = drops.length > 0 ? drops.reduce((a, b) => (b.size > a.size ? b : a)) : null;
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white px-6 py-5">
+      <h2 className="text-[15px] font-bold text-neutral-900">Visibility Funnel</h2>
+      <p className="mt-1 text-xs text-neutral-500">
+        전체 실행에서 자사 언급까지 어느 단계에서 줄어드는지 봅니다. 봇 차단 등 진짜 수집 실패는 제외한 수치입니다.
+      </p>
+      <div className="mt-4 grid grid-cols-4 gap-3">
+        {stages.map((s, i) => (
+          <div key={s.label} className={`rounded-lg p-3 ${i === 0 ? "bg-slate-800 text-white" : "bg-violet-50 text-violet-900"}`}>
+            <div className="text-2xl font-bold">{s.pct}</div>
+            <div className={`mt-1 text-[11px] ${i === 0 ? "text-slate-300" : "text-violet-600"}`}>{s.label}</div>
+            <div className={`mt-0.5 text-[11px] ${i === 0 ? "text-slate-400" : "text-violet-500"}`}>{s.value}건</div>
+          </div>
+        ))}
+      </div>
+      {biggestDrop && (
+        <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="font-bold">가장 크게 줄어든 구간: </span>
+          {stages[biggestDrop.from].label} → {stages[biggestDrop.to].label} ({biggestDrop.size}건 감소). {biggestDrop.hint}
+        </p>
+      )}
+    </section>
   );
 }

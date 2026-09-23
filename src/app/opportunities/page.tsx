@@ -1,4 +1,4 @@
-import { AlertTriangle, FileWarning, ListTree, MessageCircleQuestion, Target, Type, Images } from "lucide-react";
+import { AlertTriangle, FileWarning, ListTree, MessageCircleQuestion, Target, Type, Images, Braces } from "lucide-react";
 import { getRealTopicRows } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { DEFAULT_ORG_ID, db } from "@/lib/db";
@@ -8,6 +8,7 @@ import {
   buildContentRecoveryFromCrawlHistory,
   buildFaqOpportunity,
   buildMultimediaOpportunity,
+  buildStructuredDataOpportunity,
   buildTocOpportunity,
   getSitemapCrawlHistory,
 } from "@/lib/backend/sitemapCrawlReader";
@@ -47,7 +48,15 @@ export default async function OpportunitiesPage() {
   const org = await db.organizations.get(DEFAULT_ORG_ID);
 
   const [robotsTxt, crawlHistory, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, excludedByMetric] = demo
-    ? [null, [], [], [], new Set<string>(), {}, { complexity: new Set<string>(), faq: new Set<string>(), toc: new Set<string>(), multimedia: new Set<string>() }]
+    ? [
+        null,
+        [],
+        [],
+        [],
+        new Set<string>(),
+        {},
+        { complexity: new Set<string>(), faq: new Set<string>(), toc: new Set<string>(), multimedia: new Set<string>(), structuredData: new Set<string>() },
+      ]
     : await Promise.all([
         org ? getRealRobotsTxtOpportunity(org.domain).catch(() => null) : Promise.resolve(null),
         org ? getSitemapCrawlHistory(org.domain).catch(() => []) : Promise.resolve([]),
@@ -60,7 +69,8 @@ export default async function OpportunitiesPage() {
           getExcludedUrls(DEFAULT_ORG_ID, "faq"),
           getExcludedUrls(DEFAULT_ORG_ID, "toc"),
           getExcludedUrls(DEFAULT_ORG_ID, "multimedia"),
-        ]).then(([complexity, faq, toc, multimedia]) => ({ complexity, faq, toc, multimedia })),
+          getExcludedUrls(DEFAULT_ORG_ID, "structured-data"),
+        ]).then(([complexity, faq, toc, multimedia, structuredData]) => ({ complexity, faq, toc, multimedia, structuredData })),
       ]);
 
   const libraryPrompts = [...promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id)), ...trackedRows].map((r) => r.prompt);
@@ -69,6 +79,7 @@ export default async function OpportunitiesPage() {
   const faq = buildFaqOpportunity(crawlHistory, excludedByMetric.faq);
   const toc = buildTocOpportunity(crawlHistory, excludedByMetric.toc);
   const multimedia = buildMultimediaOpportunity(crawlHistory, excludedByMetric.multimedia);
+  const structuredData = buildStructuredDataOpportunity(crawlHistory, excludedByMetric.structuredData);
 
   const topicOpportunitiesReal = demo
     ? []
@@ -106,6 +117,14 @@ export default async function OpportunitiesPage() {
       description: "목차가 있으면 LLM이 문서 구조를 파악하고 필요한 부분만 인용하기 쉬워집니다.",
       category: "기술적 SEO",
       status: auditStatus(toc),
+    },
+    {
+      href: "/opportunities/structured-data",
+      icon: Braces,
+      title: "구조화 데이터(JSON-LD) 추가",
+      description: "구조화 데이터가 있으면 AI 크롤러가 페이지의 종류와 속성을 명확하게 파악할 수 있습니다.",
+      category: "기술적 SEO",
+      status: auditStatus(structuredData),
     },
     ...topicOpportunitiesReal.map(
       (row): OpportunityCard => ({

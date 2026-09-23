@@ -110,6 +110,23 @@ function computeImageAltCoverage(html) {
   return Math.round((withAlt / imgTags.length) * 100);
 }
 
+// 구조화 데이터(JSON-LD) 존재 여부 — <script type="application/ld+json">
+// 안에 실제로 파싱 가능한(비어있지 않은) JSON이 있는지까지 확인한다.
+// 태그만 있고 내용이 깨진 경우는 없는 것으로 취급.
+function detectStructuredData(html) {
+  const blocks = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) ?? [];
+  return blocks.some((block) => {
+    const json = block.replace(/^<script[^>]*>/i, "").replace(/<\/script>$/i, "").trim();
+    if (!json) return false;
+    try {
+      const parsed = JSON.parse(json);
+      return parsed && (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0);
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function crawlUrl(page, url, timeoutMs) {
   let rawTextLength = 0;
   try {
@@ -140,6 +157,7 @@ async function crawlUrl(page, url, timeoutMs) {
       hasFaq: detectFaq(renderedHtml, renderedText),
       hasToc: detectToc(renderedHtml, renderedText),
       imageAltCoverage: computeImageAltCoverage(renderedHtml),
+      hasStructuredData: detectStructuredData(renderedHtml),
       error: null,
     };
   } catch (error) {
@@ -153,6 +171,7 @@ async function crawlUrl(page, url, timeoutMs) {
       hasFaq: false,
       hasToc: false,
       imageAltCoverage: 0,
+      hasStructuredData: false,
       error: error instanceof Error ? error.message : String(error),
     };
   }

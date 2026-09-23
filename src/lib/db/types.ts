@@ -348,6 +348,21 @@ export interface TopicRow {
   createdAt?: string;
   /** LLM API 연동 전까지 "DB 등록" 모달로 사람이 채운 콘텐츠 생성 가이드. */
   guide?: string;
+  /** Visibility Funnel — 전체 실행 중 AI가 실제로 답변을 만들었는지(AI
+   *  Existence)부터 자사 언급까지 4단계로 좁혀가며 어디서 새는지 보여준다.
+   *  실 수집 데이터가 있을 때만 채워진다(mock 데이터엔 없음). */
+  funnel?: TopicVisibilityFunnel;
+}
+
+export interface TopicVisibilityFunnel {
+  /** 이 토픽으로 시도한 전체 수집 실행 수 (봇 차단 등 진짜 수집 실패는 제외). */
+  totalResponses: number;
+  /** 그중 AI가 실제로 답변 블록을 생성한 실행 수. */
+  aiExistResponses: number;
+  /** 그중 자사 또는 등록된 경쟁사가 하나라도 언급된 실행 수. */
+  commercialOpportunityResponses: number;
+  /** 그중 자사 브랜드가 언급된 실행 수. */
+  mentionedResponses: number;
 }
 
 export interface TopicCategory {
@@ -941,6 +956,9 @@ export interface SitemapCrawlUrlResult {
   hasToc?: boolean;
   /** alt 속성이 채워진 <img> 비율(0~100%). */
   imageAltCoverage?: number;
+  /** schema.org 구조화 데이터(JSON-LD) 존재 여부 — AI 크롤러가 페이지
+   *  의미를 파악하는 데 도움을 준다. */
+  hasStructuredData?: boolean;
   error: string | null;
 }
 

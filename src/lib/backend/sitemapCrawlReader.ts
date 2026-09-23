@@ -322,8 +322,22 @@ const MULTIMEDIA_CONFIG: ContentAuditConfig = {
   getScore: (u) => u.imageAltCoverage ?? 0,
 };
 
+const STRUCTURED_DATA_CONFIG: ContentAuditConfig = {
+  metricKey: "structured-data",
+  title: "구조화 데이터(JSON-LD) 추가",
+  metricLabel: "구조화 데이터 포함 여부",
+  unit: "%",
+  description:
+    "schema.org 구조화 데이터(JSON-LD)가 있으면 AI 크롤러가 페이지의 종류·속성을 명확하게 파악할 수 있어, 본문 텍스트만 읽는 것보다 인용/요약이 정확해집니다.",
+  threshold: 50,
+  getScore: (u) => (u.hasStructuredData ? 100 : 0),
+};
+
 export function buildComplexityOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
   return buildContentAuditFromCrawlHistory(history, COMPLEXITY_CONFIG, excludedUrls);
+}
+export function buildStructuredDataOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
+  return buildContentAuditFromCrawlHistory(history, STRUCTURED_DATA_CONFIG, excludedUrls);
 }
 export function buildFaqOpportunity(history: SitemapCrawlResult[], excludedUrls?: Set<string>) {
   return buildContentAuditFromCrawlHistory(history, FAQ_CONFIG, excludedUrls);

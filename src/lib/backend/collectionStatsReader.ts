@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { listCollectedRuns } from "./collectionRuns";
+import { getRunOutcome } from "./collectionRunsTypes";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { brandPatterns } from "./processing/text";
@@ -17,6 +18,7 @@ import {
   MarketComparisonRow,
   OwnCitedUrlRow,
   PromptMetricsPoint,
+  PromptRunSeed,
   RankedRow,
   Sentiment,
   SentimentMoverRow,
@@ -27,6 +29,7 @@ import {
   ThirdPartyUrlRow,
   TopicPromptRow,
   TopicRow,
+  TopicVisibilityFunnel,
   UrlInspectorData,
 } from "@/lib/db/types";
 
@@ -495,6 +498,25 @@ export async function getRealTopicRows(
   }
   if (runIdsByQuery.size === 0) return null;
 
+  // Visibility Funnel(AI Existence 포함)은 status="success"만 보는 위
+  // promptRuns로는 계산할 수 없다 — "AI가 애초에 답을 안 만든" 실행은
+  // status가 "failed"로 뭉뚱그려져 저기서 이미 걸러졌기 때문이다. 같은
+  // 필터(엔진/카테고리/마켓)를 상태 무관하게 다시 적용해 쿼리별 전체
+  // 실행을 따로 모은다 — 토픽 발견 자체는 여전히 success 기준(위)이라
+  // 범위가 넓어지지 않는다.
+  const allRunsByQuery = new Map<string, PromptRunSeed[]>();
+  for (const f of runFiles) {
+    const run = f.promptRun;
+    if (filters.llmModelId && run.llmModelId !== filters.llmModelId) continue;
+    if (filters.category && run.rawMetadata.category !== filters.category) continue;
+    if (filters.marketId && run.marketId !== filters.marketId) continue;
+    const query = run.rawMetadata.query?.trim();
+    if (!query) continue;
+    const list = allRunsByQuery.get(query) ?? [];
+    list.push(run);
+    allRunsByQuery.set(query, list);
+  }
+
   // targetUrl 인용 트래킹용 — 이 필터 범위 안의 전체 수집(이 토픽의 실행뿐
   // 아니라 전부) 기준으로 그 URL이 실제로 몇 번 인용됐는지 센다. "이
   // 콘텐츠가 AI 답변에 인용되는가"는 원래 프롬프트가 아니라 다른
@@ -553,6 +575,20 @@ export async function getRealTopicRows(
 
     const targetUrl = extras.targetUrls?.[topic];
 
+    const allRuns = queries.flatMap((q) => allRunsByQuery.get(q) ?? []);
+    const outcomes = allRuns.map((run) => ({ run, outcome: getRunOutcome(run) }));
+    const totalResponses = outcomes.filter(({ outcome }) => outcome !== "collection-error").length;
+    const aiExistResponses = outcomes.filter(({ outcome }) => outcome === "ai-answered").length;
+    const commercialOpportunityResponses = runIds.filter(
+      (id) => ownMentionByRun.get(id) || (otherMentionCountByRun.get(id) ?? 0) > 0
+    ).length;
+    const funnel: TopicVisibilityFunnel = {
+      totalResponses,
+      aiExistResponses,
+      commercialOpportunityResponses,
+      mentionedResponses: mentionCount,
+    };
+
     const row: TopicRow = {
       id: `real-${topic}`,
       topic,
@@ -560,6 +596,7 @@ export async function getRealTopicRows(
       visibility: Math.round((mentionCount / runIds.length) * 100),
       market,
       prompts,
+      funnel,
       addedToLibrary:
         libraryPromptSet.size > 0 ? queries.some((q) => libraryPromptSet.has(q.trim().toLowerCase())) : undefined,
       targetUrl,
