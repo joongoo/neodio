@@ -18,10 +18,13 @@ import {
   BrandRankRow,
   CitedPageRow,
   CitedSourceRow,
+  DateRange,
   TopicCategory,
   TopicRow,
   VisibilityTableRow,
 } from "@/lib/db";
+
+const RANGE_WEEKS: Record<DateRange, number> = { "1w": 1, "2w": 2, "4w": 4 };
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   "top-prompts": "이미 브랜드가 언급된 토픽의 프롬프트입니다.",
@@ -77,8 +80,11 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
 // 필드를 두면 좁아서 실제로 잘 안 쓰였고, 토픽 이름을 눌러 상세로 들어가면
 // 어차피 같은 기능을 더 넓은 화면에서 쓸 수 있다.
 // 실행들을 주(일요일 시작) 단위로 묶어 각 주의 언급률(0~100)을 시간순
-// 배열로 만든다 — Sparkline 하나가 이 배열을 그대로 그린다.
-function weeklyMentionTrend(prompts: TopicRow["prompts"]): number[] {
+// 배열로 만든다 — Sparkline 하나가 이 배열을 그대로 그린다. 토픽 표 자체는
+// 전체 기간 집계라 상단 "기간" 필터의 영향을 안 받지만(getRealTopicRows
+// 주석 참고), 이 컬럼 이름이 "추이"라 필터를 무시하면 혼란스럽다 — 그래서
+// range만큼의 최근 주차로 잘라서 최소한 스파크라인은 필터에 반응하게 한다.
+function weeklyMentionTrend(prompts: TopicRow["prompts"], range: DateRange): number[] {
   const withDates = prompts.filter((p) => p.runAt);
   if (withDates.length < 2) return [];
   const byWeek = new Map<string, { total: number; mentioned: number }>();
@@ -91,15 +97,17 @@ function weeklyMentionTrend(prompts: TopicRow["prompts"]): number[] {
     if (p.myBrand === "노출") bucket.mentioned += 1;
     byWeek.set(week, bucket);
   }
-  return Array.from(byWeek.entries())
+  const weeks = Array.from(byWeek.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, { total, mentioned }]) => Math.round((mentioned / total) * 100));
+  return weeks.slice(-RANGE_WEEKS[range]);
 }
 
 function buildTopicColumns(
   trackedIds: Set<string>,
   onTrack: (row: TopicRow) => void,
-  isOpportunity: boolean
+  isOpportunity: boolean,
+  range: DateRange
 ): DataTableColumn<TopicRow>[] {
   const base: DataTableColumn<TopicRow>[] = [
     {
@@ -125,7 +133,7 @@ function buildTopicColumns(
       key: "trend",
       label: "추이",
       width: "w-[80px]",
-      render: (r) => <Sparkline values={weeklyMentionTrend(r.prompts)} />,
+      render: (r) => <Sparkline values={weeklyMentionTrend(r.prompts, range)} />,
     },
     {
       key: "market",
@@ -578,10 +586,14 @@ export function TopicsTableSection({
   categories,
   topicsByCategory,
   competitorBrandNames,
+  range,
 }: {
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
   competitorBrandNames: string[];
+  /** 토픽 표 자체는 range와 무관한 전체 기간 집계지만, "추이" 스파크라인만
+   *  이 값만큼의 최근 주차로 잘라서 보여준다. */
+  range: DateRange;
 }) {
   const router = useRouter();
   // "기회" 페이지의 "토픽 기회" 카드처럼 ?category=topic-opportunities로
@@ -679,9 +691,10 @@ export function TopicsTableSection({
             market: row.market,
             prompts: row.prompts.map((p) => ({ id: p.id, prompt: p.prompt })),
           }),
-        isTopicOpportunities
+        isTopicOpportunities,
+        range
       ),
-    [trackedIds, isTopicOpportunities]
+    [trackedIds, isTopicOpportunities, range]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
   const competitorBrandNameSet = useMemo(() => new Set(competitorBrandNames.map((name) => name.toLocaleLowerCase("ko-KR"))), [competitorBrandNames]);

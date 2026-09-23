@@ -101,6 +101,7 @@ export function VisibilityOverviewClient({
         categories={filteredCategories}
         topicsByCategory={filteredTopicsByCategory}
         competitorBrandNames={competitorBrandNames}
+        range={range}
       />
     </div>
   );
