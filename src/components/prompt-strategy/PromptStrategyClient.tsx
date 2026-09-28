@@ -11,6 +11,7 @@ import { LlmBulkBridgeModal } from "@/components/ui/LlmBulkBridgeModal";
 import { BrainstormWizardModal } from "@/components/prompt-strategy/BrainstormWizardModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
 import { CANONICAL_CATEGORIES } from "@/lib/categories";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 const CATEGORY_OPTIONS = CANONICAL_CATEGORIES;
 
@@ -62,6 +63,7 @@ export function PromptStrategyClient({
   uncategorizedTopicOptions?: string[];
 }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
   const topics = initial.topics;
   const [trackedIds, setTrackedIds] = useState<Set<string>>(() => new Set(preTrackedIds));
   const [brainstormOpen, setBrainstormOpen] = useState(false);
@@ -629,7 +631,7 @@ export function PromptStrategyClient({
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                onClick={() => router.push("/prompt-library")}
+                onClick={() => router.push(`${tenantBase}/prompt-library`)}
                 className="rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700"
               >
                 라이브러리 확인

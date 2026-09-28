@@ -32,7 +32,7 @@ const WORK_TYPES = ["자막(SRT) 업로드", "챕터(타임스탬프) 추가", "
 
 // 시안(AIO 인용 트래커 대시보드 1.pdf 3p) — 키워드 하나의 AIO 스냅샷.
 export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageData }) {
-  const { keyword, latest, citations, history, ownVideos, settings, device, demo, brandId } = data;
+  const { keyword, latest, citations, history, ownVideos, settings, device, demo, brandId, base } = data;
   const router = useRouter();
   const ownPositions = new Set(citations.filter((c) => c.sourceType === "own_video").map((c) => c.position));
   const bestOwn = ownPositions.size > 0 ? Math.min(...ownPositions) : null;
@@ -46,12 +46,12 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
     const res = await fetch(`/api/youtube-aio/keywords?brandId=${encodeURIComponent(brandId)}&id=${encodeURIComponent(keyword.id)}`, { method: "DELETE" }).catch(
       () => null
     );
-    if (res?.ok) router.push(`/youtube-aio?device=${device}`);
+    if (res?.ok) router.push(`${base}/youtube-aio?device=${device}`);
   }
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
-      <Link href={`/youtube-aio?device=${device}`} className="flex w-fit items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <Link href={`${base}/youtube-aio?device=${device}`} className="flex w-fit items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         키워드 목록
       </Link>
@@ -213,7 +213,7 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
               </p>
             </Card>
           ) : (
-            ownVideos.map((video) => <OwnVideoPanel key={video.videoId} video={video} brandId={brandId} demo={demo} device={device} />)
+            ownVideos.map((video) => <OwnVideoPanel key={video.videoId} video={video} brandId={brandId} demo={demo} device={device} base={base} />)
           )}
         </div>
       </div>
@@ -243,7 +243,7 @@ function VideoThumb({ url }: { url: string | null }) {
   return <img src={url} alt="" className="h-12 w-20 shrink-0 rounded bg-neutral-100 object-cover" />;
 }
 
-function OwnVideoPanel({ video, brandId, demo, device }: { video: AioOwnVideoDetail; brandId: string; demo: boolean; device: string }) {
+function OwnVideoPanel({ video, brandId, demo, device, base }: { video: AioOwnVideoDetail; brandId: string; demo: boolean; device: string; base: string }) {
   const router = useRouter();
   const [workDate, setWorkDate] = useState("");
   const [workType, setWorkType] = useState(WORK_TYPES[0]);
@@ -363,7 +363,7 @@ function OwnVideoPanel({ video, brandId, demo, device }: { video: AioOwnVideoDet
             {video.otherKeywords.map((k) => (
               <Link
                 key={k.id}
-                href={`/youtube-aio/${k.id}?device=${device}`}
+                href={`${base}/youtube-aio/${k.id}?device=${device}`}
                 className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
               >
                 {k.keyword}

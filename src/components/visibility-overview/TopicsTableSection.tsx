@@ -23,6 +23,7 @@ import {
   TopicRow,
   VisibilityTableRow,
 } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 const RANGE_WEEKS: Record<DateRange, number> = { "1w": 1, "2w": 2, "4w": 4 };
 
@@ -107,7 +108,8 @@ function buildTopicColumns(
   trackedIds: Set<string>,
   onTrack: (row: TopicRow) => void,
   isOpportunity: boolean,
-  range: DateRange
+  range: DateRange,
+  tenantBase: string
 ): DataTableColumn<TopicRow>[] {
   const base: DataTableColumn<TopicRow>[] = [
     {
@@ -117,7 +119,7 @@ function buildTopicColumns(
       render: (r) =>
         isOpportunity ? (
           <a
-            href={`/opportunities/topic/${encodeURIComponent(r.topic)}`}
+            href={`${tenantBase}/opportunities/topic/${encodeURIComponent(r.topic)}`}
             onClick={(e) => e.stopPropagation()}
             className="text-blue-600 hover:underline"
           >
@@ -596,6 +598,7 @@ export function TopicsTableSection({
   range: DateRange;
 }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
   // "기회" 페이지의 "토픽 기회" 카드처럼 ?category=topic-opportunities로
   // 바로 들어와서 해당 탭이 열리게 한다 — 없으면 기존처럼 첫 카테고리.
   const searchParams = useSearchParams();
@@ -635,7 +638,7 @@ export function TopicsTableSection({
         })
       )
     );
-    router.push("/prompt-library");
+    router.push(`${tenantBase}/prompt-library`);
   }
   const [visibleByFamily, setVisibleByFamily] = useState<Record<Family, Set<string>>>({
     topic: allKeys("topic"),
@@ -692,9 +695,10 @@ export function TopicsTableSection({
             prompts: row.prompts.map((p) => ({ id: p.id, prompt: p.prompt })),
           }),
         isTopicOpportunities,
-        range
+        range,
+        tenantBase
       ),
-    [trackedIds, isTopicOpportunities, range]
+    [trackedIds, isTopicOpportunities, range, tenantBase]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
   const competitorBrandNameSet = useMemo(() => new Set(competitorBrandNames.map((name) => name.toLocaleLowerCase("ko-KR"))), [competitorBrandNames]);

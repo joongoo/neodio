@@ -3,8 +3,10 @@
 import { ArrowLeft, CheckCircle2, AlertTriangle } from "lucide-react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { BlockedAgentRow, GscSitemapStatus, RobotsTxtOpportunity } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 export function RobotsTxtClient({ data, sitemaps }: { data: RobotsTxtOpportunity; sitemaps?: GscSitemapStatus[] | null }) {
+  const tenantBase = useTenantBase();
   const columns: DataTableColumn<BlockedAgentRow>[] = [
     { key: "agent", label: "에이전트", render: (r) => <span className="text-neutral-900">{r.agent}</span> },
     { key: "blockedUrls", label: "차단된 URL", width: "w-[140px]", render: (r) => <span className="text-red-700">{r.blockedUrls}</span> },
@@ -13,7 +15,7 @@ export function RobotsTxtClient({ data, sitemaps }: { data: RobotsTxtOpportunity
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6">
-      <a href="/opportunities" className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <a href={`${tenantBase}/opportunities`} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         기회 목록으로 돌아가기
       </a>

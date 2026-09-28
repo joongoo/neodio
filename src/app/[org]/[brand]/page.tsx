@@ -1,0 +1,305 @@
+import { listPromptLibrary } from "@/lib/backend/trackedTopics";
+import { ArrowUpRight } from "lucide-react";
+import { SentimentChart } from "@/components/charts/SentimentChart";
+import { MarketComparisonChart } from "@/components/charts/MarketComparisonChart";
+import { TrafficTrendChart } from "@/components/charts/TrafficTrendChart";
+import { RangeDropdown } from "@/components/overview/RangeDropdown";
+import { FilterDropdown } from "@/components/overview/FilterDropdown";
+import { ChecklistCard } from "@/components/overview/ChecklistCard";
+import { ChartPanel } from "@/components/overview/ChartPanel";
+import { ContentVisibilityCard } from "@/components/overview/ContentVisibilityCard";
+import { StatCard } from "@/components/overview/StatCard";
+import { DateRange, db } from "@/lib/db";
+import {
+  buildComplexityOpportunity,
+  buildContentRecoveryFromCrawlHistory,
+  buildContentVisibilityFromCrawl,
+  buildEmptyContentVisibility,
+  buildFaqOpportunity,
+  buildMultimediaOpportunity,
+  buildTocOpportunity,
+  getLatestSitemapCrawl,
+  getSitemapCrawlHistory,
+} from "@/lib/backend/sitemapCrawlReader";
+import { getRealMarketComparison, getRealSentimentSeries, getRealStatSeries, getRealTopicRows } from "@/lib/backend/collectionStatsReader";
+import { seedMarkets } from "@/lib/db/data/seed";
+import { isDemoMode } from "@/lib/backend/demoMode";
+import { getGscToken } from "@/lib/backend/gscTokenStore";
+import { Opportunity } from "@/lib/db";
+import { getManagedBrands } from "@/lib/backend/brandsManagementStore";
+import { getCurrentTenant } from "@/lib/backend/tenant";
+
+function normalizeHostname(hostname: string) {
+  return hostname.replace(/^www\./, "");
+}
+
+// Sitemap crawl results live under .tmp (see scripts/crawl-sitemap.mjs) and
+// change whenever someone crawls from Brand Management — never cache this
+// page on that data.
+export const dynamic = "force-dynamic";
+
+const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
+const RANGE_TEXT: Record<DateRange, string> = { "1w": "최근 1주", "2w": "최근 2주", "4w": "최근 4주" };
+
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; domain?: string; platform?: string; category?: string; market?: string }>;
+}) {
+  const tenant = await getCurrentTenant();
+  const orgId = tenant.orgId;
+  const params = await searchParams;
+  const range: DateRange = VALID_RANGES.includes(params.range as DateRange) ? (params.range as DateRange) : "4w";
+  // "Demo" 브랜드가 선택돼 있으면(OrgBrandSwitcher) 실 수집 데이터를 아예
+  // 안 읽고 mock만 보여준다 — 수집 로그가 비어 있어도 완성된 화면을 시연할
+  // 수 있게. Neodigm(기본값)은 계속 실 데이터(있으면)를 우선한다.
+  const demo = await isDemoMode();
+
+  const [
+    org,
+    statCardsSeed,
+    contentVisibilitySeed,
+    checklistSeed,
+    sentiment,
+    market,
+    traffic,
+    opportunities,
+    brandsDataSeed,
+    realBrands,
+    llmModels,
+    promptLibraryRows,
+  ] = await Promise.all([
+    tenant.org,
+    db.overview.getStatCards(orgId, range),
+    db.overview.getContentVisibility(orgId),
+    db.overview.getChecklist(orgId),
+    db.overview.getSentiment(orgId, range),
+    db.overview.getMarketComparison(orgId, range),
+    db.overview.getTrafficTrends(orgId, range),
+    db.overview.getOpportunities(orgId),
+    db.brandsManagement.get(orgId),
+    getManagedBrands(orgId),
+    db.seed.llmModels(),
+    listPromptLibrary(orgId, tenant.brandId),
+  ]);
+
+  // 카테고리/마켓/도메인 옵션은 Brand Management에 등록된 실제 데이터에서 가져온다
+  // (하드코딩된 "전체"뿐이던 플레이스홀더 대체). 도메인 필터는 org가 1개뿐이라
+  // 아직 실제로 값을 바꾸진 않는다 — 실 필터링은 플랫폼/카테고리/마켓 3개.
+  // 대기 중(pending) 브랜드는 온보딩(도메인 인증 등)이 끝나지 않아 아직 실제로
+  // 추적되지 않는 브랜드라, 활성(active) 브랜드가 되기 전까지는 도메인/마켓
+  // 필터에 노출하지 않는다 — 활성으로 전환되면 자동으로 옵션에 포함된다.
+  const brandsData = brandsDataSeed ? { ...brandsDataSeed, brands: realBrands } : null;
+  const activeBrands = realBrands.filter((b) => b.status === "active");
+  const domainOptions = Array.from(
+    new Set(activeBrands.map((b) => normalizeHostname(new URL(b.url).hostname)).concat(org.domain))
+  );
+  const platformOptions = ["전체", ...llmModels.map((m) => m.name)];
+  const categoryOptions = ["전체", ...(brandsData?.categories.map((c) => c.name) ?? [])];
+  const marketOptions = ["전체", ...Array.from(new Set(activeBrands.flatMap((b) => b.markets)))];
+
+  const ownBrand = brandsData?.brands.find(
+    (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
+  );
+  // mock(db.connections.getGsc)은 항상 "connected"라 실 OAuth가 생긴
+  // 지금은 체크리스트 판단 근거로 쓰면 안 된다 — Demo 브랜드에서만 mock,
+  // 그 외엔 실 토큰 유무가 유일한 근거 (연결 관리 페이지와 동일 원칙).
+  const gscConnected = ownBrand ? (demo ? (await db.connections.getGsc(ownBrand.id))?.status === "connected" : !!(await getGscToken(ownBrand.id))) : false;
+
+  // Real crawl data wins when one exists. No crawl yet but a sitemap is
+  // registered → prompt to crawl. No sitemap at all → prompt to register
+  // one first. See scripts/crawl-sitemap.mjs and the "사이트맵 크롤" button
+  // on a brand's detail page.
+  const latestCrawl = demo ? null : await getLatestSitemapCrawl(org.domain);
+  const contentVisibility =
+    !demo && latestCrawl && contentVisibilitySeed
+      ? buildContentVisibilityFromCrawl(latestCrawl, contentVisibilitySeed)
+      : demo && contentVisibilitySeed
+        ? contentVisibilitySeed
+        : buildEmptyContentVisibility(ownBrand?.sitemapUrl ? "not_crawled" : "no_sitemap", ownBrand?.id ?? null);
+
+  // 플랫폼/마켓 필터는 PromptRunSeed.llmModelId/marketId와 1:1로 대응돼서 실
+  // 데이터에 바로 적용된다. 카테고리는 수집 시점엔 안 받고 "수집 로그"의 "분석"
+  // 모달에서 사후에 태그해야만(rawMetadata.category) 매칭된다 — 아직 아무도
+  // 분류하지 않은 실행은 카테고리를 골라도 걸러지지 않는다(모두 제외됨).
+  const selectedLlmModelId = llmModels.find((m) => m.name === params.platform)?.id;
+  const selectedMarketId = seedMarkets.find((m) => m.label === params.market)?.id;
+  const realDataFilters = {
+    ...(selectedLlmModelId ? { llmModelId: selectedLlmModelId } : {}),
+    ...(params.category ? { category: params.category } : {}),
+    ...(selectedMarketId ? { marketId: selectedMarketId } : {}),
+  };
+
+  // Real collected-run data (mentions/citations/visibility score, sentiment,
+  // market comparison) wins over the seeded weekly snapshots once at least
+  // one collection has run — see the "수집 로그" page for the same
+  // computation applied live there. Traffic trends and opportunities stay
+  // seeded: they need CDN/analytics logs and a live robots.txt/opportunity
+  // feed we don't collect yet (neodigm_p0_scope.md §2).
+  const [realStats, realSentiment, realMarket] = demo
+    ? [null, null, null]
+    : await Promise.all([
+        getRealStatSeries(range, realDataFilters),
+        getRealSentimentSeries(range, realDataFilters),
+        getRealMarketComparison(range, realDataFilters),
+      ]);
+  const statCards = statCardsSeed.map((stat) => {
+    if (!realStats) return stat;
+    if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
+    if (stat.id === "brand-mentions") return { ...stat, ...realStats.brandMentions };
+    if (stat.id === "citations") return { ...stat, ...realStats.citations };
+    return stat;
+  });
+  const sentimentData = realSentiment ?? sentiment;
+  const marketData = realMarket ?? market;
+
+  // "최신 기회" — 실제 기회 DB(크롤 기록/토픽 수집 기록)에 createdAt이 있는
+  // 것만 모아 최신순 3개를 보여준다. createdAt이 없는 기회(예: robots.txt —
+  // 매번 실시간으로 다시 읽어와서 "발견 시점"이라는 개념 자체가 없다)는
+  // 최신 기회 랭킹에서 제외한다.
+  const crawlHistory = demo ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
+  const topicOpportunities = demo ? null : await getRealTopicRows({}, {}).catch(() => null);
+  const crawlBasedOpportunities: { href: string; title: string; createdAt: string }[] = [
+    { href: `${tenant.base}/opportunities/content-recovery`, opp: buildContentRecoveryFromCrawlHistory(crawlHistory) },
+    { href: `${tenant.base}/opportunities/complexity`, opp: buildComplexityOpportunity(crawlHistory) },
+    { href: `${tenant.base}/opportunities/faq`, opp: buildFaqOpportunity(crawlHistory) },
+    { href: `${tenant.base}/opportunities/toc`, opp: buildTocOpportunity(crawlHistory) },
+    { href: `${tenant.base}/opportunities/multimedia`, opp: buildMultimediaOpportunity(crawlHistory) },
+  ]
+    .filter((x) => x.opp !== null)
+    .map(({ href, opp }) => ({ href, title: opp!.title, createdAt: opp!.createdAt }));
+
+  const realOpportunityCards: (Opportunity & { href: string; createdAt: string })[] = [
+    ...crawlBasedOpportunities.map(({ href, title, createdAt }) => ({
+      id: href,
+      category: "기술적 GEO",
+      title,
+      href,
+      createdAt,
+    })),
+    ...(topicOpportunities?.opportunities ?? [])
+      .filter((row): row is typeof row & { createdAt: string } => !!row.createdAt)
+      .map((row) => ({
+        id: row.id,
+        category: "AI 가시성",
+        title: row.topic,
+        href: `${tenant.base}/opportunities/topic/${encodeURIComponent(row.topic)}`,
+        createdAt: row.createdAt,
+      })),
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const latestOpportunities: { id: string; category: string; title: string; href?: string }[] =
+    realOpportunityCards.length > 0 ? realOpportunityCards.slice(0, 3) : opportunities;
+
+  // 체크리스트 단계별 done을 실제 상태에서 계산 (docs/overview-checklists-plan.md).
+  // href가 없는 단계는 관련 기능이 아직 없다는 뜻이라 done도 항상 false로 둔다 —
+  // ChecklistCard가 그 단계를 "준비 중"으로 표시한다.
+  const hasUploadedPrompt = promptLibraryRows.some((p) => p.origin === "manual" || p.origin === "csv_import");
+  const STEP_DONE: Record<string, boolean> = {
+    "connect-traffic": realStats !== null,
+    "more-exposure": promptLibraryRows.length > 0,
+    "connect-search-console": gscConnected,
+    "connect-web-analytics": ownBrand?.analyticsConnected ?? false,
+    "upload-prompts": hasUploadedPrompt,
+  };
+  const checklist = checklistSeed.map((item) => {
+    const steps = item.steps.map((step) => ({ ...step, done: STEP_DONE[step.id] ?? step.done }));
+    return { ...item, steps, completedSteps: steps.filter((s) => s.done).length };
+  });
+
+  return (
+    <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900">개요</h1>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <RangeDropdown value={range} />
+            <FilterDropdown label="" paramKey="domain" value={params.domain ?? org.domain} options={domainOptions} />
+            <FilterDropdown label="플랫폼" paramKey="platform" value={params.platform ?? "전체"} options={platformOptions} />
+            <FilterDropdown label="카테고리" paramKey="category" value={params.category ?? "전체"} options={categoryOptions} />
+            <FilterDropdown label="마켓" paramKey="market" value={params.market ?? "전체"} options={marketOptions} />
+          </div>
+        </div>
+        {/* 공유/PDF 내보내기는 onClick이 없는 placeholder라 실제 기능이 생기기 전까지 숨김 */}
+      </div>
+
+      {contentVisibility && <ContentVisibilityCard data={contentVisibility} />}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {checklist.map((item) => (
+          <ChecklistCard key={item.id} item={item} />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {statCards.map((stat) => (
+          <StatCard key={stat.id} stat={stat} />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartPanel
+          title="감성 분포"
+          description={`${RANGE_TEXT[range]}간 AI 답변에 나타난 브랜드 언급의 감성을 우호적·중립·비우호적으로 나눠 보여줘요.`}
+          actionLabel="자세히보기"
+          actionHref={`${tenant.base}/brand-presence`}
+        >
+          <SentimentChart data={sentimentData} />
+        </ChartPanel>
+        <ChartPanel
+          title="마켓 비교"
+          description={`브랜드를 주요 마켓 브랜드와 비교해요. ${RANGE_TEXT[range]}간 집계된 주간 언급 수와 인용 수예요.`}
+          actionLabel="자세히보기"
+          actionHref={`${tenant.base}/brand-presence`}
+        >
+          <MarketComparisonChart data={marketData} />
+        </ChartPanel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartPanel
+          title="트래픽 추이"
+          description="에이전틱 트래픽과 리퍼럴 트래픽이 주별로 어떻게 변화했는지 보여줘요."
+        >
+          <TrafficTrendChart data={traffic} />
+        </ChartPanel>
+        <ChartPanel
+          title="최신 기회"
+          description="최근 추가된 기회 3건을 확인하세요."
+          actionLabel="전체보기"
+          actionHref={`${tenant.base}/opportunities`}
+        >
+          <div className="flex flex-col gap-2">
+            {latestOpportunities.map((opp) =>
+              opp.href ? (
+                <a
+                  key={opp.id}
+                  href={opp.href}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-left transition-colors hover:bg-neutral-50"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <b className="truncate text-sm text-neutral-900">{opp.title}</b>
+                    <span className="text-xs text-slate-500">{opp.category}</span>
+                  </div>
+                  <ArrowUpRight size={16} className="shrink-0 text-slate-400" />
+                </a>
+              ) : (
+                <button
+                  key={opp.id}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-left transition-colors hover:bg-neutral-50 cursor-pointer"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <b className="truncate text-sm text-neutral-900">{opp.title}</b>
+                    <span className="text-xs text-slate-500">{opp.category}</span>
+                  </div>
+                  <ArrowUpRight size={16} className="shrink-0 text-slate-400" />
+                </button>
+              )
+            )}
+          </div>
+        </ChartPanel>
+      </div>
+    </div>
+  );
+}

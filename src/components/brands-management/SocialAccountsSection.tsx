@@ -16,7 +16,6 @@ export interface ChannelCitationSummary {
 }
 
 const PLATFORMS = ["YouTube", "LinkedIn", "X", "Instagram", "Facebook", "기타"];
-const BRAND_COOKIE = "selected-brand";
 
 // 브랜드 설정의 "소셜 계정". YouTube 계정은 YouTube AIO 인용 판정용
 // 채널(연결 관리의 YouTube 채널 카드와 같은 데이터)로 연결돼, 이 채널
@@ -24,8 +23,7 @@ const BRAND_COOKIE = "selected-brand";
 // 이어준다. 다른 플랫폼은 예전처럼 목록에만 저장한다.
 export function SocialAccountsSection({
   brandId,
-  brandName,
-  brandActive,
+  citationsHref,
   accounts,
   channels,
   citationStats,
@@ -33,8 +31,8 @@ export function SocialAccountsSection({
   onServerSynced,
 }: {
   brandId: string;
-  brandName: string;
-  brandActive: boolean;
+  /** 이 브랜드의 YouTube AIO 인용 화면 주소(/{조직}/{브랜드}/youtube-aio) */
+  citationsHref: string;
   accounts: SocialAccount[];
   channels: BrandYoutubeChannel[];
   /** channelId → 최근 30일 인용 요약. null이면 아직 수집 기록 없음 */
@@ -89,12 +87,6 @@ export function SocialAccountsSection({
     const message = await connectYoutube(account.handle);
     setBusy(null);
     if (message) setError(`${account.handle}: ${message}`);
-  }
-
-  // 인용 현황 화면은 헤더에서 선택한 브랜드 기준 — 스위처와 같은 쿠키로 이 브랜드를 고른 뒤 이동한다.
-  function openCitations() {
-    document.cookie = `${BRAND_COOKIE}=${encodeURIComponent(brandName)}; path=/; max-age=31536000`;
-    router.push("/youtube-aio");
   }
 
   return (
@@ -152,17 +144,13 @@ export function SocialAccountsSection({
                             ? "최근 30일 인용 없음"
                             : `최근 30일 · 인용 키워드 ${stats.keywords}개 · 영상 ${stats.videos}개 · 마지막 ${stats.lastCitedDate?.slice(5).replace("-", "/")}`}
                       </span>
-                      {brandActive ? (
-                        <button
-                          type="button"
-                          onClick={openCitations}
-                          className="flex cursor-pointer items-center gap-1 font-medium text-slate-800 hover:opacity-70"
-                        >
-                          인용 현황 보기 <ArrowRight size={12} />
-                        </button>
-                      ) : (
-                        <span className="text-neutral-400">브랜드를 활성화하면 인용 현황을 볼 수 있습니다</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => router.push(citationsHref)}
+                        className="flex cursor-pointer items-center gap-1 font-medium text-slate-800 hover:opacity-70"
+                      >
+                        인용 현황 보기 <ArrowRight size={12} />
+                      </button>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between gap-2 border-t border-neutral-200 pt-1.5">

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { TopBar } from "@/components/layout/TopBar";
-import { Sidebar } from "@/components/layout/Sidebar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,13 +23,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex h-full flex-col">
-        <TopBar />
-        <div className="flex min-h-0 flex-1">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto bg-neutral-50">{children}</main>
-        </div>
-      </body>
+      {/* 헤더·사이드바는 [org]/[brand]/layout.tsx와 (global)/layout.tsx의 AppShell에 있다 —
+          조직·브랜드가 URL에 들어가서, 주소가 바뀔 때 다시 그려지는 레이아웃에 둬야 한다. */}
+      <body className="flex h-full flex-col">{children}</body>
     </html>
   );
 }

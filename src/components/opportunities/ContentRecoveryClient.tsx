@@ -11,6 +11,7 @@ import { GoogleIndexBadge } from "@/components/ui/GoogleIndexBadge";
 import { PageSpeedBadge } from "@/components/ui/PageSpeedBadge";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { ContentRecoveryOpportunity, ContentRecoveryUrl } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 const OPTIONAL_COLUMNS: ColumnOption[] = [
   { key: "contentVisibility", label: "가시성 %" },
@@ -23,6 +24,7 @@ const TABS = ["현재 제안", "수정 완료"] as const;
 
 export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryOpportunity; domain: string }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
   // url -> job 진행 상태. 재크롤은 URL당 하나씩, 여러 개 동시에 돌려도 되게
   // id별로 관리한다.
@@ -198,7 +200,7 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6 pb-10">
-      <a href="/opportunities" className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <a href={`${tenantBase}/opportunities`} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         기회 목록으로 돌아가기
       </a>

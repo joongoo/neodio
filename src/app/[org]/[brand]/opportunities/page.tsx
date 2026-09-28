@@ -89,7 +89,7 @@ export default async function OpportunitiesPage() {
 
   const contentCards: OpportunityCard[] = [
     {
-      href: "/opportunities/complexity",
+      href: `${tenant.base}/opportunities/complexity`,
       icon: Type,
       title: "복잡한 콘텐츠 단순화",
       description: "문장/단어 길이가 짧을수록 LLM이 이해하고 인용하기 쉬워집니다.",
@@ -97,7 +97,7 @@ export default async function OpportunitiesPage() {
       status: auditStatus(complexity),
     },
     {
-      href: "/opportunities/faq",
+      href: `${tenant.base}/opportunities/faq`,
       icon: MessageCircleQuestion,
       title: "관련 FAQ 추가",
       description: "FAQ 섹션이 있으면 LLM이 질문-답변 형태로 바로 인용하기 쉬워집니다.",
@@ -105,7 +105,7 @@ export default async function OpportunitiesPage() {
       status: auditStatus(faq),
     },
     {
-      href: "/opportunities/multimedia",
+      href: `${tenant.base}/opportunities/multimedia`,
       icon: Images,
       title: "멀티미디어 가시성 보강",
       description: "이미지 alt 텍스트가 없으면 LLM이 이미지 속 정보를 이해할 수 없습니다.",
@@ -113,7 +113,7 @@ export default async function OpportunitiesPage() {
       status: auditStatus(multimedia),
     },
     {
-      href: "/opportunities/toc",
+      href: `${tenant.base}/opportunities/toc`,
       icon: ListTree,
       title: "목차(Table of Content) 추가",
       description: "목차가 있으면 LLM이 문서 구조를 파악하고 필요한 부분만 인용하기 쉬워집니다.",
@@ -121,7 +121,7 @@ export default async function OpportunitiesPage() {
       status: auditStatus(toc),
     },
     {
-      href: "/opportunities/structured-data",
+      href: `${tenant.base}/opportunities/structured-data`,
       icon: Braces,
       title: "구조화 데이터(JSON-LD) 추가",
       description: "구조화 데이터가 있으면 AI 크롤러가 페이지의 종류와 속성을 명확하게 파악할 수 있습니다.",
@@ -130,7 +130,7 @@ export default async function OpportunitiesPage() {
     },
     ...topicOpportunitiesReal.map(
       (row): OpportunityCard => ({
-        href: `/opportunities/topic/${encodeURIComponent(row.topic)}`,
+        href: `${tenant.base}/opportunities/topic/${encodeURIComponent(row.topic)}`,
         icon: Target,
         title: row.topic,
         description: `GSC/실측 수집에서 발견된 토픽이지만, 아직 우리 브랜드가 언급되지 않았습니다. (마켓: ${row.market})`,
@@ -148,7 +148,7 @@ export default async function OpportunitiesPage() {
 
   const technicalCards: OpportunityCard[] = [
     {
-      href: "/opportunities/robots-txt",
+      href: `${tenant.base}/opportunities/robots-txt`,
       icon: FileWarning,
       title: "robots.txt로 차단된 트래픽",
       description: "AI 에이전트가 robots.txt에 의해 접근을 차단당한 URL을 진단합니다.",
@@ -161,7 +161,7 @@ export default async function OpportunitiesPage() {
             : { text: "차단 없음", tone: "ok" },
     },
     {
-      href: "/opportunities/content-recovery",
+      href: `${tenant.base}/opportunities/content-recovery`,
       icon: AlertTriangle,
       title: "콘텐츠 가시성 회복",
       description: "AI 에이전트가 JavaScript를 실행하지 못해 놓치는 콘텐츠를 찾아 최적화합니다.",

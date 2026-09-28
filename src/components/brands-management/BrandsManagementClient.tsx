@@ -9,6 +9,7 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { CreateCategoryModal, EditCategoryModal, DeleteCategoryModal } from "@/components/brands-management/CategoryModals";
 import { AddBrandWizardModal } from "@/components/brands-management/AddBrandWizardModal";
 import { BrandsManagementData, ManagedBrand, ManagedCategory } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 // 브랜드 추가/삭제는 실 파일 저장소(brandsManagementStore.ts)에 반영된다 —
 // 상태 전환(활성 ↔ 대기)과 편집은 브랜드 상세 페이지(BrandDetailClient)에서
@@ -245,8 +246,9 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
 }
 
 function BrandCard({ brand, onDelete }: { brand: ManagedBrand; onDelete: () => void }) {
+  const tenantBase = useTenantBase();
   return (
-    <a href={`/brands-management/${brand.id}`} className="block">
+    <a href={`${tenantBase}/brands-management/${brand.id}`} className="block">
       <Card className="flex flex-col gap-3 p-5 transition-colors hover:bg-neutral-50">
         <div className="flex items-center justify-between">
           <div>

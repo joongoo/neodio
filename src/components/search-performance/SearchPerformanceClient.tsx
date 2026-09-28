@@ -7,6 +7,7 @@ import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
 import { DataTable } from "@/components/ui/DataTable";
 import { MultiLineChart } from "@/components/charts/MultiLineChart";
 import { GscConnection, GscSearchPerformanceResult } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 // Mirrors SearchTrendClient's shell (banner → chart), but the data source is
 // GSC's own real property (docs/gsc-search-analytics-plan.md) rather than a
@@ -30,6 +31,7 @@ export function SearchPerformanceClient({
    *  fallback (no connection yet, or "Demo" 브랜드). */
   real: boolean;
 }) {
+  const tenantBase = useTenantBase();
   const connected = gsc?.status === "connected";
 
   return (
@@ -59,7 +61,7 @@ export function SearchPerformanceClient({
         <Card className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-sm font-medium text-neutral-700">연결된 Search Console 데이터가 없습니다.</p>
           <p className="text-xs text-neutral-500">Manage Connections에서 계정을 연결하면 검색 성과 데이터를 볼 수 있습니다.</p>
-          <a href={brandId ? `/brands-management/${brandId}/connections` : "/brands-management"}>
+          <a href={brandId ? `${tenantBase}/brands-management/${brandId}/connections` : `${tenantBase}/brands-management`}>
             <Button variant="primary">Manage Connections으로 이동</Button>
           </a>
         </Card>

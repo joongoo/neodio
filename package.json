@@ -15,7 +15,7 @@
     "db:sync-to-prod": "set -a && . ./.env.local && SOURCE_POSTGRES_URL=$POSTGRES_URL && . ./.env.neon.local && set +a && tsx scripts/sync-local-to-remote.ts",
     "db:sync-org-to-prod": "set -a && . ./.env.local && SOURCE_POSTGRES_URL=$POSTGRES_URL && . ./.env.neon.local && set +a && tsx scripts/sync-org-to-remote.ts",
     "test:db": "node scripts/test-pg-harness.mjs",
-    "test:unit": "tsx --test src/lib/backend/youtube.test.ts src/lib/backend/aio/judge.test.ts src/lib/backend/aio/metrics.test.ts src/lib/youtubeSocial.test.ts",
+    "test:unit": "tsx --test src/lib/backend/youtube.test.ts src/lib/backend/aio/judge.test.ts src/lib/backend/aio/metrics.test.ts src/lib/youtubeSocial.test.ts src/lib/slug.test.ts src/lib/tenantRouting.test.ts",
     "collect:naver-ai": "node scripts/collect-naver-ai.mjs",
     "open:naver-ai-chrome": "node scripts/open-naver-ai-chrome.mjs",
     "collect:google-ai": "node scripts/collect-google-ai.mjs",

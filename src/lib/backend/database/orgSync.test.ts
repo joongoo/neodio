@@ -55,7 +55,7 @@ after(async () => {
 
 test("collected runs land in the organization of the job that produced them", async () => {
   const store = await db.getPromptStore();
-  const sf = await store.createOrganization("Salesforce");
+  const sf = await store.createOrganization("Salesforce", "salesforce");
   await db.persistCollectionJob({
     id: "job-sf",
     organizationId: sf.id,

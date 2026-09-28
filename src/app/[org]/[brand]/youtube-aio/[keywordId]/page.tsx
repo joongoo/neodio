@@ -14,7 +14,7 @@ export default async function YoutubeAioKeywordPage({
 }) {
   const { keywordId } = await params;
   const data = await loadAioKeywordDetailPage(decodeURIComponent(keywordId), await searchParams);
-  if (data.kind === "setup") return <YoutubeAioSetupGate brandId={data.brandId} brandName={data.brandName} />;
+  if (data.kind === "setup") return <YoutubeAioSetupGate brandId={data.brandId} brandName={data.brandName} base={data.base} />;
   if (data.kind === "not_found") notFound();
   return <AioKeywordDetailClient data={data} />;
 }

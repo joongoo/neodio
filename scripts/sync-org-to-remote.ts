@@ -37,7 +37,7 @@ async function main() {
   await new PromptStore(targetPool).init();
 
   const q = async <T extends Row = Row>(sql: string, params: unknown[] = []) => (await source.query(sql, params)).rows as T[];
-  const [org] = await q<{ id: string; name: string }>("SELECT id,name FROM organizations WHERE name=$1", [orgName]);
+  const [org] = await q<{ id: string; name: string; slug: string | null }>("SELECT id,name,slug FROM organizations WHERE name=$1", [orgName]);
   if (!org) throw new Error(`로컬에 "${orgName}" 조직이 없습니다.`);
 
   const aiVisibility = await q<{ n: number }>(
@@ -57,7 +57,11 @@ async function main() {
     // 조직 — 원격에 같은 이름이 있으면 그 조직으로, 없으면 로컬 id 그대로 만든다.
     const [remoteOrg] = await t<{ id: string }>("SELECT id FROM organizations WHERE name=$1", [org.name]);
     const orgId = remoteOrg?.id ?? org.id;
-    if (!remoteOrg) add("조직", await exec("INSERT INTO organizations VALUES ($1,$2)", [orgId, org.name]));
+    // 슬러그(URL의 조직 자리)도 같이 — 원격에서 이미 쓰는 슬러그면 비워 두고 앱 초기화가 채우게 한다.
+    const [slugTaken] = org.slug ? await t("SELECT 1 FROM organizations WHERE slug=$1", [org.slug]) : [];
+    if (!remoteOrg) {
+      add("조직", await exec("INSERT INTO organizations (id,name,slug) VALUES ($1,$2,$3)", [orgId, org.name, slugTaken ? null : org.slug]));
+    }
 
     const brands = await q("SELECT * FROM brands WHERE organization_id=$1", [org.id]);
     for (const brand of brands) {

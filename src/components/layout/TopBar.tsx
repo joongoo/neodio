@@ -10,6 +10,10 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 // context instead of each page inventing its own placement for it.
 export async function TopBar() {
   const tenant = await getCurrentTenant();
+  // 활성 브랜드 + (대기 중인) 지금 보고 있는 브랜드 — 주소로 연 대기 브랜드도 스위처에 보이게.
+  const switcherBrands = tenant.activeBrands.some((b) => b.slug === tenant.brandSlug) || !tenant.brand
+    ? tenant.activeBrands
+    : [...tenant.activeBrands, { name: tenant.brand.name, slug: tenant.brandSlug }];
 
   return (
     <header className="flex items-center gap-3 border-b border-neutral-200 bg-[#fbfbfb] px-6 py-3">
@@ -20,9 +24,9 @@ export async function TopBar() {
       <div className="mx-2 h-6 w-px bg-neutral-200" />
       <OrgBrandSwitcher
         organizations={tenant.organizations}
-        selectedOrgId={tenant.orgId}
-        brands={tenant.activeBrands.map((b) => b.name)}
-        selectedBrand={tenant.selectedBrandName}
+        orgSlug={tenant.orgSlug}
+        brands={switcherBrands}
+        brandSlug={tenant.brandSlug}
       />
       <div className="flex-1" />
       <button

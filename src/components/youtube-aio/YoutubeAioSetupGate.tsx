@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/Button";
 // YouTube 채널이 연동되지 않은 브랜드로 들어오면 대시보드 대신 보여준다 —
 // 판정 기준(채널 ID)이 없으면 보여줄 수 있는 게 없으므로, 닫을 수 있는
 // 배너가 아니라 연동이 끝날 때까지 이 화면이 유지된다.
-export function YoutubeAioSetupGate({ brandId, brandName }: { brandId: string | null; brandName: string | null }) {
-  const href = brandId ? `/brands-management/${brandId}/connections#youtube` : "/brands-management";
+export function YoutubeAioSetupGate({ brandId, brandName, base }: { brandId: string | null; brandName: string | null; base: string }) {
+  const href = brandId ? `${base}/brands-management/${brandId}/connections#youtube` : `${base}/brands-management`;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">

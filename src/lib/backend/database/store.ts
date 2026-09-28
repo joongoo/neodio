@@ -108,21 +108,28 @@ export class PromptStore {
   }
 
   // 조직 관리(설정 > 조직 관리) — 헤더의 조직 스위처가 이 목록을 쓴다.
-  async listOrganizations(): Promise<{ id: string; name: string; brandCount: number }[]> {
-    return this.query<{ id: string; name: string; brandCount: number }>(
-      `SELECT o.id, o.name, count(b.id)::int AS "brandCount" FROM organizations o
-       LEFT JOIN brands b ON b.organization_id=o.id GROUP BY o.id,o.name ORDER BY o.name`
+  // slug = URL의 조직 자리(/{slug}/{브랜드}/…). 예전 조직은 초기화 때 채워진다(database/index.ts).
+  async listOrganizations(): Promise<{ id: string; name: string; slug: string; brandCount: number }[]> {
+    return this.query<{ id: string; name: string; slug: string; brandCount: number }>(
+      `SELECT o.id, o.name, coalesce(o.slug, o.id) AS slug, count(b.id)::int AS "brandCount" FROM organizations o
+       LEFT JOIN brands b ON b.organization_id=o.id GROUP BY o.id,o.name,o.slug ORDER BY o.name`
     );
   }
 
-  async createOrganization(name: string): Promise<{ id: string; name: string }> {
+  async createOrganization(name: string, slug: string): Promise<{ id: string; name: string; slug: string }> {
     const orgId = id("org");
-    await this.run("INSERT INTO organizations VALUES ($1,$2)", [orgId, name]);
-    return { id: orgId, name };
+    await this.run("INSERT INTO organizations (id,name,slug) VALUES ($1,$2,$3)", [orgId, name, slug]);
+    return { id: orgId, name, slug };
   }
 
-  async renameOrganization(orgId: string, name: string): Promise<boolean> {
-    return (await this.run("UPDATE organizations SET name=$2 WHERE id=$1", [orgId, name])) > 0;
+  async updateOrganization(orgId: string, patch: { name?: string; slug?: string }): Promise<boolean> {
+    return (
+      (await this.run("UPDATE organizations SET name=coalesce($2,name), slug=coalesce($3,slug) WHERE id=$1", [
+        orgId,
+        patch.name ?? null,
+        patch.slug ?? null,
+      ])) > 0
+    );
   }
 
   /** 브랜드가 남아 있는 조직은 지우지 않는다(false). 브랜드가 없으면 조직에 딸린 프롬프트·수집 기록까지 정리한다. */

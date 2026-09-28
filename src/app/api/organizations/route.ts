@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPromptStore } from "@/lib/backend/database";
+import { orgSlugError } from "@/lib/slug";
 
 // 설정 > 조직 관리 — 조직 목록/추가/이름 변경/삭제. 조직을 고르는 것은
 // 헤더 스위처(쿠키)의 몫이고, 여기서는 조직 자체만 다룬다.
@@ -12,9 +13,19 @@ function validateName(value: unknown): string | { error: string } {
   return name;
 }
 
-async function nameTaken(name: string, exceptId?: string) {
-  const orgs = await (await getPromptStore()).listOrganizations();
-  return orgs.some((o) => o.id !== exceptId && o.name.toLocaleLowerCase("ko-KR") === name.toLocaleLowerCase("ko-KR"));
+// URL의 조직 자리 — 영문 소문자·숫자·하이픈, 앱 화면 주소와 겹치면 안 된다(src/lib/slug.ts).
+function validateSlug(value: unknown): string | { error: string } {
+  const slug = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!slug) return { error: "URL 슬러그를 입력하세요." };
+  const error = orgSlugError(slug);
+  return error ? { error } : slug;
+}
+
+async function conflict(name: string, slug: string | null, exceptId?: string): Promise<string | null> {
+  const orgs = (await (await getPromptStore()).listOrganizations()).filter((o) => o.id !== exceptId);
+  if (orgs.some((o) => o.name.toLocaleLowerCase("ko-KR") === name.toLocaleLowerCase("ko-KR"))) return "같은 이름의 조직이 있습니다.";
+  if (slug && orgs.some((o) => o.slug === slug)) return "같은 URL 슬러그를 쓰는 조직이 있습니다.";
+  return null;
 }
 
 export async function GET() {
@@ -22,11 +33,15 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const name = validateName((await request.json().catch(() => null))?.name);
+  const body = await request.json().catch(() => null);
+  const name = validateName(body?.name);
   if (typeof name !== "string") return NextResponse.json(name, { status: 400 });
-  // 헤더 스위처가 이름으로 조직을 고르므로 이름은 겹치면 안 된다.
-  if (await nameTaken(name)) return NextResponse.json({ error: "같은 이름의 조직이 있습니다." }, { status: 409 });
-  const organization = await (await getPromptStore()).createOrganization(name);
+  const slug = validateSlug(body?.slug);
+  if (typeof slug !== "string") return NextResponse.json(slug, { status: 400 });
+  // 헤더 스위처가 이름으로, URL이 슬러그로 조직을 고르므로 둘 다 겹치면 안 된다.
+  const clash = await conflict(name, slug);
+  if (clash) return NextResponse.json({ error: clash }, { status: 409 });
+  const organization = await (await getPromptStore()).createOrganization(name, slug);
   return NextResponse.json({ organization }, { status: 201 });
 }
 
@@ -36,8 +51,12 @@ export async function PATCH(request: NextRequest) {
   const name = validateName(body?.name);
   if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
   if (typeof name !== "string") return NextResponse.json(name, { status: 400 });
-  if (await nameTaken(name, id)) return NextResponse.json({ error: "같은 이름의 조직이 있습니다." }, { status: 409 });
-  if (!(await (await getPromptStore()).renameOrganization(id, name))) {
+  // 슬러그를 바꾸면 그 조직의 기존 링크(북마크)는 더 이상 열리지 않는다 — 화면에서 경고한다.
+  const slug = body?.slug === undefined ? null : validateSlug(body.slug);
+  if (slug !== null && typeof slug !== "string") return NextResponse.json(slug, { status: 400 });
+  const clash = await conflict(name, slug, id);
+  if (clash) return NextResponse.json({ error: clash }, { status: 409 });
+  if (!(await (await getPromptStore()).updateOrganization(id, { name, slug: slug ?? undefined }))) {
     return NextResponse.json({ error: "조직을 찾을 수 없습니다." }, { status: 404 });
   }
   return NextResponse.json({ ok: true });

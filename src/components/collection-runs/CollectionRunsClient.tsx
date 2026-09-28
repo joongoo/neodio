@@ -13,6 +13,7 @@ import { BrandSeed } from "@/lib/db";
 import { ProcessedPromptRuns } from "@/lib/backend/processing";
 import { CollectedRunFile, formatKst, isBotBlocked } from "@/lib/backend/collectionRunsTypes";
 import { useRouter } from "next/navigation";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 const ENGINE_LABEL: Record<string, string> = {
   "naver-ai-search": "네이버 AI검색",
@@ -144,6 +145,7 @@ export function CollectionRunsClient({
   categories: string[];
 }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
   const [analyzingFile, setAnalyzingFile] = useState<CollectedRunFile | null>(null);
   const [search, setSearch] = useState("");
   const ownBrand = brands.find((b) => b.isOwnBrand);
@@ -218,7 +220,7 @@ export function CollectionRunsClient({
             title="이 원문·인용 데이터가 다음 LLM 분석 단계의 입력입니다"
             description="브랜드 언급/인용은 이미 이 페이지에서 실시간으로 계산됩니다. 다음 단계는 이 결과를 LLM에 전달해 프롬프트 전략과 기회를 자동 제안하는 것입니다."
             actionLabel="프롬프트 전략에서 확인"
-            onAction={() => router.push("/prompt-strategy")}
+            onAction={() => router.push(`${tenantBase}/prompt-strategy`)}
           />
         </>
       )}

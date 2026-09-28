@@ -1,6 +1,6 @@
 import { BrandDetailClient } from "@/components/brands-management/BrandDetailClient";
-
-import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { getManagedBrand, getManagedBrands } from "@/lib/backend/brandsManagementStore";
+import { assignBrandSlugs } from "@/lib/slug";
 import { getRealTopBrands } from "@/lib/backend/collectionStatsReader";
 import { listBrandYoutubeChannels } from "@/lib/backend/brandAioConfig";
 import { channelCitationStats, seoulDate } from "@/lib/backend/aio/store";
@@ -19,6 +19,9 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ br
     listBrandYoutubeChannels(brandId),
   ]);
   if (!brand) return null;
+  // 이 브랜드의 YouTube AIO 인용 화면 주소 — 지금 헤더에서 고른 브랜드가 아니라 이 브랜드 기준.
+  const brandSlug = assignBrandSlugs(await getManagedBrands(tenant.orgId)).get(brand.id)!;
+  const citationsHref = `/${encodeURIComponent(tenant.orgSlug)}/${encodeURIComponent(brandSlug)}/youtube-aio`;
   // 소셜 계정의 YouTube 채널별 최근 30일 AIO 인용 요약
   const stats =
     youtubeChannels.length > 0
@@ -38,6 +41,7 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ br
       observedBrands={observedBrands}
       youtubeChannels={youtubeChannels}
       channelCitationStats={stats ? Object.fromEntries(stats) : null}
+      citationsHref={citationsHref}
     />
   );
 }

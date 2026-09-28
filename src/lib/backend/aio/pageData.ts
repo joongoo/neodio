@@ -25,9 +25,11 @@ import {
 // 기간은 다른 화면(개요·가시성 개요)과 같은 DateRange(1w/2w/4w, 기본 4w).
 const RANGE_WEEKS: Record<DateRange, number> = { "1w": 1, "2w": 2, "4w": 4 };
 
-export type AioSetupState = { kind: "setup"; brandId: string | null; brandName: string | null };
+export type AioSetupState = { kind: "setup"; brandId: string | null; brandName: string | null; base: string };
 
 interface Context {
+  /** /{조직}/{브랜드} — 화면 안 링크의 앞부분 */
+  base: string;
   demo: boolean;
   brandId: string;
   brandName: string;
@@ -46,6 +48,7 @@ async function loadContext(): Promise<Context | AioSetupState> {
   if (tenant.demo) {
     const demo = buildDemoAioData(today);
     return {
+      base: tenant.base,
       demo: true,
       brandId: "demo",
       brandName: "Demo",
@@ -71,11 +74,12 @@ async function loadContext(): Promise<Context | AioSetupState> {
   }
 
   const brand = tenant.brand;
-  if (!brand) return { kind: "setup", brandId: null, brandName: null };
+  if (!brand) return { kind: "setup", brandId: null, brandName: null, base: tenant.base };
   const channels = await listBrandYoutubeChannels(brand.id);
-  if (channels.length === 0) return { kind: "setup", brandId: brand.id, brandName: brand.name };
+  if (channels.length === 0) return { kind: "setup", brandId: brand.id, brandName: brand.name, base: tenant.base };
   const [settings, keywords] = await Promise.all([getBrandAioSettings(brand.id), listAioKeywords(brand.id)]);
   return {
+    base: tenant.base,
     demo: false,
     brandId: brand.id,
     brandName: brand.name,
@@ -95,6 +99,7 @@ function pickDevice(settings: BrandAioSettings, requested: string | undefined): 
 
 export interface AioOverviewPageData {
   kind: "ready";
+  base: string;
   demo: boolean;
   brandId: string;
   brandName: string;
@@ -130,6 +135,7 @@ export async function loadAioOverviewPage(params: {
 
   return {
     kind: "ready",
+    base: ctx.base,
     demo: ctx.demo,
     brandId: ctx.brandId,
     brandName: ctx.brandName,
@@ -156,6 +162,7 @@ export interface AioOwnVideoDetail {
 
 export interface AioKeywordDetailPageData {
   kind: "ready";
+  base: string;
   demo: boolean;
   brandId: string;
   settings: BrandAioSettings;
@@ -217,6 +224,7 @@ export async function loadAioKeywordDetailPage(
 
   return {
     kind: "ready",
+    base: ctx.base,
     demo: ctx.demo,
     brandId: ctx.brandId,
     settings: ctx.settings,

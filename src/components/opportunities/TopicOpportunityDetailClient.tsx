@@ -8,9 +8,11 @@ import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { TopicRow, TopicVisibilityFunnel } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
   const [trackOpen, setTrackOpen] = useState(false);
   const [targetUrlInput, setTargetUrlInput] = useState(row.targetUrl ?? "");
   const [saving, setSaving] = useState(false);
@@ -61,7 +63,7 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6 pb-10">
-      <a href="/opportunities" className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <a href={`${tenantBase}/opportunities`} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         기회 목록으로 돌아가기
       </a>

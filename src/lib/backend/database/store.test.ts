@@ -157,18 +157,20 @@ test("legacy brainstorm strings are adapted without changing their prompt text",
 test("organizations: create, rename, list with brand counts, delete only when empty", async () => {
   const store = await database();
   await store.ensureOrg("neodigm", "Neodigm");
-  const sf = await store.createOrganization("Salesforce");
+  const sf = await store.createOrganization("Salesforce", "salesforce");
   assert.match(sf.id, /^org-/);
-  assert.equal(await store.renameOrganization(sf.id, "Salesforce Korea"), true);
-  assert.equal(await store.renameOrganization("missing", "x"), false);
+  assert.equal(await store.updateOrganization(sf.id, { name: "Salesforce Korea" }), true);
+  assert.equal(await store.updateOrganization(sf.id, { slug: "salesforce-kr" }), true);
+  assert.equal(await store.updateOrganization("missing", { name: "x" }), false);
+  await assert.rejects(store.createOrganization("Other", "salesforce-kr"), /duplicate key/, "slugs are unique");
 
   const brand = await store.createBrand(sf.id, {
     name: "Salesforce", url: "https://www.salesforce.com", sitemapUrl: "", description: "", industry: "", markets: [], status: "pending",
     aliases: [], otherBrands: [], urls: [], socialAccounts: [], earnedContentSources: [], cdnConnected: false, gscConnected: false, analyticsConnected: false,
   });
   assert.deepEqual(
-    (await store.listOrganizations()).map((o) => [o.name, o.brandCount]),
-    [["Neodigm", 0], ["Salesforce Korea", 1]]
+    (await store.listOrganizations()).map((o) => [o.name, o.slug, o.brandCount]),
+    [["Neodigm", "neodigm", 0], ["Salesforce Korea", "salesforce-kr", 1]]
   );
   assert.equal((await store.getBrandById(brand.id))?.organizationId, sf.id);
   assert.equal(await store.getBrand("neodigm", brand.id), null, "a brand is not visible from another organization");

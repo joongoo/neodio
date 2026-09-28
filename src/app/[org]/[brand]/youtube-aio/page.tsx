@@ -11,6 +11,6 @@ export default async function YoutubeAioPage({
   searchParams: Promise<{ range?: string; device?: string; group?: string; base?: string }>;
 }) {
   const data = await loadAioOverviewPage(await searchParams);
-  if (data.kind === "setup") return <YoutubeAioSetupGate brandId={data.brandId} brandName={data.brandName} />;
+  if (data.kind === "setup") return <YoutubeAioSetupGate brandId={data.brandId} brandName={data.brandName} base={data.base} />;
   return <YoutubeAioClient data={data} />;
 }

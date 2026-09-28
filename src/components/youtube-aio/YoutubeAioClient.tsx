@@ -30,7 +30,7 @@ import {
 
 // 시안(AIO 인용 트래커 대시보드 1.pdf 2p) 레이아웃 — 색·톤은 앱 기준.
 export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
-  const { overview, settings, device, group, range, baseDate, demo, brandId, brandName } = data;
+  const { overview, settings, device, group, range, baseDate, demo, brandId, brandName, base } = data;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -84,7 +84,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
       <div className="flex flex-wrap items-center gap-2">
         <RangeDropdown value={range} label="기간" />
         <Link
-          href={demo ? "#" : `/brands-management/${brandId}/connections`}
+          href={demo ? "#" : `${base}/brands-management/${brandId}/connections`}
           className="inline-flex items-center gap-1.5 rounded-md bg-neutral-100 px-3.5 py-2 text-sm text-neutral-700 hover:bg-neutral-200"
           title="수집 조건은 브랜드 관리 > 연결 관리 > AIO 추적 설정에서 바꿉니다"
         >
@@ -231,7 +231,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
                 </thead>
                 <tbody>
                   {overview.rows.map((row) => (
-                    <KeywordRow key={row.keywordId} row={row} href={`/youtube-aio/${row.keywordId}?device=${device}`} />
+                    <KeywordRow key={row.keywordId} row={row} href={`${base}/youtube-aio/${row.keywordId}?device=${device}`} />
                   ))}
                 </tbody>
               </table>

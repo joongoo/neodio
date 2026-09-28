@@ -7,6 +7,7 @@ import { promptStrategyByOrg } from "../../db/data/promptStrategy";
 import { brandsManagementByOrg } from "../../db/data/brandsManagement";
 import { seedCategories } from "../../db/data/seed";
 import { organizations as seedOrganizations } from "../../db/data/organizations";
+import { orgSlugError, slugifyName } from "../../slug";
 import type { ManagedBrand, PromptLibraryRow, PromptRunSeed } from "../../db/types";
 import type { CollectionJob } from "../collectionJobTypes";
 
@@ -98,6 +99,22 @@ async function nameSeedOrganizations(store: PromptStore) {
     await store.ensureOrg(org.id, org.name);
     await store.query("UPDATE organizations SET name=$2 WHERE id=$1 AND name=id", [org.id, org.name]);
   }
+  // URL 슬러그가 없는 조직(슬러그 도입 전에 만든 조직)은 이름에서 만들어 채운다 —
+  // 영문이 없거나 겹치면 뒤에 번호를 붙이고, 그래도 없으면 id를 쓴다.
+  // 여러 프로세스가 동시에 채우면 같은 슬러그를 고를 수 있어 스키마 초기화와 같은 잠금 안에서 한다.
+  await store.transaction(async () => {
+    await store.query("SELECT pg_advisory_xact_lock(hashtext('neodio-schema-init'))");
+    const rows = await store.query<{ id: string; name: string; slug: string | null }>("SELECT id,name,slug FROM organizations ORDER BY id");
+    const used = new Set(rows.map((r) => r.slug).filter((s): s is string => !!s));
+    for (const row of rows.filter((r) => !r.slug)) {
+      const candidate = slugifyName(row.name);
+      const base = candidate.length >= 2 && !orgSlugError(candidate) ? candidate : row.id.toLowerCase();
+      let slug = base;
+      for (let n = 2; used.has(slug); n++) slug = `${base}-${n}`;
+      used.add(slug);
+      await store.query("UPDATE organizations SET slug=$2 WHERE id=$1 AND slug IS NULL", [row.id, slug]);
+    }
+  });
 }
 
 // Vercel Postgres(및 다른 표준 Postgres)는 POSTGRES_URL/POSTGRES_URL_NON_POOLING

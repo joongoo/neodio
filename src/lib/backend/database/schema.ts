@@ -171,6 +171,8 @@ CREATE INDEX IF NOT EXISTS runs_dimensions ON prompt_runs(organization_id,model_
 CREATE INDEX IF NOT EXISTS analyses_run ON run_analyses(run_id,analyzed_at);
 CREATE INDEX IF NOT EXISTS observations_brand ON brand_observations(brand_id,analysis_id);
 CREATE INDEX IF NOT EXISTS citations_domain ON citations(domain,analysis_id);
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS slug TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS organizations_slug ON organizations(slug);
 CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand_id,collected_date);
 CREATE INDEX IF NOT EXISTS aio_citations_video ON aio_citations(video_id);
 CREATE INDEX IF NOT EXISTS aio_work_logs_video ON aio_video_work_logs(brand_id,video_id,work_date);

@@ -11,6 +11,7 @@ import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlMo
 import { ChannelCitationSummary, SocialAccountsSection } from "@/components/brands-management/SocialAccountsSection";
 import { BrandYoutubeChannel, ManagedBrand, TrackedOtherBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
 
@@ -24,6 +25,7 @@ export function BrandDetailClient({
   observedBrands = [],
   youtubeChannels = [],
   channelCitationStats = null,
+  citationsHref,
 }: {
   initial: ManagedBrand;
   /** 가시성 개요에서 실제로 언급된 브랜드 목록 — "추적할 기타 브랜드" +버튼이 여기서 고른다. */
@@ -31,8 +33,11 @@ export function BrandDetailClient({
   /** YouTube AIO 인용 판정용 채널 — 소셜 계정의 YouTube 항목과 짝지어 보여준다. */
   youtubeChannels?: BrandYoutubeChannel[];
   channelCitationStats?: Record<string, ChannelCitationSummary> | null;
+  /** 이 브랜드의 YouTube AIO 인용 화면 주소 */
+  citationsHref: string;
 }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
   const [brand, setBrand] = useState(initial);
   const [draft, setDraft] = useState(initial);
   const [dirty, setDirty] = useState(false);
@@ -156,7 +161,7 @@ export function BrandDetailClient({
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5 p-6">
-      <Link href="/brands-management" className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <Link href={`${tenantBase}/brands-management`} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         브랜드 관리로 돌아가기
       </Link>
@@ -167,7 +172,7 @@ export function BrandDetailClient({
           <p className="mt-1 text-sm text-neutral-500">{brand.url}</p>
         </div>
         <div className="flex gap-2">
-          <a href={`/brands-management/${brand.id}/connections`}>
+          <a href={`${tenantBase}/brands-management/${brand.id}/connections`}>
             <Button variant="secondary" icon={<Link2 size={14} />}>
               연결 관리
             </Button>
@@ -281,8 +286,7 @@ export function BrandDetailClient({
       />
       <SocialAccountsSection
         brandId={brand.id}
-        brandName={brand.name}
-        brandActive={brand.status === "active"}
+        citationsHref={citationsHref}
         accounts={brand.socialAccounts}
         channels={channels}
         citationStats={channelCitationStats}

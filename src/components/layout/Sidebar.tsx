@@ -90,31 +90,41 @@ const NAV: NavGroup[] = [
   { label: "도움말 및 학습", href: "/help", icon: HelpCircle },
 ];
 
-export function Sidebar() {
+// 조직·브랜드와 무관한 화면 — 이것들만 주소 앞에 /{조직}/{브랜드}를 붙이지 않는다.
+const GLOBAL_HREFS = new Set(["/organizations", "/help"]);
+
+/** 메뉴 경로 → 실제 주소. base = "/{조직}/{브랜드}" (AppShell이 넘긴다) */
+function resolveHref(href: string, base: string): string {
+  if (href === "#" || GLOBAL_HREFS.has(href)) return href;
+  return href === "/" ? base : `${base}${href}`;
+}
+
+export function Sidebar({ base }: { base: string }) {
   const pathname = usePathname();
 
   return (
     <aside className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto bg-[#fbfbfb] pb-2">
-      {NAV.map((item) => (
-        <div key={item.label}>
-          <NavRow
-            icon={item.icon}
-            label={item.label}
-            href={item.href}
-            active={pathname === item.href}
-          />
-          {item.children?.map((child) => (
-            // 하위 경로(예: /youtube-aio/<키워드>)에서도 메뉴가 선택돼 보이도록.
-            <NavRow
-              key={child.label}
-              label={child.label}
-              href={child.href}
-              indent
-              active={pathname === child.href || pathname.startsWith(`${child.href}/`)}
-            />
-          ))}
-        </div>
-      ))}
+      {NAV.map((item) => {
+        const href = resolveHref(item.href, base);
+        return (
+          <div key={item.label}>
+            <NavRow icon={item.icon} label={item.label} href={href} active={pathname === href} />
+            {item.children?.map((child) => {
+              const childHref = resolveHref(child.href, base);
+              return (
+                // 하위 경로(예: …/youtube-aio/<키워드>)에서도 메뉴가 선택돼 보이도록.
+                <NavRow
+                  key={child.label}
+                  label={child.label}
+                  href={childHref}
+                  indent
+                  active={pathname === childHref || pathname.startsWith(`${childHref}/`)}
+                />
+              );
+            })}
+          </div>
+        );
+      })}
     </aside>
   );
 }

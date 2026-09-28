@@ -59,7 +59,7 @@ export default async function BrandConnectionsPage({
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">
-      <a href={`/brands-management/${brand.id}`} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <a href={`${tenant.base}/brands-management/${brand.id}`} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         {brand.name}(으)로 돌아가기
       </a>

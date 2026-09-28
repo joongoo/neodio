@@ -12,6 +12,7 @@ import { PageSpeedBadge } from "@/components/ui/PageSpeedBadge";
 import { RichResultsBadge } from "@/components/ui/RichResultsBadge";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { ContentAuditOpportunity, ContentAuditUrl, GscSearchAppearanceRow } from "@/lib/db";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 const BASE_OPTIONAL_COLUMNS: ColumnOption[] = [
   { key: "priorityScore", label: "우선순위" },
@@ -31,7 +32,7 @@ const TABS = ["현재 제안", "수정 완료", "제외됨"] as const;
 export function ContentAuditClient({
   data,
   domain,
-  backHref = "/opportunities",
+  backHref,
   searchAppearance,
 }: {
   data: ContentAuditOpportunity;
@@ -45,6 +46,8 @@ export function ContentAuditClient({
    *  (docs/gsc-additional-signals.md §3-③) */
   searchAppearance?: GscSearchAppearanceRow[] | null;
 }) {
+  const tenantBase = useTenantBase();
+  const back = backHref ?? `${tenantBase}/opportunities`;
   const router = useRouter();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
   const [recheckJobs, setRecheckJobs] = useState<Record<string, { jobId: string; stage: string; done: boolean; error: string | null }>>({});
@@ -354,7 +357,7 @@ export function ContentAuditClient({
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6 pb-10">
-      <a href={backHref} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
+      <a href={back} className="flex items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
         기회 목록으로 돌아가기
       </a>

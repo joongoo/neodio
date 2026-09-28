@@ -6,25 +6,26 @@ import { ArrowRight, Building2, Check, Pencil, Plus, Trash2, X } from "lucide-re
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { orgSlugError, slugifyName } from "@/lib/slug";
 
 interface OrgRow {
   id: string;
   name: string;
+  /** URL의 조직 자리 — /{slug}/{브랜드}/… */
+  slug: string;
   brandCount: number;
 }
 
-const ORG_COOKIE = "selected-org";
-const BRAND_COOKIE = "selected-brand";
-
 // 설정 > 조직 관리 — 대행사처럼 여러 고객(예: Neodigm, Salesforce)을 각자의
-// 브랜드·프롬프트·수집 데이터로 나눠 관리한다. 조직 전환은 헤더 스위처와
-// 같은 쿠키를 쓴다(src/lib/backend/tenant.ts).
+// 브랜드·프롬프트·수집 데이터로 나눠 관리한다. 조직은 URL로 구분된다
+// (/{조직 슬러그}/{브랜드}/…, src/lib/tenantRouting.ts).
 export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow[]; currentOrgId: string }) {
   const router = useRouter();
   const [orgs, setOrgs] = useState(initial);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editSlug, setEditSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function reload() {
@@ -34,19 +35,20 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
     router.refresh();
   }
 
-  function switchTo(org: OrgRow, next = "/brands-management") {
-    document.cookie = `${ORG_COOKIE}=${encodeURIComponent(org.id)}; path=/; max-age=31536000`;
-    document.cookie = `${BRAND_COOKIE}=; path=/; max-age=0`;
-    router.push(next);
-    router.refresh();
+  // /{조직} → 그 조직의 첫 브랜드(브랜드가 없으면 브랜드 설정)로 간다.
+  function switchTo(org: OrgRow) {
+    router.push(`/${encodeURIComponent(org.slug)}`);
   }
 
   async function rename(org: OrgRow) {
     setError(null);
+    if (editSlug !== org.slug && !window.confirm(`URL 슬러그를 바꾸면 "/${org.slug}/…"로 저장된 링크·북마크는 더 이상 열리지 않습니다. 계속할까요?`)) {
+      return;
+    }
     const res = await fetch("/api/organizations", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: org.id, name: editName }),
+      body: JSON.stringify({ id: org.id, name: editName, slug: editSlug }),
     }).catch(() => null);
     const data = await res?.json().catch(() => null);
     if (!res?.ok) {
@@ -107,6 +109,13 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
                       aria-label="조직 이름"
                       className="h-9 flex-1 rounded-md border border-neutral-300 px-3 text-sm"
                     />
+                    <span className="text-sm text-neutral-400">/</span>
+                    <input
+                      value={editSlug}
+                      onChange={(e) => setEditSlug(e.target.value.toLowerCase())}
+                      aria-label="URL 슬러그"
+                      className="h-9 w-40 rounded-md border border-neutral-300 px-3 font-mono text-sm"
+                    />
                     <button type="submit" aria-label="저장" className="rounded-md p-1.5 text-emerald-600 hover:bg-neutral-100 cursor-pointer">
                       <Check size={16} />
                     </button>
@@ -120,7 +129,9 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
                       {org.name}
                       {current && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">현재 조직</span>}
                     </p>
-                    <p className="mt-0.5 text-xs text-neutral-500">브랜드 {org.brandCount}개</p>
+                    <p className="mt-0.5 text-xs text-neutral-500">
+                      <span className="font-mono">/{org.slug}</span> · 브랜드 {org.brandCount}개
+                    </p>
                   </div>
                 )}
                 {editing !== org.id && (
@@ -136,6 +147,7 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
                       onClick={() => {
                         setEditing(org.id);
                         setEditName(org.name);
+                        setEditSlug(org.slug);
                       }}
                       className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
                     >
@@ -172,13 +184,27 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
   );
 }
 
-function CreateOrgModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (org: { id: string; name: string }) => void }) {
+function CreateOrgModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (org: { id: string; name: string; slug: string }) => void;
+}) {
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  // 슬러그를 직접 고치기 전까지는 이름(영문)에서 제안한다.
+  const [slugTouched, setSlugTouched] = useState(false);
+  const slugProblem = slug ? orgSlugError(slug) : null;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function close() {
     setName("");
+    setSlug("");
+    setSlugTouched(false);
     setError(null);
     onClose();
   }
@@ -190,7 +216,7 @@ function CreateOrgModal({ open, onClose, onCreated }: { open: boolean; onClose: 
     const res = await fetch("/api/organizations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, slug }),
     }).catch(() => null);
     const data = await res?.json().catch(() => null);
     setPending(false);
@@ -199,6 +225,8 @@ function CreateOrgModal({ open, onClose, onCreated }: { open: boolean; onClose: 
       return;
     }
     setName("");
+    setSlug("");
+    setSlugTouched(false);
     onCreated(data.organization);
   }
 
@@ -213,12 +241,35 @@ function CreateOrgModal({ open, onClose, onCreated }: { open: boolean; onClose: 
           <span className="text-xs font-medium text-neutral-600">조직 이름 *</span>
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouched) setSlug(slugifyName(e.target.value));
+            }}
             placeholder="예: Salesforce"
             maxLength={50}
             autoFocus
             className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
           />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-neutral-600">URL 슬러그 *</span>
+          <div className="flex items-center rounded-md border border-neutral-300 focus-within:border-slate-500">
+            <span className="pl-3 font-mono text-sm text-neutral-400">/</span>
+            <input
+              value={slug}
+              onChange={(e) => {
+                setSlug(e.target.value.toLowerCase());
+                setSlugTouched(true);
+              }}
+              placeholder="salesforce"
+              maxLength={40}
+              className="h-10 w-full rounded-md px-1 font-mono text-sm outline-none"
+            />
+          </div>
+          <span className="text-xs text-neutral-500">
+            화면 주소에 들어갑니다: <span className="font-mono">/{slug || "slug"}/브랜드/화면</span> · 영문 소문자·숫자·하이픈(-)
+          </span>
+          {slugProblem && <span className="text-xs text-red-600">{slugProblem}</span>}
         </label>
         <p className="text-xs text-neutral-500">만든 뒤 이 조직으로 전환되고, 브랜드 설정에서 첫 브랜드를 등록하면 됩니다.</p>
         {error && <p className="text-xs text-red-600">{error}</p>}
@@ -226,7 +277,7 @@ function CreateOrgModal({ open, onClose, onCreated }: { open: boolean; onClose: 
           <Button type="button" variant="secondary" onClick={close}>
             취소
           </Button>
-          <Button type="submit" variant="primary" disabled={pending || !name.trim()}>
+          <Button type="submit" variant="primary" disabled={pending || !name.trim() || !slug || !!slugProblem}>
             {pending ? "만드는 중…" : "만들기"}
           </Button>
         </div>
