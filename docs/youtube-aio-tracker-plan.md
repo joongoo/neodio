@@ -1,6 +1,7 @@
 # YouTube AIO 인용 트래커 기획
 
-> 상태: **Phase 0~4 구현 완료 (MVP)**, Phase 5(부가) 미착수. 구현 현황은 §9. 요구사항 원본은 루트의
+> 상태: **Phase 0~4 구현 완료 (MVP)**, Phase 5(부가) 미착수. 구현 현황은 §9.
+> 다음 단계(영상 URL 등록·키워드/프롬프트 AI 생성·스케줄 추적)는 [youtube-video-tracking-plan.md](./youtube-video-tracking-plan.md). 요구사항 원본은 루트의
 > `AIO 인용 트래커 — 요구사항 및 대시보드 구성안.pdf`, 화면 시안은
 > `AIO 인용 트래커 대시보드 1.pdf` 2p(전체 현황)·3p(키워드 상세).
 
