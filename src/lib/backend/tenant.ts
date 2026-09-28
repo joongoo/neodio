@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { cookies } from "next/headers";
+import { unstable_rethrow } from "next/navigation";
 import { getPromptStore } from "./database";
 import { DEFAULT_ORG_ID } from "@/lib/db";
 import { ManagedBrand, Organization } from "@/lib/db/types";
@@ -42,18 +43,24 @@ function hostnameOf(url: string): string {
 }
 
 // 요청 밖(테스트에서 라우트를 직접 부를 때 등)에는 쿠키가 없다 — 그때는 기본 조직.
+// 단, 빌드 중 정적 렌더링을 시도할 때 cookies()가 던지는 Next.js 내부 에러는
+// 삼키면 안 된다(그 페이지를 요청마다 렌더링으로 바꾸라는 신호 — 삼키면 기본
+// 조직으로 고정된 정적 페이지가 된다). unstable_rethrow가 그것만 다시 던진다.
 async function readCookie(name: string): Promise<string | undefined> {
   try {
     return (await cookies()).get(name)?.value;
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return undefined;
   }
 }
 
 export const getCurrentTenant = cache(async (): Promise<Tenant> => {
+  // 쿠키를 DB보다 먼저 읽는다 — 정적 렌더링 시도라면 여기서 멈추고 DB에 가지 않는다.
+  const requestedOrg = await readCookie(ORG_COOKIE);
+  const requestedBrand = await readCookie(BRAND_COOKIE);
   const store = await getPromptStore();
   const organizations = (await store.listOrganizations()).map(({ id, name }) => ({ id, name }));
-  const requestedOrg = await readCookie(ORG_COOKIE);
   const orgId =
     organizations.find((o) => o.id === requestedOrg)?.id ??
     organizations.find((o) => o.id === DEFAULT_ORG_ID)?.id ??
@@ -65,7 +72,6 @@ export const getCurrentTenant = cache(async (): Promise<Tenant> => {
   // 새 조직의 첫 브랜드는 "대기" 상태로 만들어진다 — 활성 브랜드가 없으면
   // 대기 브랜드라도 데이터 기준으로 삼아, 활성화 전에도 설정·수집을 시작할 수 있게.
   const realBrands = [...activeBrands, ...allBrands.filter((b) => b.status !== "active")].filter((b) => b.name !== DEMO_BRAND_NAME);
-  const requestedBrand = await readCookie(BRAND_COOKIE);
   const selected = activeBrands.find((b) => b.name === requestedBrand);
   const demo = selected?.name === DEMO_BRAND_NAME;
   const brand = selected && !demo ? selected : (realBrands[0] ?? null);

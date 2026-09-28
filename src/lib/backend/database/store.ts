@@ -69,6 +69,12 @@ export class PromptStore {
 
   async init(): Promise<void> {
     await this.transaction(async () => {
+      // Several processes can init at once (Vercel build workers prerendering
+      // pages in parallel, serverless cold starts). CREATE TABLE IF NOT EXISTS
+      // is not safe under concurrency — two creators of a new table collide on
+      // pg_type ("duplicate key ... pg_type_typname_nsp_index"). A transaction-
+      // scoped advisory lock makes the inits take turns; it's released on commit.
+      await this.run("SELECT pg_advisory_xact_lock(hashtext('neodio-schema-init'))");
       // No params here, so pg uses the simple query protocol and runs every
       // statement in `schema` (semicolon-separated) in one round trip.
       await this.exec().query(schema);
