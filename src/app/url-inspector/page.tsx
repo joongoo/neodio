@@ -1,17 +1,20 @@
 import { UrlInspectorClient } from "@/components/url-inspector/UrlInspectorClient";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+import { db } from "@/lib/db";
 import { getRealUrlInspectorData } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getRegisteredUrls } from "@/lib/backend/registeredUrls";
+import { getCurrentTenant } from "@/lib/backend/tenant";
+import { EMPTY_URL_INSPECTOR } from "@/lib/db/data/emptyOrg";
 
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
 
 export default async function UrlInspectorPage() {
+  const tenant = await getCurrentTenant();
   const [demo, data, registeredUrls] = await Promise.all([
     isDemoMode(),
-    db.urlInspector.get(DEFAULT_ORG_ID),
-    getRegisteredUrls(DEFAULT_ORG_ID).catch(() => [] as string[]),
+    db.urlInspector.get(tenant.orgId).then((d) => d ?? EMPTY_URL_INSPECTOR),
+    getRegisteredUrls(tenant.orgId).catch(() => [] as string[]),
   ]);
   if (!data) return null;
 

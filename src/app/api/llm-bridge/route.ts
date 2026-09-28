@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setLlmBridgeEntries, setLlmBridgeEntry } from "@/lib/backend/llmBridgeStore";
-import { DEFAULT_ORG_ID } from "@/lib/db";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 const PROMPT_ARRAY_SCOPES = new Set(["gsc-keyword-prompts", "citation-test-prompts"]);
 
@@ -44,6 +44,7 @@ const GUIDE_SCOPES = new Set([
 ]);
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const scope = typeof body?.scope === "string" ? body.scope : "";
 
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    await setLlmBridgeEntries(DEFAULT_ORG_ID, scope, entries as Record<string, unknown>);
+    await setLlmBridgeEntries(tenant.orgId, scope, entries as Record<string, unknown>);
     return NextResponse.json({ ok: true });
   }
 
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
     if (typeof data?.recommendation !== "string" || !data.recommendation.trim()) {
       return NextResponse.json({ error: "recommendation 필드를 찾지 못했습니다. LLM 응답 형식을 확인해주세요." }, { status: 400 });
     }
-    await setLlmBridgeEntry(DEFAULT_ORG_ID, scope, key, {
+    await setLlmBridgeEntry(tenant.orgId, scope, key, {
       recommendation: data.recommendation.trim(),
       reasoning: typeof data.reasoning === "string" ? data.reasoning.trim() : "",
     });
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
     if (typeof data?.guide !== "string" || !data.guide.trim()) {
       return NextResponse.json({ error: "guide 필드를 찾지 못했습니다. LLM 응답 형식을 확인해주세요." }, { status: 400 });
     }
-    await setLlmBridgeEntry(DEFAULT_ORG_ID, scope, key, { guide: data.guide.trim() });
+    await setLlmBridgeEntry(tenant.orgId, scope, key, { guide: data.guide.trim() });
     return NextResponse.json({ ok: true });
   }
 
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     if (!isValidCraftedPromptArray(data)) {
       return NextResponse.json({ error: "prompt 필드를 가진 항목들의 배열이어야 합니다. LLM 응답 형식을 확인해주세요." }, { status: 400 });
     }
-    await setLlmBridgeEntry(DEFAULT_ORG_ID, scope, key, data);
+    await setLlmBridgeEntry(tenant.orgId, scope, key, data);
     return NextResponse.json({ ok: true });
   }
 
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
     // 저장과 함께 prompts.topic_id/uncategorized_category_id도 그대로 다시
     // 써서 반영한다(PromptStore.replaceGroups) — 라이브러리와 가시성 개요가
     // 같은 SQLite 테이블을 보므로 별도 동기화 단계가 필요 없다.
-    await setLlmBridgeEntry(DEFAULT_ORG_ID, scope, key, data);
+    await setLlmBridgeEntry(tenant.orgId, scope, key, data);
     return NextResponse.json({ ok: true });
   }
 
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    await setLlmBridgeEntry(DEFAULT_ORG_ID, scope, key, data);
+    await setLlmBridgeEntry(tenant.orgId, scope, key, data);
     return NextResponse.json({ ok: true });
   }
 

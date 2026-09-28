@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEFAULT_ORG_ID } from "@/lib/db";
-import { DEFAULT_TRACKING_BRAND, getPromptStore, syncCollectedFiles } from "@/lib/backend/database";
+
+import { getPromptStore, syncCollectedFiles } from "@/lib/backend/database";
 import { normalize } from "@/lib/backend/database/store";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const store = await getPromptStore();
   await syncCollectedFiles(store);
   const params = request.nextUrl.searchParams;
@@ -20,7 +22,7 @@ export async function GET(request: NextRequest) {
     LEFT JOIN prompt_tracking tr ON tr.prompt_id=p.id AND tr.brand_id=$1
     WHERE p.organization_id=$2 AND strpos(p.normalized_text,$3)>0
     AND ($4='all' OR ($4='untracked' AND tr.id IS NULL) OR tr.status=$4)`;
-  const args = [DEFAULT_TRACKING_BRAND, DEFAULT_ORG_ID, query, status];
+  const args = [tenant.brandId, tenant.orgId, query, status];
   const [{ count: total }] = await store.query<{ count: number }>(`SELECT count(*) AS count ${joins}`, args);
   const rows = await store.query(`SELECT p.id,p.text,p.search_intent,p.created_at,p.updated_at,
     t.id AS topic_id,t.name AS topic,c.id AS category_id,c.name AS category,
@@ -33,12 +35,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   if (typeof body?.text !== "string" || !body.text.trim()) return NextResponse.json({ error: "프롬프트가 필요합니다." }, { status: 400 });
   const optional = (key: string) => typeof body[key] === "string" ? body[key] : undefined;
   const store = await getPromptStore();
-  const promptId = await store.upsertPrompt(DEFAULT_ORG_ID, { text: body.text, category: optional("category"), topic: optional("topic"),
+  const promptId = await store.upsertPrompt(tenant.orgId, { text: body.text, category: optional("category"), topic: optional("topic"),
     searchIntent: optional("searchIntent"), sourceType: optional("sourceType") ?? "manual", sourceKey: optional("sourceKey"),
     generationPurpose: optional("generationPurpose"), generationReasoning: optional("generationReasoning") });
-  return NextResponse.json({ prompt: await store.getPrompt(DEFAULT_ORG_ID, promptId) }, { status: 201 });
+  return NextResponse.json({ prompt: await store.getPrompt(tenant.orgId, promptId) }, { status: 201 });
 }

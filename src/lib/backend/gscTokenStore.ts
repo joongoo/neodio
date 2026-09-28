@@ -19,6 +19,7 @@ export interface GscTokenRecord {
 
 export async function saveGscToken(record: GscTokenRecord): Promise<void> {
   const store = await getPromptStore();
+  // 브랜드 id가 전역에서 유일해서 조직과 무관하게 기본 조직의 한 스코프에 둔다(키 = 브랜드 id).
   await store.putBridge(DEFAULT_ORG_ID, SCOPE, { [record.brandId]: record });
 }
 

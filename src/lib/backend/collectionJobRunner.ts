@@ -60,10 +60,11 @@ export async function getJob(id: string): Promise<CollectionJob | undefined> {
   return jobs.get(id) ?? getPersistedCollectionJob(id);
 }
 
-export function startCollectionJob(keyword: string, engines: ("naver" | "google")[]): CollectionJob {
+export function startCollectionJob(organizationId: string, keyword: string, engines: ("naver" | "google")[]): CollectionJob {
   const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const job: CollectionJob = {
     id,
+    organizationId,
     keyword,
     engines,
     stage: "install",

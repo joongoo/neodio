@@ -6,6 +6,7 @@ import { promptLibraryByOrg } from "../../db/data/promptLibrary";
 import { promptStrategyByOrg } from "../../db/data/promptStrategy";
 import { brandsManagementByOrg } from "../../db/data/brandsManagement";
 import { seedCategories } from "../../db/data/seed";
+import { organizations as seedOrganizations } from "../../db/data/organizations";
 import type { ManagedBrand, PromptLibraryRow, PromptRunSeed } from "../../db/types";
 import type { CollectionJob } from "../collectionJobTypes";
 
@@ -89,6 +90,16 @@ async function importLegacyBrands(store: PromptStore) {
   });
 }
 
+// 시드 조직(ensureOrg가 이름 자리에 id를 넣어 만든 행)에 표시 이름을 준다 —
+// 헤더 조직 스위처가 "neodigm"이 아니라 "Neodigm"으로 보이도록. 사용자가
+// 조직 관리에서 이름을 바꿨다면(id와 다르면) 건드리지 않는다.
+async function nameSeedOrganizations(store: PromptStore) {
+  for (const org of seedOrganizations) {
+    await store.ensureOrg(org.id, org.name);
+    await store.query("UPDATE organizations SET name=$2 WHERE id=$1 AND name=id", [org.id, org.name]);
+  }
+}
+
 // Vercel Postgres(및 다른 표준 Postgres)는 POSTGRES_URL/POSTGRES_URL_NON_POOLING
 // 환경변수로 접속 정보를 주입한다 — SQLite 시절의 파일 경로/디렉토리 생성 로직은
 // 더 이상 필요 없다(과거엔 여기서 mkdir을 하다 Vercel의 읽기전용 배포 번들에서
@@ -109,7 +120,7 @@ function createPool(): Pool {
 export function getPromptStore(): Promise<PromptStore> {
   if (!initializing) initializing = (async () => {
     const store = new PromptStore(createPool());
-    try { await store.init(); await importLegacy(store); await importLegacyBrands(store); await syncCollectedFiles(store); return store; }
+    try { await store.init(); await importLegacy(store); await importLegacyBrands(store); await nameSeedOrganizations(store); await syncCollectedFiles(store); return store; }
     catch (error) { await store.close(); throw error; }
   })().catch(error => { initializing = undefined; throw error; });
   return initializing;
@@ -126,11 +137,17 @@ export async function syncCollectedFiles(store: PromptStore) {
     const parsed = await jsonFile<{ promptRun?: PromptRunSeed }>(filePath, {});
     if (!parsed.promptRun) continue;
     const run = parsed.promptRun;
+    // 어느 조직의 실행인지는 그 실행을 만든 수집 작업(collection_jobs)이 정한다 —
+    // 화면에서 시작한 수집은 그때 선택된 조직으로 기록된다. 작업 없이 CLI로 만든
+    // 예전 파일은 기본 조직으로 들어간다.
     const sourceJobId = run.rawMetadata.collectionJobId;
-    const [job] = sourceJobId ? await store.query("SELECT id FROM collection_jobs WHERE id=$1 AND organization_id=$2", [sourceJobId, ORG_ID]) : [];
+    const [job] = sourceJobId
+      ? await store.query<{ organization_id: string }>("SELECT organization_id FROM collection_jobs WHERE id=$1", [sourceJobId])
+      : [];
     const jobId = job ? sourceJobId! : null;
+    const orgId = job?.organization_id ?? ORG_ID;
     await store.transaction(async () => {
-      await store.importRun(ORG_ID, { dir, filename, promptRun: run }, jobId);
+      await store.importRun(orgId, { dir, filename, promptRun: run }, jobId);
       await store.query("INSERT INTO imported_files VALUES ($1,$2) ON CONFLICT(path) DO UPDATE SET signature=excluded.signature", [filePath, signature]);
     });
   }
@@ -138,16 +155,17 @@ export async function syncCollectedFiles(store: PromptStore) {
 
 export async function persistCollectionJob(job: CollectionJob) {
   const store = await getPromptStore();
-  await store.ensureOrg(ORG_ID);
+  const orgId = job.organizationId ?? ORG_ID;
+  await store.ensureOrg(orgId);
   await store.query(`INSERT INTO collection_jobs VALUES ($1,$2,'manual',NULL,$3,$4,$5,$6)
     ON CONFLICT(id) DO UPDATE SET status=excluded.status,finished_at=excluded.finished_at,data_json=excluded.data_json`,
-    [job.id, ORG_ID, job.stage, new Date(job.startedAt).toISOString(), job.finishedAt ? new Date(job.finishedAt).toISOString() : null, JSON.stringify({ ...job, ownerPid: process.pid })]);
+    [job.id, orgId, job.stage, new Date(job.startedAt).toISOString(), job.finishedAt ? new Date(job.finishedAt).toISOString() : null, JSON.stringify({ ...job, ownerPid: process.pid })]);
 }
 
 export async function getPersistedCollectionJob(jobId: string): Promise<CollectionJob | undefined> {
   const store = await getPromptStore();
   const [row] = await store.query<{ data_json: CollectionJob & { ownerPid?: number } }>(
-    "SELECT data_json FROM collection_jobs WHERE id=$1 AND organization_id=$2", [jobId, ORG_ID]);
+    "SELECT data_json FROM collection_jobs WHERE id=$1", [jobId]);
   if (!row) return undefined;
   const job = row.data_json;
   if (job.stage !== "done" && job.stage !== "error") {

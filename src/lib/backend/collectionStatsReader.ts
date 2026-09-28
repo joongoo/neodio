@@ -7,6 +7,7 @@ import { brandPatterns } from "./processing/text";
 import { getPromptTopicGroups } from "./promptTopics";
 import { seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
 import { getRealBrandSeeds } from "./brandSeeds";
+import { getCurrentTenant } from "./tenant";
 import {
   BrandRankRow,
   BrandWeeklyPoint,
@@ -36,8 +37,13 @@ import {
 // Server-only (pulls in collectionRuns.ts, which uses node:fs) — call only
 // from a server component/route, never a "use client" file.
 const RANGE_WEEKS: Record<DateRange, number> = { "1w": 1, "2w": 2, "4w": 4 };
-const OWN_BRAND_ID = "brand-neodigm";
-const ORG_ID = "neodigm";
+// 현재 조직과 그 조직의 자사 브랜드(헤더 선택, tenant.ts) — 예전엔 Neodigm
+// 고정 상수였다. 이 모듈은 서버 컴포넌트/라우트에서만 쓰이므로 요청 컨텍스트를
+// 읽어도 된다.
+const currentScope = cache(async () => {
+  const tenant = await getCurrentTenant();
+  return { orgId: tenant.orgId, ownBrandId: tenant.brandId };
+});
 
 const COMPANY_SUFFIX_PATTERN =
   "(?:AI|CRM|SEO|GEO|LLMO|SaaS|Labs?|Studio|Cloud|Hub|Works|Marketing|Automation|Analytics|Search|Console|Ads|Suite|Platform|Partners?|Agency|Group|Inc\\.?|Corp\\.?|Corporation|Co\\.?|Company|Solutions|Technologies|테크|랩스|소프트|마케팅|파트너스|컴퍼니|그룹)";
@@ -195,7 +201,8 @@ export interface RealDataFilters {
 // without this they'd each independently re-fetch and re-analyze every
 // collected run.
 const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFilters = {}) => {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -205,7 +212,7 @@ const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFi
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const brands = await getRealBrandSeeds(ORG_ID);
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
 
   const weekOfRun = new Map<string, string>();
@@ -229,6 +236,7 @@ const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFi
 // by week for the chart instead of by stat-card total. Returns null when
 // nothing's been collected yet, so Overview falls back to the seeded chart.
 export async function getRealSentimentSeries(range: DateRange, filters: RealDataFilters = {}): Promise<SentimentWeek[] | null> {
+  const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks } = result;
@@ -298,6 +306,7 @@ export async function getRealMarketComparison(range: DateRange, filters: RealDat
 // mock snapshot path it replaces. Returns null when nothing's been
 // collected yet, so the caller can fall back to the seeded snapshot cards.
 export async function getRealStatSeries(range: DateRange, filters: RealDataFilters = {}): Promise<RealStatSeries | null> {
+  const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks, previousWeeks } = result;
@@ -371,6 +380,7 @@ async function getRealRankedTabs(
   groupKey: (run: { llmModelId: string; marketId: string }) => string | undefined,
   filters: RealDataFilters
 ): Promise<RealRankedTabs | null> {
+  const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks, runsById } = result;
@@ -460,7 +470,8 @@ export async function getRealTopicRows(
   filters: RealDataFilters = {},
   extras: TopicOpportunityExtras = {}
 ): Promise<RealTopicRows | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -471,7 +482,7 @@ export async function getRealTopicRows(
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
 
   const ownMentionByRun = new Map<string, boolean>();
@@ -670,6 +681,7 @@ export async function getRealPromptMetricsByWeek(
   range: DateRange,
   filters: RealDataFilters = {}
 ): Promise<PromptMetricsPoint[] | null> {
+  const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks } = result;
@@ -707,7 +719,8 @@ function dominantSentiment(sentiments: Sentiment[]): Sentiment {
 // 단위가 아니라 getRealTopicRows와 같은 전체 기간 집계 — 이 테이블 자체가
 // range 필터를 안 받는다.
 export async function getRealDataInsights(filters: RealDataFilters = {}): Promise<DataInsightRow[] | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -718,7 +731,7 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
 
   const ownMentionByRun = new Map<string, { present: boolean; sentiment: Sentiment }>();
@@ -772,7 +785,8 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
 // 브랜드의 순위·점유율을 계산. 전체 기간 집계(getRealDataInsights와 동일
 // 이유로 range 없음).
 export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promise<ShareOfVoiceRow[] | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -783,7 +797,7 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const brands = await getRealBrandSeeds(ORG_ID);
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
   const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
   const ownBrandName = brandNameById.get(OWN_BRAND_ID);
@@ -842,6 +856,7 @@ export async function getRealSentimentMovers(
   range: DateRange,
   filters: RealDataFilters = {}
 ): Promise<{ topMovers: SentimentMoverRow[]; bottomMovers: SentimentMoverRow[] } | null> {
+  const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
   const { processed, weekOfRun, currentWeeks, runsById } = result;
@@ -904,7 +919,8 @@ export async function getRealSentimentMovers(
 // null/"미분류"로 남긴다 — 나머지(인용 횟수, 인용된 프롬프트 수, 마켓)는
 // 전부 실측치다.
 export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Promise<UrlInspectorData | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -915,7 +931,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
   if (processed.citations.length === 0) return null;
 
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
@@ -1030,7 +1046,8 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
 // 우리 브랜드도 포함해서 실제 언급 순위 그대로 보여준다 (share-of-voice와
 // 달리 여기는 순위표라 자사 제외 안 함).
 export async function getRealTopBrands(filters: RealDataFilters & { range?: DateRange } = {}): Promise<BrandRankRow[] | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const filteredRuns = runFiles
@@ -1045,7 +1062,7 @@ export async function getRealTopBrands(filters: RealDataFilters & { range?: Date
   const promptRuns = filteredRuns.filter((run) => !filters.range || currentWeekSet.has(toUtcSundayWeekStart(run.runAt)));
   if (promptRuns.length === 0) return null;
 
-  const brands = await getRealBrandSeeds(ORG_ID);
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
 
   const knownBrandNames = new Set(
@@ -1105,7 +1122,8 @@ export async function getRealTopBrands(filters: RealDataFilters & { range?: Date
 // 인용한 서로 다른 실행 수)와, 그 응답들 중 우리 브랜드가 함께 언급된
 // 실행 수(myBrand)를 집계한다.
 export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<CitedPageRow[] | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -1116,7 +1134,7 @@ export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) });
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
   const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
   if (ownCitations.length === 0) return null;
 
@@ -1158,8 +1176,9 @@ export async function getRealCitedSources(
   filters: RealDataFilters = {},
   extras: { trackedDomains?: string[] } = {}
 ): Promise<CitedSourceRow[] | null> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
   const trackedDomains = extras.trackedDomains ?? [];
-  const runFiles = await listCollectedRuns();
+  const runFiles = await listCollectedRuns(ORG_ID);
 
   const promptRuns = runFiles
     .map((f) => f.promptRun)
@@ -1170,7 +1189,7 @@ export async function getRealCitedSources(
 
   const processed =
     promptRuns.length > 0
-      ? await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID) })
+      ? await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) })
       : null;
   const thirdPartyCitations = processed?.citations.filter((c) => !c.isOwnDomain) ?? [];
   if (thirdPartyCitations.length === 0 && trackedDomains.length === 0) return null;
@@ -1231,7 +1250,8 @@ export interface TopicBrandMentionRow {
 }
 
 export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): Promise<TopicBrandMentionRow[] | null> {
-  const runFiles = await listCollectedRuns();
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const promptRuns = runFiles
@@ -1242,7 +1262,7 @@ export async function getRealTopicBrandMentions(filters: RealDataFilters = {}): 
     .filter((run) => !filters.marketId || run.marketId === filters.marketId);
   if (promptRuns.length === 0) return null;
 
-  const brands = await getRealBrandSeeds(ORG_ID);
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
   const brandNameById = new Map(brands.map((b) => [b.id, b.name]));

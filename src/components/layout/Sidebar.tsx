@@ -47,6 +47,7 @@ const NAV: NavGroup[] = [
       { label: "프롬프트 리서치", href: "/prompt-research" },
       { label: "검색어 트렌드", href: "/search-trend" },
       { label: "검색 성과 (GSC)", href: "/search-performance" },
+      { label: "YouTube AIO 인용", href: "/youtube-aio" },
       { label: "수집 로그", href: "/collection-runs" },
     ],
   },
@@ -81,7 +82,10 @@ const NAV: NavGroup[] = [
     label: "설정",
     href: "#",
     icon: Settings,
-    children: [{ label: "브랜드 설정", href: "/brands-management" }],
+    children: [
+      { label: "조직 관리", href: "/organizations" },
+      { label: "브랜드 설정", href: "/brands-management" },
+    ],
   },
   { label: "도움말 및 학습", href: "/help", icon: HelpCircle },
 ];
@@ -100,7 +104,14 @@ export function Sidebar() {
             active={pathname === item.href}
           />
           {item.children?.map((child) => (
-            <NavRow key={child.label} label={child.label} href={child.href} indent active={pathname === child.href} />
+            // 하위 경로(예: /youtube-aio/<키워드>)에서도 메뉴가 선택돼 보이도록.
+            <NavRow
+              key={child.label}
+              label={child.label}
+              href={child.href}
+              indent
+              active={pathname === child.href || pathname.startsWith(`${child.href}/`)}
+            />
           ))}
         </div>
       ))}

@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { registerUrl, unregisterUrl } from "@/lib/backend/registeredUrls";
-import { DEFAULT_ORG_ID } from "@/lib/db";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const url = typeof body?.url === "string" ? body.url.trim() : "";
   if (!url) {
     return NextResponse.json({ error: "URL이 필요합니다." }, { status: 400 });
   }
-  await registerUrl(DEFAULT_ORG_ID, url);
+  await registerUrl(tenant.orgId, url);
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const url = typeof body?.url === "string" ? body.url.trim() : "";
   if (!url) {
     return NextResponse.json({ error: "URL이 필요합니다." }, { status: 400 });
   }
-  await unregisterUrl(DEFAULT_ORG_ID, url);
+  await unregisterUrl(tenant.orgId, url);
   return NextResponse.json({ ok: true });
 }

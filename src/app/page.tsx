@@ -9,7 +9,7 @@ import { ChecklistCard } from "@/components/overview/ChecklistCard";
 import { ChartPanel } from "@/components/overview/ChartPanel";
 import { ContentVisibilityCard } from "@/components/overview/ContentVisibilityCard";
 import { StatCard } from "@/components/overview/StatCard";
-import { DateRange, DEFAULT_ORG_ID, db } from "@/lib/db";
+import { DateRange, db } from "@/lib/db";
 import {
   buildComplexityOpportunity,
   buildContentRecoveryFromCrawlHistory,
@@ -27,6 +27,7 @@ import { isDemoMode } from "@/lib/backend/demoMode";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
 import { Opportunity } from "@/lib/db";
 import { getManagedBrands } from "@/lib/backend/brandsManagementStore";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 function normalizeHostname(hostname: string) {
   return hostname.replace(/^www\./, "");
@@ -45,7 +46,8 @@ export default async function OverviewPage({
 }: {
   searchParams: Promise<{ range?: string; domain?: string; platform?: string; category?: string; market?: string }>;
 }) {
-  const orgId = DEFAULT_ORG_ID;
+  const tenant = await getCurrentTenant();
+  const orgId = tenant.orgId;
   const params = await searchParams;
   const range: DateRange = VALID_RANGES.includes(params.range as DateRange) ? (params.range as DateRange) : "4w";
   // "Demo" 브랜드가 선택돼 있으면(OrgBrandSwitcher) 실 수집 데이터를 아예
@@ -67,7 +69,7 @@ export default async function OverviewPage({
     llmModels,
     promptLibraryRows,
   ] = await Promise.all([
-    db.organizations.get(orgId),
+    tenant.org,
     db.overview.getStatCards(orgId, range),
     db.overview.getContentVisibility(orgId),
     db.overview.getChecklist(orgId),
@@ -78,7 +80,7 @@ export default async function OverviewPage({
     db.brandsManagement.get(orgId),
     getManagedBrands(orgId),
     db.seed.llmModels(),
-    listPromptLibrary(orgId),
+    listPromptLibrary(orgId, tenant.brandId),
   ]);
 
   // 카테고리/마켓/도메인 옵션은 Brand Management에 등록된 실제 데이터에서 가져온다

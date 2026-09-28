@@ -153,3 +153,36 @@ test("legacy brainstorm strings are adapted without changing their prompt text",
   assert.equal(cards[0].topics[0].prompt, "Old question");
   assert.ok(cards[0].id);
 });
+
+test("organizations: create, rename, list with brand counts, delete only when empty", async () => {
+  const store = await database();
+  await store.ensureOrg("neodigm", "Neodigm");
+  const sf = await store.createOrganization("Salesforce");
+  assert.match(sf.id, /^org-/);
+  assert.equal(await store.renameOrganization(sf.id, "Salesforce Korea"), true);
+  assert.equal(await store.renameOrganization("missing", "x"), false);
+
+  const brand = await store.createBrand(sf.id, {
+    name: "Salesforce", url: "https://www.salesforce.com", sitemapUrl: "", description: "", industry: "", markets: [], status: "pending",
+    aliases: [], otherBrands: [], urls: [], socialAccounts: [], earnedContentSources: [], cdnConnected: false, gscConnected: false, analyticsConnected: false,
+  });
+  assert.deepEqual(
+    (await store.listOrganizations()).map((o) => [o.name, o.brandCount]),
+    [["Neodigm", 0], ["Salesforce Korea", 1]]
+  );
+  assert.equal((await store.getBrandById(brand.id))?.organizationId, sf.id);
+  assert.equal(await store.getBrand("neodigm", brand.id), null, "a brand is not visible from another organization");
+
+  // prompts/tracking stay in their own organization
+  await store.track(sf.id, { text: "Slack 세일즈포스 연동", category: "How-to" }, { brandId: brand.id, origin: "manual" });
+  await store.track("neodigm", { text: "Neodigm only" }, { brandId: "brand-neodigm", origin: "manual" });
+  assert.deepEqual((await store.library(sf.id, brand.id)).map((r) => r.prompt), ["Slack 세일즈포스 연동"]);
+  assert.deepEqual((await store.library("neodigm", "brand-neodigm")).map((r) => r.prompt), ["Neodigm only"]);
+
+  assert.equal(await store.deleteOrganization(sf.id), false, "brands still exist");
+  await store.deleteBrand(sf.id, brand.id);
+  assert.equal(await store.deleteOrganization(sf.id), true);
+  const [{ n }] = await store.query<{ n: number }>("SELECT count(*)::int AS n FROM prompts WHERE organization_id=$1", [sf.id]);
+  assert.equal(n, 0, "the organization's prompts are removed with it");
+  assert.deepEqual((await store.library("neodigm", "brand-neodigm")).map((r) => r.prompt), ["Neodigm only"]);
+});

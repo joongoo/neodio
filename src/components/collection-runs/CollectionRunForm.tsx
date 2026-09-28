@@ -105,7 +105,7 @@ export function CollectionRunForm() {
             id="collection-keyword"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="예: 네오다임"
+            placeholder="예: CRM 추천"
             className="h-10 w-[220px] rounded-md border border-neutral-300 px-3 text-sm text-neutral-800 outline-none focus:border-slate-500"
           />
         </div>

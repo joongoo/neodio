@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setTopicOpportunityTarget } from "@/lib/backend/topicOpportunityTargets";
-import { DEFAULT_ORG_ID } from "@/lib/db";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const topic = typeof body?.topic === "string" ? body.topic.trim() : "";
   const targetUrl = typeof body?.targetUrl === "string" ? body.targetUrl.trim() : "";
@@ -11,6 +12,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "토픽이 필요합니다." }, { status: 400 });
   }
 
-  await setTopicOpportunityTarget(DEFAULT_ORG_ID, topic, targetUrl);
+  await setTopicOpportunityTarget(tenant.orgId, topic, targetUrl);
   return NextResponse.json({ ok: true });
 }

@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEFAULT_ORG_ID } from "@/lib/db";
 import { deleteCategory, listCategories, saveCategory } from "@/lib/backend/categoryStore";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export async function GET() {
-  return NextResponse.json({ categories: await listCategories(DEFAULT_ORG_ID) });
+  const tenant = await getCurrentTenant();
+  return NextResponse.json({ categories: await listCategories(tenant.orgId) });
 }
 
 async function save(request: NextRequest, editing: boolean) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const id = typeof body?.id === "string" ? body.id : undefined;
   if (!name || (editing && !id)) return NextResponse.json({ error: "카테고리 정보가 필요합니다." }, { status: 400 });
   try {
-    await saveCategory(DEFAULT_ORG_ID, name, editing ? id : undefined);
+    await saveCategory(tenant.orgId, name, editing ? id : undefined);
     return GET();
   } catch (error) {
     if (error instanceof Error && error.message === "Category already exists") return NextResponse.json({ error: "동일한 카테고리가 있습니다." }, { status: 409 });
@@ -25,8 +27,9 @@ export const POST = (request: NextRequest) => save(request, false);
 export const PATCH = (request: NextRequest) => save(request, true);
 
 export async function DELETE(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   try {
-    const found = await deleteCategory(DEFAULT_ORG_ID, request.nextUrl.searchParams.get("id") ?? "");
+    const found = await deleteCategory(tenant.orgId, request.nextUrl.searchParams.get("id") ?? "");
     if (!found) return NextResponse.json({ error: "카테고리를 찾을 수 없습니다." }, { status: 404 });
     return GET();
   } catch (error) {

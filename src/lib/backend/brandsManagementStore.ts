@@ -1,5 +1,4 @@
 import { getPromptStore } from "./database";
-import { DEFAULT_ORG_ID } from "@/lib/db";
 import { ManagedBrand } from "@/lib/db/types";
 
 // 브랜드 관리의 브랜드 추가/편집/삭제 — 프롬프트/카테고리/토픽과 같은
@@ -20,10 +19,17 @@ export async function createManagedBrand(orgId: string, brand: Omit<ManagedBrand
   return (await getPromptStore()).createBrand(orgId, brand);
 }
 
+/** 조직을 모르는 곳(브랜드 id만 있는 API, 정기 수집 CLI)용 — 브랜드 id는 전역에서 유일하다. */
+export async function getManagedBrandById(brandId: string): Promise<ManagedBrand | null> {
+  return (await getPromptStore()).getBrandById(brandId);
+}
+
 export async function updateManagedBrand(brandId: string, patch: Partial<ManagedBrand>): Promise<void> {
-  await (await getPromptStore()).updateBrand(DEFAULT_ORG_ID, brandId, patch);
+  const brand = await getManagedBrandById(brandId);
+  if (brand) await (await getPromptStore()).updateBrand(brand.organizationId, brandId, patch);
 }
 
 export async function deleteManagedBrand(brandId: string): Promise<void> {
-  await (await getPromptStore()).deleteBrand(DEFAULT_ORG_ID, brandId);
+  const brand = await getManagedBrandById(brandId);
+  if (brand) await (await getPromptStore()).deleteBrand(brand.organizationId, brandId);
 }

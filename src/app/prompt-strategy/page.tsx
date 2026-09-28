@@ -1,5 +1,5 @@
 import { PromptStrategyClient } from "@/components/prompt-strategy/PromptStrategyClient";
-import { DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db, GscCraftedPrompt, LlmBrainstormCard, PromptStrategySuggestion, PromptStrategyTopicRow } from "@/lib/db";
+import { db, GscCraftedPrompt, LlmBrainstormCard, PromptStrategySuggestion, PromptStrategyTopicRow } from "@/lib/db";
 import { getRealGscCoverageGaps, getRealGscTopPages } from "@/lib/backend/gscSearchAnalyticsReader";
 import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTopics";
 import { isDemoMode } from "@/lib/backend/demoMode";
@@ -7,6 +7,8 @@ import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getLlmBridgeEntry, getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { formatTopicBrandMentionsDigest, getRealTopicBrandMentions } from "@/lib/backend/collectionStatsReader";
 import { getTopicOptionsByCategory } from "@/lib/backend/promptTopics";
+import { getCurrentTenant } from "@/lib/backend/tenant";
+import { EMPTY_PROMPT_STRATEGY } from "@/lib/db/data/emptyOrg";
 
 // GSC 연결/추적 프롬프트가 방금 바뀌었을 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
@@ -26,6 +28,7 @@ function stableId(prefix: string, naturalKey: string): string {
 }
 
 export default async function PromptStrategyPage() {
+  const tenant = await getCurrentTenant();
   const demo = await isDemoMode();
   const [
     data,
@@ -39,16 +42,16 @@ export default async function PromptStrategyPage() {
     topPages,
     topicOptionsByCategory,
   ] = await Promise.all([
-    db.promptStrategy.get(DEFAULT_ORG_ID),
-    listSeedLibraryRows(DEFAULT_ORG_ID),
-    listTrackedTopics(DEFAULT_ORG_ID),
-    getDeletedLibraryRowIds(DEFAULT_ORG_ID),
-    getLlmBridgeScope<GscCraftedPrompt[]>(DEFAULT_ORG_ID, "gsc-keyword-prompts"),
-    getLlmBridgeEntry<LlmBrainstormCard[]>(DEFAULT_ORG_ID, "llm-brainstorm", "current"),
+    db.promptStrategy.get(tenant.orgId).then((d) => d ?? EMPTY_PROMPT_STRATEGY),
+    listSeedLibraryRows(tenant.orgId, tenant.brandId),
+    listTrackedTopics(tenant.orgId, tenant.brandId),
+    getDeletedLibraryRowIds(tenant.orgId),
+    getLlmBridgeScope<GscCraftedPrompt[]>(tenant.orgId, "gsc-keyword-prompts"),
+    getLlmBridgeEntry<LlmBrainstormCard[]>(tenant.orgId, "llm-brainstorm", "current"),
     demo ? Promise.resolve(null) : getRealTopicBrandMentions().catch(() => null),
-    getLlmBridgeScope<GscCraftedPrompt[]>(DEFAULT_ORG_ID, "citation-test-prompts"),
-    demo ? Promise.resolve(null) : getRealGscTopPages(DEFAULT_BRAND_ID, 5).catch(() => null),
-    getTopicOptionsByCategory(DEFAULT_ORG_ID),
+    getLlmBridgeScope<GscCraftedPrompt[]>(tenant.orgId, "citation-test-prompts"),
+    demo ? Promise.resolve(null) : getRealGscTopPages(tenant.brandId, 5).catch(() => null),
+    getTopicOptionsByCategory(tenant.orgId),
   ]);
   if (!data) return null;
 
@@ -61,7 +64,7 @@ export default async function PromptStrategyPage() {
   // 추적할 수 없는 불일치가 생긴다.
   const promptLibraryRows = promptLibraryRowsRaw.filter((r) => !deletedIds.has(r.id));
   const trackedPrompts = [...promptLibraryRows, ...trackedRows].map((r) => r.prompt);
-  const realGaps = demo ? null : await getRealGscCoverageGaps(DEFAULT_BRAND_ID, trackedPrompts).catch(() => null);
+  const realGaps = demo ? null : await getRealGscCoverageGaps(tenant.brandId, trackedPrompts).catch(() => null);
 
   // 실 GSC 연결이 있으면 mock GSC 토픽(st-1, st-2 — 가짜 노출수)을 뺀다.
   // GSC 키워드 자체는 프롬프트 문장이 아니므로(사람이 검색창에 친 짧은

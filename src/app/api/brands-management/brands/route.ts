@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createManagedBrand } from "@/lib/backend/brandsManagementStore";
-import { DEFAULT_ORG_ID } from "@/lib/db";
+
 import { ManagedBrand } from "@/lib/db/types";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const url = typeof body?.url === "string" ? body.url.trim() : "";
@@ -29,6 +31,6 @@ export async function POST(request: NextRequest) {
     analyticsConnected: false,
   };
 
-  const created = await createManagedBrand(DEFAULT_ORG_ID, brand);
+  const created = await createManagedBrand(tenant.orgId, brand);
   return NextResponse.json({ brand: created });
 }

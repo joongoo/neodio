@@ -1,33 +1,14 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { ensureIncognitoCdpEndpoint, killOwnedChrome } from "./lib/incognito-chrome.mjs";
 
 const DEFAULT_QUERY = "B2B 마케팅 솔루션 추천";
 const DEFAULT_MARKET_ID = "market-kr";
 const DEFAULT_PROMPT_ID = "manual-google-ai-test";
 const GOOGLE_AI_MODEL_ID = "model-google-ai-overview";
-
-// Real Chrome install paths per OS — Google collection must always run
-// through a real, incognito Chrome (see ensureIncognitoCdpEndpoint below),
-// so this needs to resolve on whichever machine runs it, not just this one.
-const CHROME_PATH_CANDIDATES = {
-  darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
-  win32: [
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    `${process.env.LOCALAPPDATA ?? ""}\\Google\\Chrome\\Application\\chrome.exe`,
-  ],
-  linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/opt/google/chrome/google-chrome"],
-};
-
-function resolveChromePath() {
-  const candidates = CHROME_PATH_CANDIDATES[process.platform] ?? [];
-  return candidates.find((candidate) => candidate && existsSync(candidate)) ?? null;
-}
 
 function argValue(name, fallback = undefined) {
   const prefix = `--${name}=`;
@@ -50,7 +31,7 @@ function buildGoogleQueryValue(query) {
 // full source list, not the classic accordion "AI Overview" box. Headless
 // Playwright chromium hit a captcha wall against plain google.com/search;
 // a real, incognito Chrome window on this AI Mode URL did not. See
-// ensureIncognitoCdpEndpoint below — Google collection always goes through
+// ensureIncognitoCdpEndpoint (lib/incognito-chrome.mjs) — Google collection always goes through
 // that real browser now, never the bundled headless one.
 function buildGoogleSearchUrl(query) {
   return `https://www.google.com/search?q=${buildGoogleQueryValue(query)}&hl=ko&udm=50`;
@@ -66,45 +47,6 @@ function normalizeMultiline(value) {
     .map((line) => normalizeWhitespace(line))
     .filter(Boolean)
     .join("\n\n");
-}
-
-// Spawns a fresh, disposable incognito Chrome with a CDP debug port and
-// waits for it to come up. Google must always be collected through a real,
-// private Chrome session — never Playwright's bundled headless chromium —
-// so this is the only way into main() when --cdp-endpoint isn't given.
-async function ensureIncognitoCdpEndpoint(explicitEndpoint) {
-  if (explicitEndpoint) return { endpoint: explicitEndpoint, ownedProcess: null };
-
-  const chromePath = resolveChromePath();
-  if (!chromePath) {
-    throw new Error(
-      `Google Chrome을 찾을 수 없습니다 (${process.platform}). Google AI Mode 수집은 실제 시크릿 Chrome이 반드시 필요합니다 — Chrome을 설치하거나, 이미 열려 있는 디버그 세션의 --cdp-endpoint를 넘겨주세요.`
-    );
-  }
-
-  const port = 9223;
-  const profileDir = path.join(".tmp", `google-ai-auto-chrome-${Date.now()}`);
-  mkdirSync(profileDir, { recursive: true });
-
-  const child = spawn(
-    chromePath,
-    ["--incognito", `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`, "about:blank"],
-    { detached: true, stdio: "ignore" }
-  );
-  child.unref();
-
-  const endpoint = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${endpoint}/json/version`);
-      if (res.ok) return { endpoint, ownedProcess: child };
-    } catch {
-      // Chrome still starting up
-    }
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-  throw new Error("Timed out waiting for the incognito Chrome debug port to become ready.");
 }
 
 async function waitForAiModeAnswer(page, timeoutMs, minWaitMs) {
@@ -231,7 +173,13 @@ async function main() {
 
   await mkdir(outputDir, { recursive: true });
 
-  const { endpoint: cdpEndpoint, ownedProcess } = await ensureIncognitoCdpEndpoint(argValue("cdp-endpoint"));
+  // Google must always be collected through a real, private Chrome session —
+  // never Playwright's bundled headless chromium (see lib/incognito-chrome.mjs).
+  const { endpoint: cdpEndpoint, ownedProcess, profileDir } = await ensureIncognitoCdpEndpoint(argValue("cdp-endpoint"), {
+    port: 9223,
+    profilePrefix: "google-ai-auto-chrome",
+    missingChromeMessage: `Google Chrome을 찾을 수 없습니다 (${process.platform}). Google AI Mode 수집은 실제 시크릿 Chrome이 반드시 필요합니다 — Chrome을 설치하거나, 이미 열려 있는 디버그 세션의 --cdp-endpoint를 넘겨주세요.`,
+  });
   const browser = await chromium.connectOverCDP(cdpEndpoint);
   const context = browser.contexts()[0] || (await browser.newContext({ locale: "ko-KR" }));
   const page =
@@ -326,13 +274,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     await browser.close().catch(() => {});
-    if (ownedProcess) {
-      try {
-        process.kill(-ownedProcess.pid);
-      } catch {
-        // already exited
-      }
-    }
+    killOwnedChrome(ownedProcess, profileDir);
   }
 }
 

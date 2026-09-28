@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startCollectionJob } from "@/lib/backend/collectionJobRunner";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 // 실제 수집(Playwright로 네이버/구글 AI검색을 여는 자식 프로세스)은 로컬
 // 프로세스 전제로 짜여있어서 Vercel 서버리스에서 못 돈다 — 사이트맵 크롤과
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "엔진을 하나 이상 선택해주세요." }, { status: 400 });
   }
 
-  const job = startCollectionJob(keyword, engines);
+  // 결과 파일은 지금 선택된 조직으로 들어간다(작업 기록에 조직을 남김).
+  const job = startCollectionJob((await getCurrentTenant()).orgId, keyword, engines);
   return NextResponse.json({ jobId: job.id });
 }

@@ -1,5 +1,5 @@
 import { BrandPresenceClient } from "@/components/brand-presence/BrandPresenceClient";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+import { db } from "@/lib/db";
 import {
   getRealDataInsights,
   getRealMarketWeeklyTracking,
@@ -10,6 +10,8 @@ import {
   getRealStatSeries,
 } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
+import { getCurrentTenant } from "@/lib/backend/tenant";
+import { EMPTY_BRAND_PRESENCE } from "@/lib/db/data/emptyOrg";
 
 const RANGE = "4w" as const;
 
@@ -17,10 +19,11 @@ const RANGE = "4w" as const;
 export const dynamic = "force-dynamic";
 
 export default async function BrandPresencePage() {
+  const tenant = await getCurrentTenant();
   const demo = await isDemoMode();
   const [statCardsSeed, data] = await Promise.all([
-    db.brandPresence.getStatCards(DEFAULT_ORG_ID),
-    db.brandPresence.get(DEFAULT_ORG_ID),
+    db.brandPresence.getStatCards(tenant.orgId),
+    db.brandPresence.get(tenant.orgId).then((d) => d ?? EMPTY_BRAND_PRESENCE),
   ]);
   if (!data) return null;
 

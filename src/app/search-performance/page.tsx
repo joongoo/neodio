@@ -1,23 +1,25 @@
 import { SearchPerformanceClient } from "@/components/search-performance/SearchPerformanceClient";
-import { DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db } from "@/lib/db";
+import { db } from "@/lib/db";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
 import { getRealGscSearchPerformance } from "@/lib/backend/gscSearchAnalyticsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 // GSC 연결 상태/데이터가 방금 바뀌었을 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
 
 export default async function SearchPerformancePage() {
+  const tenant = await getCurrentTenant();
   const demo = await isDemoMode();
   const [brand, gscMock, performanceMock, gscToken] = await Promise.all([
-    getManagedBrand(DEFAULT_ORG_ID, DEFAULT_BRAND_ID),
-    db.connections.getGsc(DEFAULT_BRAND_ID),
-    db.gscSearchPerformance.get(DEFAULT_BRAND_ID),
-    getGscToken(DEFAULT_BRAND_ID),
+    getManagedBrand(tenant.orgId, tenant.brandId),
+    db.connections.getGsc(tenant.brandId),
+    db.gscSearchPerformance.get(tenant.brandId),
+    getGscToken(tenant.brandId),
   ]);
 
-  const realPerformance = gscToken && !demo ? await getRealGscSearchPerformance(DEFAULT_BRAND_ID).catch(() => null) : null;
+  const realPerformance = gscToken && !demo ? await getRealGscSearchPerformance(tenant.brandId).catch(() => null) : null;
   const performance = realPerformance ?? (demo ? performanceMock : null);
 
   // gscMock(항상 "connected")은 "Demo" 브랜드에서만 쓴다 — 실 토큰이 없는데
@@ -26,7 +28,7 @@ export default async function SearchPerformancePage() {
   // 통계"도 mock 수치가 아니라 realPerformance의 실측 합계를 쓴다.
   const gsc = gscToken && !demo
     ? {
-        brandId: DEFAULT_BRAND_ID,
+        brandId: tenant.brandId,
         status: "connected" as const,
         accountEmail: gscToken.accountEmail,
         property: gscToken.property,
@@ -42,6 +44,7 @@ export default async function SearchPerformancePage() {
   return (
     <SearchPerformanceClient
       brandName={brand?.name ?? "브랜드"}
+      brandId={tenant.brandId}
       gsc={gsc}
       performance={performance}
       real={realPerformance !== null}

@@ -1,11 +1,15 @@
 import { ArrowLeft, Cloud, LineChart } from "lucide-react";
 import { GscConnectionCard } from "@/components/brands-management/GscConnectionCard";
 import { ComingSoonConnectionCard } from "@/components/brands-management/ComingSoonConnectionCard";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+import { YoutubeChannelsCard } from "@/components/brands-management/YoutubeChannelsCard";
+import { AioSettingsCard } from "@/components/brands-management/AioSettingsCard";
+import { db } from "@/lib/db";
 import { getGscToken } from "@/lib/backend/gscTokenStore";
 import { getRealGscSearchPerformance } from "@/lib/backend/gscSearchAnalyticsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { getBrandAioSettings, listBrandYoutubeChannels } from "@/lib/backend/brandAioConfig";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 // GSC 토큰이 방금 연결/해제됐을 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
@@ -17,13 +21,16 @@ export default async function BrandConnectionsPage({
   params: Promise<{ brandId: string }>;
   searchParams: Promise<{ gsc_connected?: string; gsc_error?: string }>;
 }) {
+  const tenant = await getCurrentTenant();
   const { brandId } = await params;
   const query = await searchParams;
   const demo = await isDemoMode();
-  const [brand, gscMock, gscToken] = await Promise.all([
-    getManagedBrand(DEFAULT_ORG_ID, brandId),
+  const [brand, gscMock, gscToken, youtubeChannels, aioSettings] = await Promise.all([
+    getManagedBrand(tenant.orgId, brandId),
     db.connections.getGsc(brandId),
     getGscToken(brandId),
+    listBrandYoutubeChannels(brandId),
+    getBrandAioSettings(brandId),
   ]);
   if (!brand) return null;
 
@@ -73,6 +80,8 @@ export default async function BrandConnectionsPage({
       )}
 
       <GscConnectionCard gsc={gsc} brandId={brandId} />
+      <YoutubeChannelsCard brandId={brandId} initialChannels={youtubeChannels} />
+      <AioSettingsCard brandId={brandId} initialSettings={aioSettings} />
       <ComingSoonConnectionCard
         title="CDN"
         description="Edge/CDN 로그를 연결해 AI 에이전트 트래픽을 추적할 수 있습니다."

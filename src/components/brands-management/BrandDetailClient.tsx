@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Link2, Share2, FileText, Tag, Radar, Sparkles, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, X, Link2, FileText, Tag, Radar, Sparkles, Pencil } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlModal";
-import { ManagedBrand, TrackedOtherBrand } from "@/lib/db";
+import { ChannelCitationSummary, SocialAccountsSection } from "@/components/brands-management/SocialAccountsSection";
+import { BrandYoutubeChannel, ManagedBrand, TrackedOtherBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
 
 const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
@@ -21,10 +22,15 @@ type SitemapCrawlStatus = Pick<SitemapCrawlJob, "stage" | "log" | "error" | "res
 export function BrandDetailClient({
   initial,
   observedBrands = [],
+  youtubeChannels = [],
+  channelCitationStats = null,
 }: {
   initial: ManagedBrand;
   /** 가시성 개요에서 실제로 언급된 브랜드 목록 — "추적할 기타 브랜드" +버튼이 여기서 고른다. */
   observedBrands?: { name: string; mentions: number }[];
+  /** YouTube AIO 인용 판정용 채널 — 소셜 계정의 YouTube 항목과 짝지어 보여준다. */
+  youtubeChannels?: BrandYoutubeChannel[];
+  channelCitationStats?: Record<string, ChannelCitationSummary> | null;
 }) {
   const router = useRouter();
   const [brand, setBrand] = useState(initial);
@@ -39,7 +45,7 @@ export function BrandDetailClient({
   const [editingOtherBrand, setEditingOtherBrand] = useState<TrackedOtherBrand | null>(null);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
-  const [addSocialOpen, setAddSocialOpen] = useState(false);
+  const [channels, setChannels] = useState(youtubeChannels);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [crawlJobId, setCrawlJobId] = useState<string | null>(null);
   const [crawlStatus, setCrawlStatus] = useState<SitemapCrawlStatus | null>(null);
@@ -273,13 +279,22 @@ export function BrandDetailClient({
         onAdd={() => setAddUrlOpen(true)}
         onRemove={(i) => applyListChange({ urls: brand.urls.filter((_, idx) => idx !== i) })}
       />
-      <ListSection
-        icon={Share2}
-        title="소셜 계정"
-        description="이 브랜드의 공식 소셜 미디어 계정입니다."
-        items={brand.socialAccounts.map((s) => `${s.platform}: ${s.handle}`)}
-        onAdd={() => setAddSocialOpen(true)}
-        onRemove={(i) => applyListChange({ socialAccounts: brand.socialAccounts.filter((_, idx) => idx !== i) })}
+      <SocialAccountsSection
+        brandId={brand.id}
+        brandName={brand.name}
+        brandActive={brand.status === "active"}
+        accounts={brand.socialAccounts}
+        channels={channels}
+        citationStats={channelCitationStats}
+        onLocalChange={(socialAccounts) => applyListChange({ socialAccounts })}
+        onServerSynced={(socialAccounts, nextChannels) => {
+          setBrand((b) => ({ ...b, socialAccounts }));
+          setDraft((d) => ({ ...d, socialAccounts }));
+          setChannels(nextChannels);
+          showToast("변경사항을 저장했습니다.");
+          // 새로 연결한 채널의 인용 요약(서버에서 계산)을 다시 받아온다.
+          router.refresh();
+        }}
       />
       <ListSection
         icon={FileText}
@@ -431,17 +446,6 @@ export function BrandDetailClient({
         label="도메인"
         onClose={() => setAddSourceOpen(false)}
         onAdd={(v) => applyListChange({ earnedContentSources: [...brand.earnedContentSources, v] })}
-      />
-      <SimpleAddModal
-        open={addSocialOpen}
-        title="소셜 계정 추가"
-        label="플랫폼: 계정"
-        placeholder="예: LinkedIn: neodigm"
-        onClose={() => setAddSocialOpen(false)}
-        onAdd={(v) => {
-          const [platform, handle] = v.split(":").map((s) => s.trim());
-          applyListChange({ socialAccounts: [...brand.socialAccounts, { platform: platform || v, handle: handle || "" }] });
-        }}
       />
 
       <Modal open={moveToPendingOpen} onClose={() => setMoveToPendingOpen(false)}>

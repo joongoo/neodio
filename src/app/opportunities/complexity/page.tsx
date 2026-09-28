@@ -1,16 +1,18 @@
 import { ContentAuditClient } from "@/components/opportunities/ContentAuditClient";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+
 import { buildComplexityOpportunity, getSitemapCrawlHistory } from "@/lib/backend/sitemapCrawlReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { getCachedUrlIndexStatuses } from "@/lib/backend/gscUrlInspectionStore";
 import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function ComplexityOpportunityPage() {
-  const [org, demo, excludedUrls] = await Promise.all([db.organizations.get(DEFAULT_ORG_ID), isDemoMode(), getExcludedUrls(DEFAULT_ORG_ID, "complexity")]);
+  const tenant = await getCurrentTenant();
+  const [org, demo, excludedUrls] = await Promise.all([tenant.org, isDemoMode(), getExcludedUrls(tenant.orgId, "complexity")]);
   const history = demo || !org ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
   const data = buildComplexityOpportunity(history, excludedUrls);
 
@@ -23,8 +25,8 @@ export default async function ComplexityOpportunityPage() {
   }
 
   const [guides, indexStatuses, pageSpeedResults] = await Promise.all([
-    getLlmBridgeScope<{ guide: string }>(DEFAULT_ORG_ID, "content-guide-complexity"),
-    getCachedUrlIndexStatuses(DEFAULT_ORG_ID),
+    getLlmBridgeScope<{ guide: string }>(tenant.orgId, "content-guide-complexity"),
+    getCachedUrlIndexStatuses(tenant.orgId),
     getCachedPageSpeedResults(),
   ]);
   const dataWithExtras = {

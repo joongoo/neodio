@@ -5,6 +5,8 @@ export type CollectionStage = "install" | "naver" | "google" | "save" | "done" |
 
 export interface CollectionJob {
   id: string;
+  /** 수집을 시작한 조직 — 결과 파일이 이 조직으로 들어간다. 예전 작업엔 없음(기본 조직). */
+  organizationId?: string;
   keyword: string;
   engines: ("naver" | "google")[];
   stage: CollectionStage;

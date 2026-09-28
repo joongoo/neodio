@@ -1,5 +1,5 @@
 import { VisibilityOverviewClient } from "@/components/visibility-overview/VisibilityOverviewClient";
-import { DateRange, DEFAULT_BRAND_ID, DEFAULT_ORG_ID, db, VisibilityTableRow } from "@/lib/db";
+import { DateRange, db, VisibilityTableRow } from "@/lib/db";
 import {
   getRealCitedPages,
   getRealCitedSources,
@@ -18,6 +18,7 @@ import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { listDetectedBrandDecisions } from "@/lib/backend/detectedBrandDecisions";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다 —
@@ -29,7 +30,8 @@ export default async function VisibilityOverviewPage({
 }: {
   searchParams: Promise<{ range?: string }>;
 }) {
-  const orgId = DEFAULT_ORG_ID;
+  const tenant = await getCurrentTenant();
+  const orgId = tenant.orgId;
   const requestedRange = (await searchParams).range;
   const range: DateRange = VALID_RANGES.includes(requestedRange as DateRange)
     ? (requestedRange as DateRange)
@@ -38,18 +40,18 @@ export default async function VisibilityOverviewPage({
 
   const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand, sourceRecommendations, brandDecisions] =
     await Promise.all([
-      db.organizations.get(orgId),
+      tenant.org,
       db.visibilityOverview.getStatCards(orgId, range),
       db.visibilityOverview.getMentionsByModel(orgId),
       db.visibilityOverview.getMentionsByMarket(orgId),
       db.visibilityOverview.getTopicCategories(orgId),
-      listSeedLibraryRows(orgId),
-      listTrackedTopics(orgId),
+      listSeedLibraryRows(orgId, tenant.brandId),
+      listTrackedTopics(orgId, tenant.brandId),
       getDeletedLibraryRowIds(orgId),
       getTopicOpportunityTargets(orgId),
-      getManagedBrand(orgId, DEFAULT_BRAND_ID),
-      getLlmBridgeScope<SourceOpportunityRecommendation>(DEFAULT_ORG_ID, "source-recommendation"),
-      listDetectedBrandDecisions(orgId, DEFAULT_BRAND_ID),
+      getManagedBrand(orgId, tenant.brandId),
+      getLlmBridgeScope<SourceOpportunityRecommendation>(tenant.orgId, "source-recommendation"),
+      listDetectedBrandDecisions(orgId, tenant.brandId),
     ]);
   // 토픽 기회에 "이미 프롬프트 라이브러리에 추가됐는지" 배지를 달기 위한
   // 실제 라이브러리 프롬프트 문장 전체 — 프롬프트 전략 페이지와 동일한

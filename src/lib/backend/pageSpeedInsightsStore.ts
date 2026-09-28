@@ -20,6 +20,7 @@ export async function getCachedPageSpeedResults(
   strategy: PageSpeedResult["strategy"] = "mobile"
 ): Promise<Record<string, PageSpeedResult>> {
   const store = await getPromptStore();
+  // URL 단위 측정 캐시라 조직과 무관한 공용 캐시로 기본 조직 스코프에 둔다.
   const all = await store.bridgeScope<PageSpeedResult>(DEFAULT_ORG_ID, SCOPE);
   const byUrl: Record<string, PageSpeedResult> = {};
   for (const result of Object.values(all)) {

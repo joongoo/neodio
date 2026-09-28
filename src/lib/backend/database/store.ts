@@ -97,8 +97,61 @@ export class PromptStore {
     }
   }
 
-  async ensureOrg(orgId: string): Promise<void> {
-    await this.run("INSERT INTO organizations VALUES ($1,$2) ON CONFLICT DO NOTHING", [orgId, orgId]);
+  async ensureOrg(orgId: string, name = orgId): Promise<void> {
+    await this.run("INSERT INTO organizations VALUES ($1,$2) ON CONFLICT DO NOTHING", [orgId, name]);
+  }
+
+  // 조직 관리(설정 > 조직 관리) — 헤더의 조직 스위처가 이 목록을 쓴다.
+  async listOrganizations(): Promise<{ id: string; name: string; brandCount: number }[]> {
+    return this.query<{ id: string; name: string; brandCount: number }>(
+      `SELECT o.id, o.name, count(b.id)::int AS "brandCount" FROM organizations o
+       LEFT JOIN brands b ON b.organization_id=o.id GROUP BY o.id,o.name ORDER BY o.name`
+    );
+  }
+
+  async createOrganization(name: string): Promise<{ id: string; name: string }> {
+    const orgId = id("org");
+    await this.run("INSERT INTO organizations VALUES ($1,$2)", [orgId, name]);
+    return { id: orgId, name };
+  }
+
+  async renameOrganization(orgId: string, name: string): Promise<boolean> {
+    return (await this.run("UPDATE organizations SET name=$2 WHERE id=$1", [orgId, name])) > 0;
+  }
+
+  /** 브랜드가 남아 있는 조직은 지우지 않는다(false). 브랜드가 없으면 조직에 딸린 프롬프트·수집 기록까지 정리한다. */
+  async deleteOrganization(orgId: string): Promise<boolean> {
+    return this.transaction(async () => {
+      const [{ n }] = await this.query<{ n: number }>("SELECT count(*)::int AS n FROM brands WHERE organization_id=$1", [orgId]);
+      if (n > 0) return false;
+      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids"];
+      for (const table of scoped) await this.run(`DELETE FROM ${table} WHERE organization_id=$1`, [orgId]);
+      await this.run("DELETE FROM tracking_events WHERE tracking_id IN (SELECT id FROM prompt_tracking WHERE organization_id=$1)", [orgId]);
+      await this.run("DELETE FROM prompt_tracking WHERE organization_id=$1", [orgId]);
+      await this.run(
+        "DELETE FROM citations WHERE analysis_id IN (SELECT a.id FROM run_analyses a JOIN prompt_runs r ON r.id=a.run_id WHERE r.organization_id=$1)",
+        [orgId]
+      );
+      await this.run(
+        "DELETE FROM brand_observations WHERE analysis_id IN (SELECT a.id FROM run_analyses a JOIN prompt_runs r ON r.id=a.run_id WHERE r.organization_id=$1)",
+        [orgId]
+      );
+      await this.run("DELETE FROM run_analyses WHERE run_id IN (SELECT id FROM prompt_runs WHERE organization_id=$1)", [orgId]);
+      await this.run("DELETE FROM prompt_runs WHERE organization_id=$1", [orgId]);
+      await this.run("DELETE FROM collection_jobs WHERE organization_id=$1", [orgId]);
+      await this.run("DELETE FROM prompt_sources WHERE prompt_id IN (SELECT id FROM prompts WHERE organization_id=$1)", [orgId]);
+      await this.run("DELETE FROM prompts WHERE organization_id=$1", [orgId]);
+      await this.run("DELETE FROM topics WHERE organization_id=$1", [orgId]);
+      await this.run("DELETE FROM categories WHERE organization_id=$1", [orgId]);
+      await this.run("DELETE FROM actors WHERE organization_id=$1", [orgId]);
+      return (await this.run("DELETE FROM organizations WHERE id=$1", [orgId])) > 0;
+    });
+  }
+
+  /** 조직을 모르는 곳(정기 수집 CLI 등)에서 브랜드 ID로 찾는다. */
+  async getBrandById(brandId: string): Promise<ManagedBrand | null> {
+    const row = await this.one("SELECT * FROM brands WHERE id=$1", [brandId]);
+    return row ? this.toBrand(row) : null;
   }
 
   async legacyActor(orgId: string, displayName: string | null): Promise<string | null> {

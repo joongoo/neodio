@@ -1,7 +1,7 @@
 import { AlertTriangle, FileWarning, ListTree, MessageCircleQuestion, Target, Type, Images, Braces } from "lucide-react";
 import { getRealTopicRows } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+
 import { getRealRobotsTxtOpportunity } from "@/lib/backend/robotsTxtReader";
 import {
   buildComplexityOpportunity,
@@ -17,6 +17,7 @@ import { getTopicOpportunityTargets } from "@/lib/backend/topicOpportunityTarget
 import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTopics";
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 function auditStatus(data: ContentAuditOpportunity | null): OpportunityCard["status"] {
   if (data === null) return { text: "크롤 안 함", tone: "neutral" };
@@ -44,8 +45,9 @@ interface OpportunityCard {
 // 제외 (neodigm_p0_scope.md §2와 같은 이유). "기회 워크스페이스"(배포 전/후
 // 지표 추적, 엣지 딜리버리, 에이전틱 트래픽)도 같은 이유로 제외.
 export default async function OpportunitiesPage() {
+  const tenant = await getCurrentTenant();
   const demo = await isDemoMode();
-  const org = await db.organizations.get(DEFAULT_ORG_ID);
+  const org = await tenant.org;
 
   const [robotsTxt, crawlHistory, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, excludedByMetric] = demo
     ? [
@@ -60,16 +62,16 @@ export default async function OpportunitiesPage() {
     : await Promise.all([
         org ? getRealRobotsTxtOpportunity(org.domain).catch(() => null) : Promise.resolve(null),
         org ? getSitemapCrawlHistory(org.domain).catch(() => []) : Promise.resolve([]),
-        listSeedLibraryRows(DEFAULT_ORG_ID),
-        listTrackedTopics(DEFAULT_ORG_ID),
-        getDeletedLibraryRowIds(DEFAULT_ORG_ID),
-        getTopicOpportunityTargets(DEFAULT_ORG_ID),
+        listSeedLibraryRows(tenant.orgId, tenant.brandId),
+        listTrackedTopics(tenant.orgId, tenant.brandId),
+        getDeletedLibraryRowIds(tenant.orgId),
+        getTopicOpportunityTargets(tenant.orgId),
         Promise.all([
-          getExcludedUrls(DEFAULT_ORG_ID, "complexity"),
-          getExcludedUrls(DEFAULT_ORG_ID, "faq"),
-          getExcludedUrls(DEFAULT_ORG_ID, "toc"),
-          getExcludedUrls(DEFAULT_ORG_ID, "multimedia"),
-          getExcludedUrls(DEFAULT_ORG_ID, "structured-data"),
+          getExcludedUrls(tenant.orgId, "complexity"),
+          getExcludedUrls(tenant.orgId, "faq"),
+          getExcludedUrls(tenant.orgId, "toc"),
+          getExcludedUrls(tenant.orgId, "multimedia"),
+          getExcludedUrls(tenant.orgId, "structured-data"),
         ]).then(([complexity, faq, toc, multimedia, structuredData]) => ({ complexity, faq, toc, multimedia, structuredData })),
       ]);
 

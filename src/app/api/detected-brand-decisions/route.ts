@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 import {
   applyDetectedBrandOptimization,
   approveDetectedBrand,
@@ -20,6 +21,8 @@ function isOptimizationExclusion(item: unknown): item is OptimizationExclusion {
 }
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
+  if (!tenant.brandId) return NextResponse.json({ error: "브랜드를 먼저 등록하세요." }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
@@ -40,7 +43,9 @@ export async function POST(request: NextRequest) {
         mentions: typeof brand.mentions === "number" ? brand.mentions : 0,
         evidenceDomain: typeof brand.evidenceDomain === "string" ? brand.evidenceDomain : null,
       })),
-      mergeTarget
+      mergeTarget,
+      tenant.orgId,
+      tenant.brandId
     );
     return NextResponse.json({ ok: true });
   }
@@ -63,7 +68,7 @@ export async function POST(request: NextRequest) {
       exclude: exclude
         .filter(isOptimizationExclusion)
         .map((item) => ({ name: item.name, evidenceDomain: typeof item.evidenceDomain === "string" ? item.evidenceDomain : null })),
-    });
+    }, tenant.orgId, tenant.brandId);
     return NextResponse.json({ ok: true });
   }
 
@@ -72,10 +77,10 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = { name: body.name.trim(), evidenceDomain: typeof body.evidenceDomain === "string" ? body.evidenceDomain : null };
-  if (body.status === "approved") await approveDetectedBrand(payload);
-  else if (body.status === "excluded") await excludeDetectedBrand(payload);
-  else if (body.status === "competitor_removed") await removeDetectedCompetitor(payload.name);
-  else if (body.status === null) await clearDetectedBrandDecision(payload.name);
+  if (body.status === "approved") await approveDetectedBrand(payload, tenant.orgId, tenant.brandId);
+  else if (body.status === "excluded") await excludeDetectedBrand(payload, tenant.orgId, tenant.brandId);
+  else if (body.status === "competitor_removed") await removeDetectedCompetitor(payload.name, tenant.orgId, tenant.brandId);
+  else if (body.status === null) await clearDetectedBrandDecision(payload.name, tenant.orgId, tenant.brandId);
   else return NextResponse.json({ error: "status는 approved, excluded, competitor_removed, merged, optimized 또는 null이어야 합니다." }, { status: 400 });
 
   return NextResponse.json({ ok: true });

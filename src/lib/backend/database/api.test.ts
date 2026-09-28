@@ -59,19 +59,19 @@ test("API lifecycle: strategy -> untracked prompt -> tracking -> rename category
   const row = (await (await track()).json()).row;
   assert.equal(row.promptId, listing.prompts[0].id);
   assert.equal((await (await track()).json()).row.id, row.id);
-  assert.equal((await listPromptLibrary("neodigm")).filter(r => r.id === row.id).length, 1);
+  assert.equal((await listPromptLibrary("neodigm", "brand-neodigm")).filter(r => r.id === row.id).length, 1);
 
   const categoryId = listing.prompts[0].category_id;
   assert.equal((await categories.PATCH(request("/api/categories", "PATCH", { id: categoryId, name: "Renamed integration category" }))).status, 200);
-  assert.equal((await listPromptLibrary("neodigm")).find(r => r.id === row.id)!.category, "Renamed integration category");
+  assert.equal((await listPromptLibrary("neodigm", "brand-neodigm")).find(r => r.id === row.id)!.category, "Renamed integration category");
   assert.equal((await categories.DELETE(request(`/api/categories?id=${categoryId}`, "DELETE"))).status, 409);
   assert.equal((await tracking.PATCH(request(`/api/tracked-topics?id=${row.id}`, "PATCH", { status: "paused" }))).status, 200);
-  assert.equal((await listPromptLibrary("neodigm")).some(r => r.id === row.id), false);
+  assert.equal((await listPromptLibrary("neodigm", "brand-neodigm")).some(r => r.id === row.id), false);
   assert.equal((await tracking.DELETE(request(`/api/tracked-topics?id=${row.id}`, "DELETE"))).status, 200);
   const archived = await (await prompts.GET(request(`/api/prompts?q=${encodeURIComponent(text)}&status=archived`))).json();
   assert.equal(archived.total, 1);
   assert.equal((await (await track()).json()).row.addedAt, row.addedAt);
-  assert.equal((await listPromptLibrary("neodigm")).find(r => r.id === row.id)!.category, "Renamed integration category");
+  assert.equal((await listPromptLibrary("neodigm", "brand-neodigm")).find(r => r.id === row.id)!.category, "Renamed integration category");
 });
 
 test("API validation and duplicate update leave existing data intact", async () => {
@@ -84,7 +84,7 @@ test("API validation and duplicate update leave existing data intact", async () 
   await create("API duplicate test B");
   const response = await tracking.PATCH(request(`/api/tracked-topics?id=${a.id}`, "PATCH", { prompt: "API duplicate test B", category: "API tests" }));
   assert.equal(response.status, 409);
-  assert.equal((await listPromptLibrary("neodigm")).find(r => r.id === a.id)!.prompt, "API duplicate test A");
+  assert.equal((await listPromptLibrary("neodigm", "brand-neodigm")).find(r => r.id === a.id)!.prompt, "API duplicate test A");
 });
 
 test("brainstorm accepts structured topics and keeps generation evidence", async () => {

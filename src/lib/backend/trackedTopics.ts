@@ -1,31 +1,35 @@
 import type { PromptLibraryRow } from "@/lib/db/types";
-import { DEFAULT_TRACKING_BRAND, getPromptStore } from "./database";
+import { getPromptStore } from "./database";
 import type { PromptInput } from "./database/store";
 
-export async function saveLibraryRow(orgId: string, row: Omit<PromptLibraryRow, "id">, source: Partial<PromptInput> = {}): Promise<PromptLibraryRow> {
+// 프롬프트 추적은 조직의 자사 브랜드(헤더 선택, tenant.ts) 단위다 — 예전엔
+// brand-neodigm 고정이었다. brandId는 호출하는 페이지/API가 넘긴다.
+export async function saveLibraryRow(orgId: string, brandId: string, row: Omit<PromptLibraryRow, "id">, source: Partial<PromptInput> = {}): Promise<PromptLibraryRow> {
+  if (!brandId) throw new Error("브랜드를 먼저 등록하세요 — 프롬프트는 조직의 브랜드 단위로 추적됩니다.");
   const store = await getPromptStore();
   return store.track(orgId, { ...source, text: row.prompt, category: row.category, topic: row.topic,
-    sourceType: source.sourceType ?? row.origin }, { brandId: DEFAULT_TRACKING_BRAND, origin: row.origin });
+    sourceType: source.sourceType ?? row.origin }, { brandId, origin: row.origin });
 }
 
-export async function trackTopic(orgId: string, promptText: string, category: string,
+export async function trackTopic(orgId: string, brandId: string, promptText: string, category: string,
   options: { topic?: string; source: string; intent?: string; reasoning?: string; purpose?: string } = { source: "tracking" }): Promise<PromptLibraryRow> {
-  return saveLibraryRow(orgId, { prompt: promptText, origin: "ai_generated", category, topic: options.topic ?? "—",
+  return saveLibraryRow(orgId, brandId, { prompt: promptText, origin: "ai_generated", category, topic: options.topic ?? "—",
     lastModifiedAt: null, lastModifiedBy: null }, { sourceType: options.source, searchIntent: options.intent,
     generationReasoning: options.reasoning, generationPurpose: options.purpose });
 }
 
-export async function listPromptLibrary(orgId: string): Promise<PromptLibraryRow[]> {
-  return (await getPromptStore()).library(orgId, DEFAULT_TRACKING_BRAND);
+export async function listPromptLibrary(orgId: string, brandId: string): Promise<PromptLibraryRow[]> {
+  if (!brandId) return [];
+  return (await getPromptStore()).library(orgId, brandId);
 }
 
 // Compatibility partitions for existing pages; both read the same canonical table.
-export async function listTrackedTopics(orgId: string): Promise<PromptLibraryRow[]> {
-  return (await listPromptLibrary(orgId)).filter(row => !row.id.startsWith("pl-"));
+export async function listTrackedTopics(orgId: string, brandId: string): Promise<PromptLibraryRow[]> {
+  return (await listPromptLibrary(orgId, brandId)).filter(row => !row.id.startsWith("pl-"));
 }
 
-export async function listSeedLibraryRows(orgId: string): Promise<PromptLibraryRow[]> {
-  return (await listPromptLibrary(orgId)).filter(row => row.id.startsWith("pl-"));
+export async function listSeedLibraryRows(orgId: string, brandId: string): Promise<PromptLibraryRow[]> {
+  return (await listPromptLibrary(orgId, brandId)).filter(row => row.id.startsWith("pl-"));
 }
 
 export async function updateLibraryRow(orgId: string, rowId: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic">) {

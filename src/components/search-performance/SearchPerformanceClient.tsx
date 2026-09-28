@@ -15,11 +15,14 @@ import { GscConnection, GscSearchPerformanceResult } from "@/lib/db";
 // instead of duplicating a connect button here.
 export function SearchPerformanceClient({
   brandName,
+  brandId,
   gsc,
   performance,
   real,
 }: {
   brandName: string;
+  /** 연결 관리 링크용 — 현재 조직의 자사 브랜드 */
+  brandId: string;
   gsc: GscConnection | null;
   performance: GscSearchPerformanceResult | null;
   /** true only when `gsc`/`performance` came from an actual OAuth-connected
@@ -56,7 +59,7 @@ export function SearchPerformanceClient({
         <Card className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-sm font-medium text-neutral-700">연결된 Search Console 데이터가 없습니다.</p>
           <p className="text-xs text-neutral-500">Manage Connections에서 계정을 연결하면 검색 성과 데이터를 볼 수 있습니다.</p>
-          <a href="/brands-management/brand-neodigm/connections">
+          <a href={brandId ? `/brands-management/${brandId}/connections` : "/brands-management"}>
             <Button variant="primary">Manage Connections으로 이동</Button>
           </a>
         </Card>

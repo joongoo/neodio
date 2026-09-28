@@ -1,19 +1,21 @@
 import { ContentAuditClient } from "@/components/opportunities/ContentAuditClient";
-import { DEFAULT_ORG_ID, db } from "@/lib/db";
+
 import { buildStructuredDataOpportunity, getSitemapCrawlHistory } from "@/lib/backend/sitemapCrawlReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getExcludedUrls } from "@/lib/backend/contentAuditExclusions";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { getCachedUrlIndexStatuses } from "@/lib/backend/gscUrlInspectionStore";
 import { getCachedPageSpeedResults } from "@/lib/backend/pageSpeedInsightsStore";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function StructuredDataOpportunityPage() {
+  const tenant = await getCurrentTenant();
   const [org, demo, excludedUrls] = await Promise.all([
-    db.organizations.get(DEFAULT_ORG_ID),
+    tenant.org,
     isDemoMode(),
-    getExcludedUrls(DEFAULT_ORG_ID, "structured-data"),
+    getExcludedUrls(tenant.orgId, "structured-data"),
   ]);
   const history = demo || !org ? [] : await getSitemapCrawlHistory(org.domain).catch(() => []);
   const data = buildStructuredDataOpportunity(history, excludedUrls);
@@ -27,8 +29,8 @@ export default async function StructuredDataOpportunityPage() {
   }
 
   const [guides, indexStatuses, pageSpeedResults] = await Promise.all([
-    getLlmBridgeScope<{ guide: string }>(DEFAULT_ORG_ID, "content-guide-structured-data"),
-    getCachedUrlIndexStatuses(DEFAULT_ORG_ID),
+    getLlmBridgeScope<{ guide: string }>(tenant.orgId, "content-guide-structured-data"),
+    getCachedUrlIndexStatuses(tenant.orgId),
     getCachedPageSpeedResults(),
   ]);
   const dataWithExtras = {

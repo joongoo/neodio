@@ -655,6 +655,150 @@ export interface PromptLibraryHealth {
 
 // ---- Manage Connections page (GSC only for now — CDN/Commerce are P0-out) ----
 
+// ---- YouTube AIO 인용 트래커 (docs/youtube-aio-tracker-plan.md) ----
+// 브랜드 관리 > 연결 관리에서 등록하는 브랜드별 설정. 인용 판정은 도메인이
+// 아니라 이 채널 ID 목록 기준이다.
+export interface BrandYoutubeChannel {
+  channelId: string;
+  handle: string | null;
+  title: string;
+  thumbnailUrl: string | null;
+  addedAt: string;
+}
+
+export type AioDevice = "mobile" | "desktop";
+
+export interface BrandAioSettings {
+  /** Google gl 파라미터 (예: "kr") */
+  country: string;
+  /** Google hl 파라미터 (예: "ko") */
+  language: string;
+  devices: AioDevice[];
+  /** 대시보드 "비교 기준(최적화 적용일)" 기본값, yyyy-mm-dd */
+  optimizationDate: string | null;
+  /** 저장된 적 없으면 false — 기본값으로 동작 중임을 화면에 표시할 때 쓴다. */
+  saved: boolean;
+}
+
+export type AioKeywordGroup = "brand" | "category" | "comparison" | "howto";
+
+export interface AioKeyword {
+  id: string;
+  keyword: string;
+  group: AioKeywordGroup;
+  createdAt: string;
+}
+
+/** 인용 소스 5분류 — 대시보드 "인용 소스 점유율"의 행. */
+export type AioSourceType = "own_video" | "other_youtube" | "own_web" | "competitor" | "other";
+
+export type AioObservationStatus = "aio_present" | "aio_absent" | "failed";
+
+export interface AioCitation {
+  position: number;
+  url: string;
+  domain: string;
+  title: string;
+  sourceType: AioSourceType;
+  videoId: string | null;
+  channelId: string | null;
+  startSeconds: number | null;
+}
+
+export interface AioParagraph {
+  text: string;
+  /** 이 문장을 뒷받침하는 인용의 position 목록 */
+  sources: number[];
+}
+
+/** 키워드 × 디바이스 × 수집일 1건 (같은 날 재수집하면 덮어쓴다). */
+export interface AioObservation {
+  id: string;
+  keywordId: string;
+  device: AioDevice;
+  collectedAt: string;
+  /** Asia/Seoul 기준 yyyy-mm-dd */
+  collectedDate: string;
+  status: AioObservationStatus;
+  aioText: string | null;
+  paragraphs: AioParagraph[];
+  citations: AioCitation[];
+  hasScreenshot: boolean;
+  errorMessage: string | null;
+}
+
+export interface YoutubeVideoMeta {
+  videoId: string;
+  channelId: string;
+  title: string;
+  thumbnailUrl: string;
+}
+
+export interface AioVideoWorkLog {
+  id: string;
+  videoId: string;
+  workDate: string;
+  workType: string;
+  note: string | null;
+}
+
+/** rate가 null이면 분모가 0 = 미측정("–"), 0은 측정했는데 0%. */
+export interface AioRate {
+  numerator: number;
+  denominator: number;
+  rate: number | null;
+}
+
+export type AioChangeKind = "new" | "lost" | "up" | "down" | "same" | "none";
+
+export interface AioKeywordRow {
+  keywordId: string;
+  keyword: string;
+  group: AioKeywordGroup;
+  /** 기간 내 최신 수집 기준. unmeasured = 기간 내 성공한 수집 없음 */
+  status: "aio_present" | "aio_absent" | "unmeasured";
+  hasYoutube: boolean | null;
+  hasOwn: boolean | null;
+  ownPosition: number | null;
+  sourceCount: number | null;
+  ownVideo: { videoId: string; title: string; startSeconds: number | null } | null;
+  /** 우리 영상이 인용되지 않았을 때 대신 인용된 소스 설명 */
+  alternative: string | null;
+  change: { kind: AioChangeKind; from: number | null; to: number | null };
+  collectedDate: string | null;
+}
+
+/** 추이 차트의 한 점 — 기간이 2주 이하면 하루, 그보다 길면 한 주(일요일 시작). */
+export interface AioTrendPoint {
+  start: string;
+  label: string;
+  aioExposure: number | null;
+  youtubeCitation: number | null;
+  ownCitation: number | null;
+}
+
+export interface AioOverview {
+  trackedKeywords: number;
+  measuredKeywords: number;
+  aioExposure: AioRate;
+  youtubeCitation: AioRate;
+  ownCitation: AioRate;
+  /** %p. 기준일이 있으면 기준일 전/후, 없으면 최근 7일/그 전 7일 */
+  ownCitationChange: { pp: number | null; basis: "optimization" | "previous_week" };
+  citedOwnVideos: number;
+  averageOwnPosition: number | null;
+  shareOfVoice: AioRate;
+  sourceShare: { type: AioSourceType; count: number; share: number }[];
+  trend: AioTrendPoint[];
+  trendGranularity: "day" | "week";
+  /** 추이 차트에서 최적화 기준일이 속한 점의 label */
+  optimizationLabel: string | null;
+  rows: AioKeywordRow[];
+  lastCollectedAt: string | null;
+}
+
+export type AioHistoryState = "own" | "youtube" | "no_youtube" | "absent" | "unmeasured";
+
 // Keyed by brandId, not orgId — GSC is a per-brand-domain connection.
 // Multiple brands each get their own row, not a single org-wide one.
 export interface GscConnection {
@@ -915,8 +1059,7 @@ export interface TrackedOtherBrand {
 
 export interface ManagedBrand {
   id: string;
-  /** 지금은 조직이 하나뿐이라 항상 DEFAULT_ORG_ID지만, 실 DB로 옮길 때 FK로
-   *  쓰기 위해 미리 필드로 갖고 있는다. */
+  /** 이 브랜드가 속한 조직(설정 > 조직 관리). 헤더에서 고른 조직의 브랜드만 보인다. */
   organizationId: string;
   name: string;
   url: string;

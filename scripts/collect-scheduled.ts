@@ -8,8 +8,6 @@
 import { getPromptStore } from "../src/lib/backend/database";
 import { getJob, startCollectionJob } from "../src/lib/backend/collectionJobRunner";
 
-const ORG_ID = "neodigm";
-
 function argValue(name: string, fallback: string) {
   const prefix = `--${name}=`;
   const inline = process.argv.find((arg) => arg.startsWith(prefix));
@@ -54,16 +52,21 @@ async function main() {
   const maxDelayMs = Number(argValue("max-delay-ms", String(8 * 60_000)));
   const limit = Number(argValue("limit", "0")) || undefined;
 
+  // 모든 조직의 추적 프롬프트를 한데 섞어 돈다 — 요청 간격(캡차 회피)은
+  // 조직과 상관없이 같은 IP 기준이라 조직별로 따로 돌리면 의미가 없다.
   const store = await getPromptStore();
-  const library = await store.library(ORG_ID);
-  const keywords = shuffle(library.map((row) => row.prompt)).slice(0, limit);
+  const tasks: { orgId: string; keyword: string }[] = [];
+  for (const org of await store.listOrganizations()) {
+    for (const row of await store.library(org.id)) tasks.push({ orgId: org.id, keyword: row.prompt });
+  }
+  const keywords = shuffle(tasks).slice(0, limit);
 
   console.log(`[collect-scheduled] ${keywords.length}개 키워드, 엔진: ${engines.join(",")}`);
 
-  for (const [index, keyword] of keywords.entries()) {
+  for (const [index, { orgId, keyword }] of keywords.entries()) {
     console.log(`[collect-scheduled] (${index + 1}/${keywords.length}) "${keyword}" 수집 시작`);
     try {
-      const job = startCollectionJob(keyword, engines);
+      const job = startCollectionJob(orgId, keyword, engines);
       await waitForJob(job.id);
       const finished = await getJob(job.id);
       console.log(`[collect-scheduled] "${keyword}" ${finished?.stage === "done" ? "완료" : `실패 (${finished?.error ?? "unknown"})`}`);

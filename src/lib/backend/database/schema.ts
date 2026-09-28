@@ -121,6 +121,47 @@ CREATE TABLE IF NOT EXISTS detected_brand_decisions (
   evidence_domain TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   UNIQUE(organization_id,brand_id,normalized_name)
 );
+CREATE TABLE IF NOT EXISTS brand_youtube_channels (
+  brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE, channel_id TEXT NOT NULL,
+  handle TEXT, title TEXT NOT NULL, thumbnail_url TEXT, added_at TEXT NOT NULL,
+  PRIMARY KEY(brand_id,channel_id)
+);
+CREATE TABLE IF NOT EXISTS brand_aio_settings (
+  brand_id TEXT PRIMARY KEY REFERENCES brands(id) ON DELETE CASCADE,
+  country TEXT NOT NULL, language TEXT NOT NULL, devices_json JSONB NOT NULL,
+  optimization_date TEXT, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS aio_keywords (
+  id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+  keyword TEXT NOT NULL, normalized_keyword TEXT NOT NULL,
+  keyword_group TEXT NOT NULL CHECK(keyword_group IN ('brand','category','comparison','howto')),
+  status TEXT NOT NULL CHECK(status IN ('active','archived')), created_at TEXT NOT NULL,
+  UNIQUE(brand_id,normalized_keyword)
+);
+CREATE TABLE IF NOT EXISTS aio_observations (
+  id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+  keyword_id TEXT NOT NULL REFERENCES aio_keywords(id) ON DELETE CASCADE,
+  device TEXT NOT NULL CHECK(device IN ('mobile','desktop')), country TEXT NOT NULL, language TEXT NOT NULL,
+  collected_at TEXT NOT NULL, collected_date TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('aio_present','aio_absent','failed')),
+  aio_text TEXT, paragraphs_json JSONB NOT NULL, screenshot_path TEXT, html_path TEXT, error_message TEXT,
+  has_youtube BOOLEAN NOT NULL, has_own_video BOOLEAN NOT NULL, own_best_position INTEGER, source_count INTEGER NOT NULL,
+  UNIQUE(keyword_id,device,collected_date)
+);
+CREATE TABLE IF NOT EXISTS aio_citations (
+  observation_id TEXT NOT NULL REFERENCES aio_observations(id) ON DELETE CASCADE, position INTEGER NOT NULL,
+  url TEXT NOT NULL, domain TEXT NOT NULL, title TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK(source_type IN ('own_video','other_youtube','own_web','competitor','other')),
+  video_id TEXT, channel_id TEXT, start_seconds INTEGER,
+  PRIMARY KEY(observation_id,position)
+);
+CREATE TABLE IF NOT EXISTS youtube_videos (
+  video_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, title TEXT NOT NULL, thumbnail_url TEXT NOT NULL, fetched_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS aio_video_work_logs (
+  id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+  video_id TEXT NOT NULL, work_date TEXT NOT NULL, work_type TEXT NOT NULL, note TEXT, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS imported_files (path TEXT PRIMARY KEY, signature TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS prompts_topic ON prompts(organization_id,topic_id);
@@ -130,5 +171,8 @@ CREATE INDEX IF NOT EXISTS runs_dimensions ON prompt_runs(organization_id,model_
 CREATE INDEX IF NOT EXISTS analyses_run ON run_analyses(run_id,analyzed_at);
 CREATE INDEX IF NOT EXISTS observations_brand ON brand_observations(brand_id,analysis_id);
 CREATE INDEX IF NOT EXISTS citations_domain ON citations(domain,analysis_id);
+CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand_id,collected_date);
+CREATE INDEX IF NOT EXISTS aio_citations_video ON aio_citations(video_id);
+CREATE INDEX IF NOT EXISTS aio_work_logs_video ON aio_video_work_logs(brand_id,video_id,work_date);
 CREATE INDEX IF NOT EXISTS detected_brand_decisions_status ON detected_brand_decisions(organization_id,brand_id,status);
 `;

@@ -1,5 +1,4 @@
 import { getManagedBrand } from "./brandsManagementStore";
-import { DEFAULT_BRAND_ID } from "@/lib/db";
 import { BrandSeed } from "@/lib/db/types";
 
 // 실 언급/인용 집계(processing/mentions.ts, extractMentionsFromRun)가 쓰는
@@ -22,8 +21,9 @@ function hostnameOf(url: string): string {
   }
 }
 
-export async function getRealBrandSeeds(orgId: string): Promise<BrandSeed[]> {
-  const own = await getManagedBrand(orgId, DEFAULT_BRAND_ID);
+// ownBrandId = 그 조직의 자사 브랜드(헤더 선택, tenant.ts) — 경쟁사는 그 브랜드의 "기타 브랜드".
+export async function getRealBrandSeeds(orgId: string, ownBrandId: string): Promise<BrandSeed[]> {
+  const own = await getManagedBrand(orgId, ownBrandId);
   if (!own) return [];
 
   const ownSeed: BrandSeed = {

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteTrackedTopic, saveLibraryRow, trackTopic, updateLibraryRow } from "@/lib/backend/trackedTopics";
 import { markLibraryRowDeleted } from "@/lib/backend/deletedLibraryRows";
-import { DEFAULT_ORG_ID } from "@/lib/db";
+
 import { getPromptStore } from "@/lib/backend/database";
+import { getCurrentTenant } from "@/lib/backend/tenant";
 
 const VALID_ORIGINS = new Set(["manual", "ai_generated", "csv_import"]);
 // 실 파일로 저장된 행(추적/수동 추가/CSV 가져오기 전부 이 형식)만 수정 가능.
@@ -12,6 +13,7 @@ const ID_PATTERN = /^tracked-\d+-[a-z0-9]+$/;
 const SEED_ID_PATTERN = /^pl-[a-z0-9-]+$/i;
 
 export async function POST(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   const category = typeof body?.category === "string" ? body.category.trim() : "";
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
   // 흐름과 달리 source 기반 기본값 조립이 필요 없다.
   const origin = typeof body?.origin === "string" && VALID_ORIGINS.has(body.origin) ? body.origin : undefined;
   if (origin) {
-    const row = await saveLibraryRow(DEFAULT_ORG_ID, {
+    const row = await saveLibraryRow(tenant.orgId, tenant.brandId, {
       prompt,
       origin: origin as "manual" | "ai_generated" | "csv_import",
       category,
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   const source = typeof body?.source === "string" && body.source.trim() ? body.source.trim() : "추적";
-  const row = await trackTopic(DEFAULT_ORG_ID, prompt, category, { topic, source,
+  const row = await trackTopic(tenant.orgId, tenant.brandId, prompt, category, { topic, source,
     intent: typeof body?.intent === "string" ? body.intent : undefined,
     reasoning: typeof body?.reasoning === "string" ? body.reasoning : undefined,
     purpose: typeof body?.purpose === "string" ? body.purpose : undefined,
@@ -47,26 +49,28 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const id = request.nextUrl.searchParams.get("id") ?? "";
   if (ID_PATTERN.test(id)) {
-    await deleteTrackedTopic(DEFAULT_ORG_ID, id);
+    await deleteTrackedTopic(tenant.orgId, id);
     return NextResponse.json({ ok: true });
   }
   if (SEED_ID_PATTERN.test(id)) {
-    await markLibraryRowDeleted(DEFAULT_ORG_ID, id);
+    await markLibraryRowDeleted(tenant.orgId, id);
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "삭제할 수 없는 id입니다." }, { status: 400 });
 }
 
 export async function PATCH(request: NextRequest) {
+  const tenant = await getCurrentTenant();
   const id = request.nextUrl.searchParams.get("id") ?? "";
   if (!ID_PATTERN.test(id) && !SEED_ID_PATTERN.test(id)) {
     return NextResponse.json({ error: "수정할 수 없는 id입니다." }, { status: 400 });
   }
   const body = await request.json().catch(() => null);
   if (body?.status === "active" || body?.status === "paused" || body?.status === "archived") {
-    const found = await (await getPromptStore()).setTrackingStatus(DEFAULT_ORG_ID, id, body.status);
+    const found = await (await getPromptStore()).setTrackingStatus(tenant.orgId, id, body.status);
     return NextResponse.json(found ? { ok: true } : { error: "해당 프롬프트를 찾을 수 없습니다." }, { status: found ? 200 : 404 });
   }
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
@@ -77,7 +81,7 @@ export async function PATCH(request: NextRequest) {
   }
   let row;
   try {
-    row = await updateLibraryRow(DEFAULT_ORG_ID, id, { prompt, category, topic });
+    row = await updateLibraryRow(tenant.orgId, id, { prompt, category, topic });
   } catch (error) {
     if (error instanceof Error && error.message === "An identical prompt already exists") {
       return NextResponse.json({ error: "동일한 프롬프트가 이미 존재합니다." }, { status: 409 });

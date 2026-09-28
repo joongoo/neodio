@@ -178,7 +178,7 @@ export function CollectionRunsClient({
 
       {runFiles.length === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
-          아직 수집된 파일이 없습니다. 터미널에서 <code>npm run collect:naver-ai -- --query &quot;네오다임&quot;</code>을 실행해보세요.
+          아직 수집된 파일이 없습니다. 터미널에서 <code>npm run collect:naver-ai -- --query &quot;CRM 추천&quot;</code>을 실행해보세요.
         </p>
       ) : (
         <>

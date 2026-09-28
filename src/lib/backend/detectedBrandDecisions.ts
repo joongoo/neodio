@@ -1,11 +1,10 @@
-import { DEFAULT_BRAND_ID, DEFAULT_ORG_ID } from "@/lib/db";
 import { getPromptStore } from "./database";
 
-export async function listDetectedBrandDecisions(orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
+export async function listDetectedBrandDecisions(orgId: string, brandId: string) {
   return (await getPromptStore()).listDetectedBrandDecisions(orgId, brandId);
 }
 
-export async function approveDetectedBrand(params: { name: string; evidenceDomain?: string | null }, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
+export async function approveDetectedBrand(params: { name: string; evidenceDomain?: string | null }, orgId: string, brandId: string) {
   const store = await getPromptStore();
   await store.transaction(async () => {
     const brand = await store.getBrand(orgId, brandId);
@@ -18,7 +17,7 @@ export async function approveDetectedBrand(params: { name: string; evidenceDomai
   });
 }
 
-export async function excludeDetectedBrand(params: { name: string; evidenceDomain?: string | null }, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
+export async function excludeDetectedBrand(params: { name: string; evidenceDomain?: string | null }, orgId: string, brandId: string) {
   await (await getPromptStore()).setDetectedBrandDecision(orgId, brandId, {
     name: params.name,
     status: "excluded",
@@ -26,11 +25,11 @@ export async function excludeDetectedBrand(params: { name: string; evidenceDomai
   });
 }
 
-export async function clearDetectedBrandDecision(name: string, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
+export async function clearDetectedBrandDecision(name: string, orgId: string, brandId: string) {
   await (await getPromptStore()).clearDetectedBrandDecision(orgId, brandId, name);
 }
 
-export async function removeDetectedCompetitor(name: string, orgId = DEFAULT_ORG_ID, brandId = DEFAULT_BRAND_ID) {
+export async function removeDetectedCompetitor(name: string, orgId: string, brandId: string) {
   const store = await getPromptStore();
   await store.transaction(async () => {
     const brand = await store.getBrand(orgId, brandId);
@@ -45,8 +44,8 @@ export async function removeDetectedCompetitor(name: string, orgId = DEFAULT_ORG
 export async function mergeDetectedBrands(
   brands: { name: string; mentions: number; evidenceDomain?: string | null }[],
   target: "competitor" | "own" = "competitor",
-  orgId = DEFAULT_ORG_ID,
-  brandId = DEFAULT_BRAND_ID
+  orgId: string,
+  brandId: string
 ) {
   if (brands.length < (target === "own" ? 1 : 2)) {
     throw new Error(target === "own" ? "내 브랜드로 등록할 브랜드를 선택해주세요." : "병합할 브랜드를 2개 이상 선택해주세요.");
@@ -93,8 +92,8 @@ export async function applyDetectedBrandOptimization(
     competitors?: { name: string; aliases?: string[]; evidenceDomain?: string | null }[];
     exclude?: { name: string; evidenceDomain?: string | null }[];
   },
-  orgId = DEFAULT_ORG_ID,
-  brandId = DEFAULT_BRAND_ID
+  orgId: string,
+  brandId: string
 ) {
   const store = await getPromptStore();
   await store.transaction(async () => {
