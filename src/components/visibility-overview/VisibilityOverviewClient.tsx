@@ -43,7 +43,6 @@ export function VisibilityOverviewClient({
   mentionsByMarket,
   categories,
   topicsByCategory,
-  competitorBrandNames,
   brandContext,
 }: {
   org: Organization;
@@ -53,7 +52,6 @@ export function VisibilityOverviewClient({
   mentionsByMarket: Record<string, RankedRow[]>;
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
-  competitorBrandNames: string[];
   /** 브랜드 최적화(AI 브랜드 정리)가 쓰는 자사·등록 경쟁사 정보. 브랜드가 없으면 null. */
   brandContext: BrandOptimizationContext | null;
 }) {
@@ -104,7 +102,6 @@ export function VisibilityOverviewClient({
       <TopicsTableSection
         categories={filteredCategories}
         topicsByCategory={filteredTopicsByCategory}
-        competitorBrandNames={competitorBrandNames}
         brandContext={brandContext}
         range={range}
       />
