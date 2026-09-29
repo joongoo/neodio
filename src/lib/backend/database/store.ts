@@ -522,7 +522,12 @@ export class PromptStore {
   }
 
   async deleteBrand(orgId: string, brandId: string): Promise<boolean> {
-    return (await this.run("DELETE FROM brands WHERE organization_id=$1 AND id=$2", [orgId, brandId])) > 0;
+    // detected_brand_decisions는 brands를 ON DELETE CASCADE 없이 참조하므로 먼저 지운다 — 안 그러면 브랜드 최적화·제외 기록이
+    // 있는 브랜드는 FK 위반(500)으로 삭제되지 않는다.
+    return this.transaction(async () => {
+      await this.run("DELETE FROM detected_brand_decisions WHERE organization_id=$1 AND brand_id=$2", [orgId, brandId]);
+      return (await this.run("DELETE FROM brands WHERE organization_id=$1 AND id=$2", [orgId, brandId])) > 0;
+    });
   }
 
   async listDetectedBrandDecisions(orgId: string, brandId: string): Promise<Map<string, { status: "approved" | "excluded"; evidenceDomain?: string }>> {
