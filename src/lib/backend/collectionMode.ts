@@ -9,14 +9,15 @@ export function collectionUsesLocalAgent(): boolean {
   return !!process.env.VERCEL || process.env.NEODIO_COLLECTION_MODE === "agent";
 }
 
-// 설치 파일은 비공개 Vercel Blob 저장소(neodio-collector)의 collector/ 아래에
+// 설치 파일은 비공개 Vercel Blob 저장소(neodio-blob)의 collector/ 아래에
 // collector/build.mjs의 zip 이름 그대로 둔다. 받기는 로그인한 화면에서만 —
 // 서버가 몇 분짜리 임시 링크를 만들어 보낸다. 저장소를 프로젝트에 연결하면
-// BLOB_READ_WRITE_TOKEN이 생긴다(docs/collector.md).
+// BLOB_STORE_ID가 생기고 SDK가 Vercel OIDC로 인증한다(예전 방식 저장소는
+// BLOB_READ_WRITE_TOKEN). docs/collector.md
 const DOWNLOAD_LINK_TTL_MS = 10 * 60_000;
 
 export function collectorDownloadsConfigured(): boolean {
-  return !!process.env.BLOB_READ_WRITE_TOKEN;
+  return !!(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 export function collectorPackagePath(platform: CollectorPlatform): string {

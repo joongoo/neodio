@@ -52,19 +52,20 @@ node collector/build.mjs --local-node                             # 이 PC용만
 
 - 결과: `dist/collector/neodio-collector-<platform>-<version>.zip`(각 약 40MB). Node 런타임(v22)은
   nodejs.org에서 받아 `.tmp/collector-build/`에 보관한다.
-- 설치 파일은 **비공개** Vercel Blob 저장소 `neodio-collector`(icn1)의 `collector/`에 이름 그대로 둔다.
+- 설치 파일은 **비공개** Vercel Blob 저장소 `neodio-blob`(icn1)의 `collector/`에 이름 그대로 둔다.
   공개 주소가 없고, 받기는 운영 화면(사이트 로그인 뒤)에서 서버가 만든 10분짜리 임시 링크로만 된다
   (`@vercel/blob`의 `issueSignedToken` + `presignUrl`).
-- 저장소는 Vercel 대시보드에서 neodio 프로젝트에 연결한다(Storage → neodio-collector → Connect Project).
-  연결하면 `BLOB_READ_WRITE_TOKEN`이 프로젝트 환경변수로 생기고, 없으면 받기 버튼이 비활성으로 보인다.
+- 저장소는 Vercel 대시보드에서 neodio 프로젝트(Production, Preview)에 연결돼 있다. 연결하면 `BLOB_STORE_ID`가
+  프로젝트 환경변수로 생기고 SDK가 Vercel OIDC로 인증한다. 둘 다(또는 `BLOB_READ_WRITE_TOKEN`) 없으면 받기 버튼이
+  비활성으로 보인다.
   CLI로 연결·링크하면 로컬 `.env.local`을 Vercel 값으로 덮어쓰므로 쓰지 않는다.
-- 올리기(저장소의 읽기·쓰기 토큰으로, 새 버전을 빌드할 때마다):
+- 올리기(대시보드에서 복사한 저장소 읽기·쓰기 토큰으로, 새 버전을 빌드할 때마다):
 
   ```bash
   cd dist/collector
   export BLOB_READ_WRITE_TOKEN='…'
   for f in neodio-collector-*-<version>.zip; do
-    npx -y vercel@latest blob put "$f" --pathname "collector/$f" --access private --force < /dev/null
+    npx -y vercel@latest blob put "$f" --pathname "collector/$f" --access private --allow-overwrite true < /dev/null
   done
   unset BLOB_READ_WRITE_TOKEN
   ```
