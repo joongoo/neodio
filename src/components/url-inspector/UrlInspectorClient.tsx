@@ -9,9 +9,9 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagedRows } from "@/lib/usePagedRows";
-import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
-import { CitedDomainRow, OwnCitedUrlRow, ThirdPartyUrlRow, UrlInspectorData } from "@/lib/db";
+import { CitedDomainRow, CitedPromptRun, OwnCitedUrlRow, ThirdPartyUrlRow, UrlInspectorData } from "@/lib/db";
+import { formatRunAt } from "@/lib/formatRunAt";
 
 const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
 const CATEGORY_OPTIONS = ["전체", "마케팅", "브랜드", "여행"];
@@ -38,25 +38,45 @@ function UrlLink({ url }: { url: string }) {
   );
 }
 
-function DetailButton({ onClick }: { onClick: () => void }) {
+// 행을 펼치면 이 URL을 인용한 프롬프트를 실행일·모델·마켓과 함께 보여 준다 — 가시성 개요의 확장형 표와 같은 모양.
+// 실측 데이터가 없는 행(목업)은 프롬프트 제목만 보여 준다.
+function CitedPromptsExpanded({ runs, titles }: { runs?: CitedPromptRun[]; titles: string[] }) {
+  const rows: CitedPromptRun[] = runs ?? titles.map((prompt) => ({ prompt, runAt: "", model: "", market: "" }));
+  if (rows.length === 0) return <p className="text-xs text-neutral-400">아직 이 URL을 인용한 프롬프트가 없습니다.</p>;
+  const detailed = rows.some((r) => r.runAt);
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] text-neutral-600 hover:bg-neutral-50 cursor-pointer"
-    >
-      상세
-    </button>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-3 border-b border-neutral-100 pb-2 text-xs font-bold text-neutral-500">
+        <span className="min-w-0 flex-1">프롬프트</span>
+        {detailed && (
+          <>
+            <span className="w-[70px] shrink-0">실행일</span>
+            <span className="w-[110px] shrink-0">모델</span>
+            <span className="w-[70px] shrink-0">마켓</span>
+          </>
+        )}
+      </div>
+      {rows.map((run, i) => (
+        <div key={`${run.prompt}-${run.runAt}-${i}`} className="flex items-center gap-3 text-xs text-neutral-700">
+          <span className="min-w-0 flex-1 truncate" title={run.prompt}>
+            {run.prompt}
+          </span>
+          {detailed && (
+            <>
+              <span className="w-[70px] shrink-0 text-neutral-500">{formatRunAt(run.runAt)}</span>
+              <span className="w-[110px] shrink-0">{run.model}</span>
+              <span className="w-[70px] shrink-0">
+                <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{run.market}</span>
+              </span>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
-function buildOwnColumns(
-  onDetail: (row: OwnCitedUrlRow) => void,
-  onUnregister: (row: OwnCitedUrlRow) => void
-): DataTableColumn<OwnCitedUrlRow>[] {
+function buildOwnColumns(onUnregister: (row: OwnCitedUrlRow) => void): DataTableColumn<OwnCitedUrlRow>[] {
   return [
     {
       key: "url",
@@ -78,9 +98,9 @@ function buildOwnColumns(
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
     { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
     {
-      key: "detail",
+      key: "action",
       label: "",
-      width: "w-[120px]",
+      width: "w-[90px]",
       render: (r) =>
         r.id.startsWith("registered-") ? (
           <button
@@ -93,9 +113,7 @@ function buildOwnColumns(
           >
             등록 해제
           </button>
-        ) : (
-          <DetailButton onClick={() => onDetail(r)} />
-        ),
+        ) : null,
     },
   ];
 }
@@ -107,7 +125,7 @@ const ownOptional: ColumnOption[] = [
   { key: "market", label: "마켓" },
 ];
 
-function buildThirdPartyColumns(onDetail: (row: ThirdPartyUrlRow) => void): DataTableColumn<ThirdPartyUrlRow>[] {
+function buildThirdPartyColumns(): DataTableColumn<ThirdPartyUrlRow>[] {
   return [
     { key: "url", label: "URL", render: (r) => <UrlLink url={r.url} /> },
     { key: "contentType", label: "콘텐츠 유형", width: "w-[100px]", render: (r) => r.contentType },
@@ -115,7 +133,6 @@ function buildThirdPartyColumns(onDetail: (row: ThirdPartyUrlRow) => void): Data
     { key: "citedPrompts", label: "인용된 프롬프트 수", width: "w-[130px]", render: (r) => r.citedPrompts },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => r.category },
     { key: "market", label: "마켓", width: "w-[80px]", render: (r) => <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">{r.market}</span> },
-    { key: "detail", label: "", width: "w-[64px]", render: (r) => <DetailButton onClick={() => onDetail(r)} /> },
   ];
 }
 const thirdPartyOptional: ColumnOption[] = [
@@ -149,7 +166,6 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
   const [ownSearch, setOwnSearch] = useState("");
   const [thirdPartySearch, setThirdPartySearch] = useState("");
   const [domainSearch, setDomainSearch] = useState("");
-  const [detailRow, setDetailRow] = useState<{ url: string; prompts: string[] } | null>(null);
   const [newUrl, setNewUrl] = useState("");
   const [registering, setRegistering] = useState(false);
 
@@ -186,15 +202,11 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
   const domainRows = data.citedDomains.filter((r) => r.domain.toLowerCase().includes(domainSearch.trim().toLowerCase()));
 
   const ownColumns = useMemo(
-    () =>
-      buildOwnColumns(
-        (r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles }),
-        (r) => unregisterUrl(r.url)
-      ),
+    () => buildOwnColumns((r) => unregisterUrl(r.url)),
     [unregisterUrl]
   );
   const thirdPartyColumns = useMemo(
-    () => buildThirdPartyColumns((r) => setDetailRow({ url: r.url, prompts: r.citedPromptTitles })),
+    () => buildThirdPartyColumns(),
     []
   );
 
@@ -252,7 +264,12 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
             등록
           </button>
         </div>
-        <DataTable columns={own.filtered} rows={ownPaged.pageRows} getRowId={(r) => r.id} />
+        <DataTable
+          columns={own.filtered}
+          rows={ownPaged.pageRows}
+          getRowId={(r) => r.id}
+          renderExpanded={(r) => <CitedPromptsExpanded runs={r.citedPromptRuns} titles={r.citedPromptTitles} />}
+        />
         <div className="mt-3">
           <Pagination
             page={ownPaged.page}
@@ -276,7 +293,12 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
         onSearchChange={setThirdPartySearch}
         searchPlaceholder="URL 검색"
       >
-        <DataTable columns={thirdParty.filtered} rows={thirdPartyPaged.pageRows} getRowId={(r) => r.id} />
+        <DataTable
+          columns={thirdParty.filtered}
+          rows={thirdPartyPaged.pageRows}
+          getRowId={(r) => r.id}
+          renderExpanded={(r) => <CitedPromptsExpanded runs={r.citedPromptRuns} titles={r.citedPromptTitles} />}
+        />
         <div className="mt-3">
           <Pagination
             page={thirdPartyPaged.page}
@@ -319,31 +341,6 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
         </div>
         <ConfigureColumnsModal open={domain.open} onClose={() => domain.setOpen(false)} columns={domainOptional} visible={domain.visible} onApply={domain.setVisible} />
       </TablePanel>
-
-      <Modal open={!!detailRow} onClose={() => setDetailRow(null)}>
-        {detailRow && (
-          <div>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-semibold text-neutral-900">인용된 프롬프트</h2>
-                <p className="mt-1 break-all text-xs text-neutral-500">{detailRow.url}</p>
-              </div>
-              <ModalCloseButton onClose={() => setDetailRow(null)} />
-            </div>
-            <ul className="mt-4 flex flex-col gap-2">
-              {detailRow.prompts.length === 0 ? (
-                <li className="text-xs text-neutral-400">인용된 프롬프트 정보가 없습니다.</li>
-              ) : (
-                detailRow.prompts.map((prompt, i) => (
-                  <li key={i} className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
-                    {prompt}
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
