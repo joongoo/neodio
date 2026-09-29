@@ -1,3 +1,4 @@
+import { hostnameOfUrl } from "@/lib/normalizeUrl";
 import { VisibilityOverviewClient } from "@/components/visibility-overview/VisibilityOverviewClient";
 import { DateRange, db, VisibilityTableRow } from "@/lib/db";
 import {
@@ -140,7 +141,7 @@ export default async function VisibilityOverviewPage({
           ? {
               own: {
                 name: ownBrand.name,
-                domain: (() => { try { return new URL(ownBrand.url).hostname; } catch { return undefined; } })(),
+                domain: hostnameOfUrl(ownBrand.url),
                 aliases: ownBrand.aliases,
                 description: ownBrand.description,
                 industry: ownBrand.industry,

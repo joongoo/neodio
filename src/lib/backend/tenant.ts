@@ -1,3 +1,4 @@
+import { hostnameOfUrl } from "@/lib/normalizeUrl";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { notFound, unstable_rethrow } from "next/navigation";
@@ -58,11 +59,7 @@ async function readRequest(): Promise<{ ref: TenantRef | null; strict: boolean }
 }
 
 function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "";
-  }
+  return (hostnameOfUrl(url) ?? "").replace(/^www\./, "");
 }
 
 export const getCurrentTenant = cache(async (): Promise<Tenant> => {
