@@ -37,6 +37,8 @@ export default async function PromptStrategyPage() {
     deletedIds,
     gscKeywordCraftedPrompts,
     brainstormCards,
+    trendCards,
+    sitemapCards,
     topicBrandMentions,
     citationTestPrompts,
     topPages,
@@ -48,6 +50,8 @@ export default async function PromptStrategyPage() {
     getDeletedLibraryRowIds(tenant.orgId),
     getLlmBridgeScope<GscCraftedPrompt[]>(tenant.orgId, "gsc-keyword-prompts"),
     getLlmBridgeEntry<LlmBrainstormCard[]>(tenant.orgId, "llm-brainstorm", "current"),
+    getLlmBridgeEntry<LlmBrainstormCard[]>(tenant.orgId, "llm-trend-strategy", "current"),
+    getLlmBridgeEntry<LlmBrainstormCard[]>(tenant.orgId, "llm-sitemap-strategy", "current"),
     demo ? Promise.resolve(null) : getRealTopicBrandMentions().catch(() => null),
     getLlmBridgeScope<GscCraftedPrompt[]>(tenant.orgId, "citation-test-prompts"),
     demo ? Promise.resolve(null) : getRealGscTopPages(tenant.brandId, 5).catch(() => null),
@@ -142,41 +146,51 @@ export default async function PromptStrategyPage() {
   // LLM이 지어낸 숫자를 절대 신뢰하지 않는다. 아직 한 번도 수집되지 않은
   // 토픽이면 "미수집"으로 남는다(brandMentions 빈 배열).
   const topicBrandMentionsByTopic = new Map((topicBrandMentions ?? []).map((r) => [r.topic, r]));
-  const brainstormSuggestions: PromptStrategySuggestion[] = (brainstormCards ?? []).map((card) => ({
-    id: card.id,
-    tag: card.tag,
-    source: "llm_brainstorm" as const,
-    title: card.title,
-    summary: card.summary,
-    stat: card.stat,
-  }));
-  const brainstormTopics: PromptStrategyTopicRow[] = (brainstormCards ?? []).flatMap((card) =>
-    card.topics.map((t, i) => {
-      const real = topicBrandMentionsByTopic.get(t.prompt);
-      return {
-        id: `${card.id}-topic-${i}`,
-        groupId: card.id,
-        topic: t.prompt,
-        market: real?.market ?? "KR",
-        source: "llm_brainstorm" as const,
-        gscImpressions: null,
-        brandMentions: real?.brandMentions ?? [],
-        category: t.category,
-        topicGroup: t.topic,
-      };
-    })
-  );
+  // 가상 사용자 질문·검색어 트렌드·사이트맵 크롤 분석은 같은 카드 모양이라 출처만 다르게 같은 방식으로 만든다.
+  const cardsToRows = (cards: LlmBrainstormCard[] | null, source: "llm_brainstorm" | "search_trend" | "sitemap_crawl") => ({
+    suggestions: (cards ?? []).map(
+      (card): PromptStrategySuggestion => ({ id: card.id, tag: card.tag, source, title: card.title, summary: card.summary, stat: card.stat })
+    ),
+    topics: (cards ?? []).flatMap((card) =>
+      card.topics.map((t, i): PromptStrategyTopicRow => {
+        const real = topicBrandMentionsByTopic.get(t.prompt);
+        return {
+          id: `${card.id}-topic-${i}`,
+          groupId: card.id,
+          topic: t.prompt,
+          market: real?.market ?? "KR",
+          source,
+          gscImpressions: null,
+          brandMentions: real?.brandMentions ?? [],
+          category: t.category,
+          topicGroup: t.topic,
+        };
+      })
+    ),
+  });
+  const brainstorm = cardsToRows(brainstormCards, "llm_brainstorm");
+  const trend = cardsToRows(trendCards, "search_trend");
+  const sitemap = cardsToRows(sitemapCards, "sitemap_crawl");
+  // 카드가 등록돼 있으면 그 출처의 mock 카드 전체를 교체한다.
+  const replaceSource = <T extends { source: string }>(rows: T[], source: string, cards: unknown, next: T[]) =>
+    cards ? [...rows.filter((r) => r.source !== source), ...next] : rows;
 
   const suggestions = realGaps ? [...keywordSuggestions, ...data.suggestions.filter((s) => s.source !== "gsc")] : data.suggestions;
-  const suggestionsWithBrainstorm = brainstormCards
-    ? [...suggestions.filter((s) => s.source !== "llm_brainstorm"), ...brainstormSuggestions]
-    : suggestions;
+  const suggestionsWithBrainstorm = replaceSource(
+    replaceSource(replaceSource(suggestions, "llm_brainstorm", brainstormCards, brainstorm.suggestions), "search_trend", trendCards, trend.suggestions),
+    "sitemap_crawl",
+    sitemapCards,
+    sitemap.suggestions
+  );
   const suggestionsWithCitation = topPages
     ? [...suggestionsWithBrainstorm.filter((s) => s.source !== "citation_attempt"), ...citationSuggestions]
     : suggestionsWithBrainstorm;
-  const topicsAfterBrainstorm = brainstormCards
-    ? [...topicsAfterGsc.filter((t) => t.source !== "llm_brainstorm"), ...brainstormTopics]
-    : topicsAfterGsc;
+  const topicsAfterBrainstorm = replaceSource(
+    replaceSource(replaceSource(topicsAfterGsc, "llm_brainstorm", brainstormCards, brainstorm.topics), "search_trend", trendCards, trend.topics),
+    "sitemap_crawl",
+    sitemapCards,
+    sitemap.topics
+  );
   const topics = topPages
     ? [...topicsAfterBrainstorm.filter((t) => t.source !== "citation_attempt"), ...citationTopics]
     : topicsAfterBrainstorm;

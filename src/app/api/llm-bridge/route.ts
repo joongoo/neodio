@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (scope === "llm-brainstorm") {
+  if (scope === "llm-brainstorm" || scope === "llm-trend-strategy" || scope === "llm-sitemap-strategy") {
     const VALID_TAGS = new Set(["coverage_gap", "strength"]);
     const isValidCard = (item: unknown) => {
       const c = item as Record<string, unknown>;

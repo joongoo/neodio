@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Tabs } from "@/components/ui/Tabs";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
-import { Search, Users, Quote } from "lucide-react";
+import { Search, Users, Quote, TrendingUp, Network } from "lucide-react";
 import { TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBulkBridgeModal } from "@/components/ui/LlmBulkBridgeModal";
+import { StrategyWizardModal } from "@/components/prompt-strategy/StrategyWizardModal";
+import type { StrategyKind } from "@/lib/strategyCards";
 import { BrainstormWizardModal } from "@/components/prompt-strategy/BrainstormWizardModal";
 import { PromptStrategyData, PromptStrategySuggestion, PromptStrategyTopicRow, StrategySource } from "@/lib/db";
 import { CANONICAL_CATEGORIES } from "@/lib/categories";
@@ -19,6 +21,8 @@ const SOURCE_LABEL: Record<StrategySource, string> = {
   gsc: "구글서치콘솔",
   llm_brainstorm: "가상 사용자 질문",
   citation_attempt: "인용 테스트",
+  search_trend: "검색어 트렌드",
+  sitemap_crawl: "사이트맵 크롤",
 };
 
 const TAG_LABEL: Record<PromptStrategySuggestion["tag"], { text: string; className: string }> = {
@@ -67,6 +71,7 @@ export function PromptStrategyClient({
   const topics = initial.topics;
   const [trackedIds, setTrackedIds] = useState<Set<string>>(() => new Set(preTrackedIds));
   const [brainstormOpen, setBrainstormOpen] = useState(false);
+  const [strategyKind, setStrategyKind] = useState<StrategyKind | null>(null);
   // 그룹 전체가 추적돼도 배너를 자동으로 숨기지 않는다 — "전체 추적 중"
   // 상태 자체가 유용한 정보라 계속 보여주고, 숨기고 싶으면 "닫기"를 직접
   // 누르게 한다.
@@ -177,6 +182,8 @@ export function PromptStrategyClient({
     { id: "gsc", label: "구글서치콘솔", badge: topics.filter((t) => t.source === "gsc").length },
     { id: "llm_brainstorm", label: "가상 사용자 질문", badge: topics.filter((t) => t.source === "llm_brainstorm").length },
     { id: "citation_attempt", label: "인용 테스트", badge: topics.filter((t) => t.source === "citation_attempt").length },
+    { id: "search_trend", label: "검색어 트렌드", badge: topics.filter((t) => t.source === "search_trend").length },
+    { id: "sitemap_crawl", label: "사이트맵 크롤", badge: topics.filter((t) => t.source === "sitemap_crawl").length },
   ];
 
   const filteredSuggestions = initial.suggestions.filter((s) => filter === "all" || s.source === filter);
@@ -352,12 +359,12 @@ export function PromptStrategyClient({
 
       <InfoBanner
         title="프롬프트 전략은 어떻게 동작하나요"
-        description="Google Search Console(자사 실측 노출)과 매주 LLM에게 현재 데이터를 기반으로 요청하는 인사이트 브레인스토밍, 두 소스에서 프롬프트를 추천합니다."
+        description="Google Search Console(자사 실측 노출), LLM 인사이트 브레인스토밍, 네이버 검색어 트렌드, 사이트맵 크롤 결과에서 프롬프트를 추천합니다."
         actionLabel="도움말 보기"
         onAction={() => router.push("/help/prompt-strategy")}
       />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <button
           type="button"
           onClick={() => setGscWizardOpen(true)}
@@ -387,6 +394,26 @@ export function PromptStrategyClient({
             <Quote size={20} />
           </div>
           <span className="text-[13px] font-bold text-neutral-900">인용 테스트 분석</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setStrategyKind("trend")}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+        >
+          <div className="grid size-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+            <TrendingUp size={20} />
+          </div>
+          <span className="text-[13px] font-bold text-neutral-900">검색어 트렌드 분석</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setStrategyKind("sitemap")}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+        >
+          <div className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-600">
+            <Network size={20} />
+          </div>
+          <span className="text-[13px] font-bold text-neutral-900">사이트맵 크롤 분석</span>
         </button>
       </div>
 
@@ -621,6 +648,18 @@ export function PromptStrategyClient({
         uncategorizedTopicOptions={uncategorizedTopicOptions}
         onSaved={() => router.refresh()}
       />
+
+      {(["trend", "sitemap"] as const).map((kind) => (
+        <StrategyWizardModal
+          key={kind}
+          open={strategyKind === kind}
+          kind={kind}
+          onClose={() => setStrategyKind(null)}
+          topicOptionsByCategory={topicOptionsByCategory}
+          uncategorizedTopicOptions={uncategorizedTopicOptions}
+          onSaved={() => router.refresh()}
+        />
+      ))}
 
       {trackSuccessCount !== null && (
         <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(92vw,420px)] -translate-x-1/2 items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-lg">

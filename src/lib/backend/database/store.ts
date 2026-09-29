@@ -366,7 +366,7 @@ export class PromptStore {
         if ((scope === "gsc-keyword-prompts" || scope === "citation-test-prompts") && Array.isArray(data)) {
           for (const item of data) await register(item, scope === "gsc-keyword-prompts" ? "coverage_gap" : "citation_test");
         }
-        if (scope === "llm-brainstorm" && Array.isArray(data)) for (const card of data) {
+        if ((scope === "llm-brainstorm" || scope === "llm-trend-strategy" || scope === "llm-sitemap-strategy") && Array.isArray(data)) for (const card of data) {
           for (const item of card.topics ?? []) await register(typeof item === "string" ? { prompt: item } : item, card.tag ?? "brainstorm", card.summary,
             `${key}:${card.id ?? hash([card.title, card.summary])}`);
         }

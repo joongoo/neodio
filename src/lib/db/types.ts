@@ -1202,7 +1202,7 @@ export interface BrandsManagementData {
 // original design's other two sources) are dropped. Both sources land in
 // this exact shape so the future batch job can write into it unchanged.
 
-export type StrategySource = "gsc" | "llm_brainstorm" | "citation_attempt";
+export type StrategySource = "gsc" | "llm_brainstorm" | "citation_attempt" | "search_trend" | "sitemap_crawl";
 
 export interface PromptStrategySuggestion {
   id: string;
