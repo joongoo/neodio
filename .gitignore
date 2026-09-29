@@ -44,3 +44,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .claude/worktrees/
+
+# 수집기 설치 파일 빌드 결과 (collector/build.mjs)
+/dist/

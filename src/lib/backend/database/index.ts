@@ -185,7 +185,8 @@ export async function getPersistedCollectionJob(jobId: string): Promise<Collecti
     "SELECT data_json FROM collection_jobs WHERE id=$1", [jobId]);
   if (!row) return undefined;
   const job = row.data_json;
-  if (job.stage !== "done" && job.stage !== "error") {
+  // 중단된 작업도 끝난 작업이다 — 예전엔 다시 읽을 때 "실패"로 바뀌었다.
+  if (job.stage !== "done" && job.stage !== "error" && job.stage !== "cancelled") {
     if (job.ownerPid) {
       try { process.kill(job.ownerPid, 0); return job; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }

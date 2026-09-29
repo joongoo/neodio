@@ -4,6 +4,10 @@ import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTop
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getTopicOptionsByCategory } from "@/lib/backend/promptTopics";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { collectionUsesLocalAgent, collectorDownloadUrl } from "@/lib/backend/collectionMode";
+import type { CollectorPlatform } from "@/lib/collectorAgent";
+
+const COLLECTOR_PLATFORMS: CollectorPlatform[] = ["mac-arm64", "mac-x64", "win-x64"];
 
 // 가시성 개요의 "추적하기"가 실제로 저장한 토픽(.tmp/tracked-topics)이 새로
 // 추가될 수 있으므로 캐시하지 않는다 — collection-runs 페이지와 동일한 이유.
@@ -29,6 +33,11 @@ export default async function PromptLibraryPage() {
       health={health}
       topicOptionsByCategory={topicOptions.byCategory}
       uncategorizedTopicOptions={topicOptions.uncategorized}
+      collectionAgent={
+        collectionUsesLocalAgent()
+          ? { orgName: tenant.org.name, downloadPlatforms: COLLECTOR_PLATFORMS.filter((p) => collectorDownloadUrl(p)) }
+          : null
+      }
     />
   );
 }

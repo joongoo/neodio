@@ -8,7 +8,7 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 function refuseOnServerless() {
   if (!process.env.VERCEL) return null;
   return NextResponse.json(
-    { error: "AI검색 수집은 로컬 개발 환경에서만 실행할 수 있어요. 로컬에서 `npm run collect:naver-ai` / `collect:google-ai`를 실행해주세요." },
+    { error: "여기서는 수집을 바로 실행할 수 없어요. 프롬프트 라이브러리에서 프롬프트를 선택하고 '선택 수집'을 누르면 이 PC의 수집기로 수집할 수 있습니다." },
     { status: 501 }
   );
 }

@@ -14,6 +14,8 @@ import { Pagination } from "@/components/ui/Pagination";
 import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow } from "@/components/prompt-library/PromptLibraryModals";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
+import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
+import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
 import { downloadCsv } from "@/lib/csv";
 
@@ -28,12 +30,15 @@ export function PromptLibraryClient({
   health,
   topicOptionsByCategory,
   uncategorizedTopicOptions,
+  collectionAgent,
 }: {
   initialRows: PromptLibraryRow[];
   health: PromptLibraryHealth | null;
   /** 카테고리별 기존 토픽 목록 — 추적/편집 모달의 토픽 드롭다운에 쓴다. */
   topicOptionsByCategory: Record<string, string[]>;
   uncategorizedTopicOptions: string[];
+  /** 선택 수집을 사용자 PC의 수집기에 맡길 때(운영) — null이면 이 서버가 바로 실행(로컬). */
+  collectionAgent: { orgName: string; downloadPlatforms: CollectorPlatform[] } | null;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
@@ -419,12 +424,23 @@ export function PromptLibraryClient({
           });
         }}
       />
-      <BulkCollectionModal
-        open={collectOpen}
-        onClose={() => setCollectOpen(false)}
-        keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
-        onDone={() => setSelected(new Set())}
-      />
+      {collectionAgent ? (
+        <AgentCollectionModal
+          open={collectOpen}
+          onClose={() => setCollectOpen(false)}
+          keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
+          onDone={() => setSelected(new Set())}
+          orgName={collectionAgent.orgName}
+          downloadPlatforms={collectionAgent.downloadPlatforms}
+        />
+      ) : (
+        <BulkCollectionModal
+          open={collectOpen}
+          onClose={() => setCollectOpen(false)}
+          keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
+          onDone={() => setSelected(new Set())}
+        />
+      )}
       <ConfigureColumnsModal
         open={columnsOpen}
         onClose={() => setColumnsOpen(false)}

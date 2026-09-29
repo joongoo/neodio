@@ -1,0 +1,85 @@
+# 네오디오 수집기 (설치형, 선택 수집)
+
+운영(Vercel)에는 실제 Chrome이 없어서 네이버 AI검색·구글 AI 모드 수집을 서버에서 돌릴 수 없다.
+그래서 수집은 사용자 PC에 설치한 **수집기**가 하고, 웹 화면(브라우저)이 다리 역할을 한다.
+
+```
+프롬프트 라이브러리 "선택 수집"
+  → 수집기 확인(127.0.0.1:17380 — 설치·버전·Chrome)
+  → 없으면 운영체제별 설치 파일 안내 → 설치 후 "다시 확인"
+  → 선택한 프롬프트로 수집 명령 → 수집기가 Chrome으로 수집, 결과는 그 PC에 저장
+  → 끝나면 결과 확인 → "반영" → 브라우저가 결과를 받아 /api/collection-runs/import로 저장
+```
+
+- 수집기는 서버·DB에 직접 붙지 않고 비밀 정보도 갖지 않는다. 반영은 로그인한 브라우저가 한다.
+- 창을 닫아도 수집은 PC에서 계속되고, 다시 열면 "반영하지 않은 수집"으로 이어서 볼 수 있다.
+- 로컬 대시보드(`npm run dev`)는 지금처럼 서버가 바로 수집한다. `NEODIO_COLLECTION_MODE=agent`를 주면
+  로컬에서도 운영과 같은 수집기 흐름을 쓴다.
+
+## 구성
+
+| 위치 | 역할 |
+|---|---|
+| [collector/agent.ts](../collector/agent.ts) | 수집기 — `run`(127.0.0.1 서버), `install`(설치 + 로그인 시 자동 시작), `uninstall`, `status` |
+| [collector/build.mjs](../collector/build.mjs) | 운영체제별 설치 파일(zip) 만들기 |
+| [src/lib/collectorAgent.ts](../src/lib/collectorAgent.ts) | 웹 ↔ 수집기 약속(포트, 버전, 작업 형식) |
+| [src/lib/collectorClient.ts](../src/lib/collectorClient.ts) | 브라우저에서 수집기 호출 |
+| [AgentCollectionModal](../src/components/prompt-library/AgentCollectionModal.tsx) | 선택 수집 화면(확인 → 설치 안내 → 진행 → 반영) |
+| `/api/collection-runs/import` | 반영 — 지금 조직으로 저장, 같은 실행은 덮어쓰기 |
+| `/api/collector-download?platform=` | 설치 파일로 보내기(`COLLECTOR_DOWNLOAD_BASE_URL`) |
+
+수집기는 저장소의 수집 스크립트(`scripts/collect-naver-ai.mjs`, `collect-google-ai.mjs`)를 그대로 번들해 실행한다.
+네이버도 `--browser-channel chrome`으로 설치된 Chrome을 쓰므로 설치 파일에 Playwright 브라우저를 넣지 않는다.
+
+## 보안
+
+- 127.0.0.1에서만 연다. `Host`가 127.0.0.1/localhost가 아니면 거절한다(DNS rebinding 방지).
+- 브라우저 요청은 허용된 화면 주소(`Origin`)에서만 받는다 — 빌드할 때 `--origin`으로 넣은 운영 주소 + 로컬 개발
+  주소(localhost:3000). 설치 때 `install --origin <주소>`로 더할 수 있다(`config.json`).
+- 수집 명령은 `Content-Type: application/json`만 받아, 다른 사이트의 폼 전송으로 수집을 시킬 수 없다.
+- `/shutdown`은 `Origin`이 없는 요청(같은 PC의 설치 명령)만 받는다.
+- Chrome의 사설망 접근 제한에 맞춰 사전 요청에 `Access-Control-Allow-Private-Network: true`를 준다.
+  Chrome이 "로컬 네트워크 접근" 권한을 물으면 허용해야 한다. Safari는 https 화면에서 http://127.0.0.1을
+  막아 쓸 수 없다(화면에 안내).
+
+## 설치 파일 만들고 올리기
+
+```bash
+node collector/build.mjs --origin https://<운영 주소>            # mac-arm64, mac-x64, win-x64 전부
+node collector/build.mjs --origin https://<운영 주소> --platform win-x64
+node collector/build.mjs --local-node                             # 이 PC용만, 지금 node로(시험용)
+```
+
+- 결과: `dist/collector/neodio-collector-<platform>-<version>.zip`(각 약 20~30MB). Node 런타임(v22)은
+  nodejs.org에서 받아 `.tmp/collector-build/`에 보관한다.
+- 이 zip들을 한 곳(예: Vercel Blob, S3, 사내 파일 서버)에 **이름 그대로** 올리고, 운영 환경변수
+  `COLLECTOR_DOWNLOAD_BASE_URL`에 그 폴더 주소를 넣는다. 설정이 없으면 화면의 받기 버튼이 비활성으로 보인다.
+
+## 설치 (수집 PC)
+
+Google Chrome이 있어야 한다.
+
+- **macOS**: zip 풀기 → `install.command` 우클릭 → 열기(처음 한 번 보안 확인). `~/.neodio-collector/runtime`에
+  복사되고 `~/Library/LaunchAgents/com.neodio.collector.plist`로 로그인 시 자동 실행된다.
+- **Windows**: zip 풀기 → `install.cmd` 더블클릭. `%LOCALAPPDATA%\NeodioCollector\runtime`에 복사되고
+  시작프로그램 폴더의 `neodio-collector.vbs`로 로그인 시 창 없이 실행된다(관리자 권한 불필요).
+- 제거: `uninstall.command` / `uninstall.cmd`. 수집 결과·설정·로그(`logs/agent.log`)는 남는다.
+
+설치 파일은 코드 서명·공증을 하지 않았다. macOS는 우클릭 → 열기, Windows는 "추가 정보 → 실행"이 한 번 필요하다.
+
+## 업데이트
+
+수집 스크립트나 수집기 동작이 바뀌면 [collectorAgent.ts](../src/lib/collectorAgent.ts)의 `COLLECTOR_VERSION`을
+올리고 다시 빌드해 올린다. 기존 PC가 반드시 새 버전을 써야 하면 `MIN_COLLECTOR_VERSION`도 올린다 — 낮은 버전은
+선택 수집 화면에서 업데이트 안내를 받는다. 새 zip의 설치 파일을 다시 실행하면 덮어쓰고 재시작한다.
+
+## 개발
+
+```bash
+npm run collector -- run                          # 저장소의 스크립트로 수집기 실행(127.0.0.1:17380)
+NEODIO_COLLECTION_MODE=agent npm run dev          # 선택 수집이 수집기 흐름을 쓴다
+```
+
+수집기 데이터: macOS `~/.neodio-collector`, Windows `%LOCALAPPDATA%\NeodioCollector`
+(`jobs/` 작업 기록, `results/<작업>/` 수집 결과 JSON·캡처, `work/` Chrome 임시 프로필, `logs/`).
+반영한 작업은 최근 30개까지만 남기고 수집기 시작 때 지운다.
