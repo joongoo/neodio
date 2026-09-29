@@ -101,7 +101,16 @@ const sourceOptional: ColumnOption[] = [
   { key: "examplePrompt", label: "프롬프트 예시" },
 ];
 
-export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
+export function RelatedTopicsTable({
+  rows,
+  compact = false,
+  description = "마케팅 자동화와 관련된 모든 토픽입니다.",
+}: {
+  rows: RelatedTopicRow[];
+  /** AI가 제안한 질문만 있는 결과 — 모델·브랜드·소스 집계 열을 숨긴다. */
+  compact?: boolean;
+  description?: string;
+}) {
   const [trackedTopicIds, setTrackedTopicIds] = useState<Set<string>>(new Set());
   const [trackedPromptIds, setTrackedPromptIds] = useState<Set<string>>(new Set());
   const [trackingTopic, setTrackingTopic] = useState<RelatedTopicRow | null>(null);
@@ -119,7 +128,7 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
   return (
     <TablePanel
       title="관련 토픽"
-      description="마케팅 자동화와 관련된 모든 토픽입니다."
+      description={description}
       count={filteredRows.length}
       total={rows.length}
       onConfigureColumns={() => setOpen(true)}
@@ -137,20 +146,28 @@ export function RelatedTopicsTable({ rows }: { rows: RelatedTopicRow[] }) {
           ) : (
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center gap-3 border-b border-neutral-100 pb-2 text-xs font-bold text-neutral-500">
-                <span className="w-[280px]">프롬프트</span>
-                <span className="w-[100px]">모델</span>
-                <span className="w-[100px]">브랜드</span>
-                <span className="w-[80px]">소스</span>
+                <span className={compact ? "flex-1" : "w-[280px]"}>프롬프트</span>
+                {!compact && (
+                  <>
+                    <span className="w-[100px]">모델</span>
+                    <span className="w-[100px]">브랜드</span>
+                    <span className="w-[80px]">소스</span>
+                  </>
+                )}
                 <span className="w-[80px]">액션</span>
               </div>
               {row.subPrompts.map((sp) => (
                 <div key={sp.id} className="flex items-center gap-3 text-xs text-neutral-700">
-                  <span className="w-[280px] truncate" title={sp.aiResponseSummary}>
+                  <span className={compact ? "min-w-0 flex-1" : "w-[280px] truncate"} title={sp.aiResponseSummary}>
                     {sp.prompt}
                   </span>
-                  <span className="w-[100px]">{sp.model}</span>
-                  <span className="w-[100px]">{sp.brandsMentioned}</span>
-                  <span className="w-[80px]">{sp.sourcesCited}</span>
+                  {!compact && (
+                    <>
+                      <span className="w-[100px]">{sp.model}</span>
+                      <span className="w-[100px]">{sp.brandsMentioned}</span>
+                      <span className="w-[80px]">{sp.sourcesCited}</span>
+                    </>
+                  )}
                   <span className="w-[80px]">
                     {trackedPromptIds.has(sp.id) ? (
                       <span className="text-[11px] font-medium text-emerald-600">추적 중</span>

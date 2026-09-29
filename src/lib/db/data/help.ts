@@ -7,38 +7,26 @@ import { HelpArticle, RoadmapGroup } from "../types";
 export const roadmapGroups: RoadmapGroup[] = [
   {
     id: "llm-api",
-    trigger: "LLM API 연동 시",
+    trigger: "LLM 호출 자동화 시",
     description:
-      "지금은 사람이 LLM 채팅창에 직접 물어보고 결과를 코드/화면에 옮겨두는 '수동 다리' 단계입니다. LLM API를 붙이면 이 과정이 전부 배치로 자동화됩니다.",
+      "AI 자동 생성은 버튼을 누르는 순간에만 동작합니다. 아래 항목은 정해진 주기(주간 등)로 스스로 실행되는 배치로 바꾸면 사람이 누르지 않아도 최신 상태가 유지됩니다.",
     items: [
       {
-        id: "llm-content-guide",
-        title: "기회별 'LLM 기반 수정 가이드' 자동 생성",
-        description:
-          "콘텐츠 가시성 회복/복잡한 콘텐츠 단순화/FAQ 추가/목차 추가/멀티미디어 보강 — 5개 기회 상세 페이지에 지금 '준비 중'으로 표시된 섹션입니다. LLM API가 붙으면 각 URL의 실제 크롤 결과(원문 HTML)를 근거로 '이 문단을 이렇게 줄이세요', 'FAQ는 이 3개 질문을 추가하세요' 같은 구체적 수정안을 자동 생성해 보여줄 수 있습니다.",
-      },
-      {
-        id: "llm-topic-guide",
-        title: "토픽 기회 'LLM 기반 콘텐츠 생성 가이드' 자동 생성",
-        description:
-          "토픽 기회 상세 페이지의 '준비 중' 섹션. 아직 우리 브랜드가 언급되지 않은 토픽에 대해, 어떤 구조(제목/섹션/FAQ)로 콘텐츠를 만들면 AI 답변에 인용되기 쉬운지 LLM이 초안 가이드를 제안합니다.",
-      },
-      {
         id: "llm-source-recommendation",
-        title: "소스 기회(획득 콘텐츠) 추천 자동화",
+        title: "소스 기회(획득 콘텐츠) 추천 배치",
         description:
-          "지금은 sourceOpportunityRecommendations.ts에 사람이 LLM 응답을 수동으로 붙여넣어 도메인별 추천/근거를 채우고 있습니다. API가 붙으면 인용된 도메인 목록을 자동으로 LLM에 보내 '이 도메인에 어떤 콘텐츠를 기고하면 좋을지'를 배치로 채웁니다.",
+          "지금은 도메인마다 '추천 받기'를 눌러 추천과 근거를 채웁니다. 인용된 상위 도메인 중 아직 추천이 없는 곳을 주 1회 자동으로 채우면 새 도메인이 생겨도 추천이 비지 않습니다.",
       },
       {
         id: "llm-brainstorm-batch",
         title: "프롬프트 전략 'LLM 브레인스토밍' 정기 배치",
         description:
-          "가상 사용자 질문(llm_brainstorm) 소스는 현재 한 번 실행한 결과가 고정 저장돼 있습니다. API 연동 시 주간 배치로 자동 재실행해 최신 브랜드 상태를 반영한 새 토픽을 계속 추천할 수 있습니다.",
+          "가상 사용자 질문 카드는 버튼을 누른 시점의 실측 데이터로 만들어집니다. 주간 배치로 자동 재실행하면 최신 브랜드 상태를 반영한 새 토픽을 계속 추천할 수 있습니다.",
       },
       {
         id: "llm-sentiment",
         title: "AI 답변 감성 분류 자동화",
-        description: "현재 수집된 AI 답변의 감성(우호/중립/비우호) 분류를 LLM 호출로 자동화해 사람이 태깅하지 않아도 되게 합니다.",
+        description: "현재 수집된 AI 답변의 감성(우호/중립/비우호) 분류는 키워드 규칙 기반입니다. LLM 호출로 바꾸면 문맥을 반영한 분류가 됩니다.",
       },
     ],
   },
@@ -214,9 +202,9 @@ export const roadmapGroups: RoadmapGroup[] = [
       },
       {
         id: "additional-ai-engines",
-        title: "수집 대상 AI 엔진 확장 로드맵 (Perplexity/ChatGPT/Gemini 등)",
+        title: "수집 대상 AI 엔진 확장 로드맵 (Perplexity/ChatGPT/Claude 등)",
         description:
-          "지금은 네이버 AI검색·구글 AI Overview 2개 엔진만 수집한다. 경쟁 제품은 Perplexity/ChatGPT/Gemini까지 커버하고 Bing/Claude를 '지원 예정'으로 명시한다. 각 엔진별로 봇 차단 회피 난이도와 API 유무가 다르므로, 엔진별 수집 가능성 조사부터 시작해 확장 우선순위를 정한다.",
+          "네이버 AI검색·구글 AI Overview는 브라우저로, Gemini는 공식 API로 수집합니다. 경쟁 제품은 Perplexity/ChatGPT까지 커버하고 Bing/Claude를 '지원 예정'으로 명시합니다. 같은 수집 구조에 엔진별 어댑터를 추가하는 방식으로 확장하며, 엔진마다 API 키와 사용료가 필요합니다.",
       },
     ],
   },

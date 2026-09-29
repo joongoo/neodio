@@ -7,6 +7,7 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { RelatedTopicsIntent } from "@/components/prompt-research/RelatedTopicsIntent";
 import { RelatedTopicsTable, BrandMentionsTable, SourceDomainsTable } from "@/components/prompt-research/PromptResearchTables";
 import { db, PromptResearchResult } from "@/lib/db";
+import { LivePromptResearch } from "@/components/prompt-research/LivePromptResearch";
 
 const MARKET_OPTIONS = ["미국 (US)", "한국 (KR)", "전세계"];
 const MODEL_OPTIONS = ["전체 모델", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Google AI Overview"];
@@ -17,14 +18,12 @@ const MODEL_OPTIONS = ["전체 모델", "ChatGPT", "Gemini", "Claude", "Perplexi
 export function PromptResearchClient({
   initialTopic,
   initialResult,
-  comingSoon,
+  live,
 }: {
   initialTopic: string;
   initialResult: PromptResearchResult | null;
-  /** 실 브랜드(Neodigm)에서는 true — LLM API 연동 전까지는 검색 UI 자체를
-   *  숨기고 "준비 중" 안내만 보여준다. "Demo" 브랜드에서는 false로 넘어와
-   *  기존 mock 검색 화면이 그대로 보인다. */
-  comingSoon: boolean;
+  /** 실제 브랜드는 true — AI가 관련 토픽과 질문을 제안하는 화면. "Demo" 브랜드는 false로 넘어와 기존 목업 검색 화면이 보인다. */
+  live: boolean;
 }) {
   const [topicInput, setTopicInput] = useState(initialTopic);
   const [market, setMarket] = useState(MARKET_OPTIONS[0]);
@@ -41,24 +40,7 @@ export function PromptResearchClient({
     db.promptResearch.search(topic).then(setResult);
   }
 
-  if (comingSoon) {
-    return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-neutral-900">프롬프트 리서치</h1>
-          <p className="mt-1 text-sm text-neutral-500">
-            사람들이 AI에게 이 토픽에 대해 묻는 질문을 찾고, AI 답변 내 가시성을 높일 수 있는 공백을 발견하세요.
-          </p>
-        </div>
-        <Card className="flex flex-col items-center gap-2 py-16 text-center">
-          <p className="text-sm font-medium text-neutral-700">이 기능은 준비 중입니다</p>
-          <p className="text-xs text-neutral-500">
-            LLM API 연동 후 실제 토픽 리서치 결과를 제공할 예정입니다.
-          </p>
-        </Card>
-      </div>
-    );
-  }
+  if (live) return <LivePromptResearch />;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
