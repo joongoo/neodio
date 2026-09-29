@@ -82,6 +82,10 @@ export interface PromptRunMetadata {
   source: "seed" | "naver-ai-search" | "google-ai-overview" | "api" | "headless-browser";
   basedOn?: string[];
   collectedBy?: string;
+  /** API 수집(source "api")에서 실제로 호출한 모델 이름 */
+  model?: string;
+  /** API 제공사 원본에서 보존한 값(검색어, 토큰 사용량 등) */
+  providerData?: Record<string, unknown>;
   query?: string;
   queryUrl?: string;
   finalUrl?: string;
@@ -905,6 +909,8 @@ export interface BrandPresenceData {
   bottomMovers: SentimentMoverRow[];
   dataInsights: DataInsightRow[];
   shareOfVoice: ShareOfVoiceRow[];
+  /** 모델(엔진) 이름별 Share of Voice — 상단 모델 필터가 이 표에도 적용되게 한다. 실 수집 데이터가 있는 모델만 키가 있다. */
+  shareOfVoiceByModel?: Record<string, ShareOfVoiceRow[]>;
 }
 
 // ---- Opportunity Detail — Template B (robots.txt diagnostic) ----

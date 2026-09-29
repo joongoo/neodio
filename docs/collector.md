@@ -59,16 +59,14 @@ node collector/build.mjs --local-node                             # 이 PC용만
   프로젝트 환경변수로 생기고 SDK가 Vercel OIDC로 인증한다. 둘 다(또는 `BLOB_READ_WRITE_TOKEN`) 없으면 받기 버튼이
   비활성으로 보인다.
   CLI로 연결·링크하면 로컬 `.env.local`을 Vercel 값으로 덮어쓰므로 쓰지 않는다.
-- 올리기(대시보드에서 복사한 저장소 읽기·쓰기 토큰으로, 새 버전을 빌드할 때마다):
+- 올리기 — 저장소 읽기·쓰기 토큰(대시보드에서 복사)은 키체인에 한 번만 넣어 둔다. 값을 복사한 채로:
 
   ```bash
-  cd dist/collector
-  export BLOB_READ_WRITE_TOKEN='…'
-  for f in neodio-collector-*-<version>.zip; do
-    npx -y vercel@latest blob put "$f" --pathname "collector/$f" --access private --allow-overwrite true < /dev/null
-  done
-  unset BLOB_READ_WRITE_TOKEN
+  scripts/secret.sh set neodio-blob-rw      # 클립보드 → 키체인(저장 뒤 클립보드를 비운다)
+  npm run collector:upload                  # dist/collector의 현재 버전 zip을 collector/ 아래로 올린다
   ```
+
+  토큰 형식 확인은 `scripts/secret.sh check neodio-blob-rw`(`vercel_blob_rw_`로 시작해야 한다).
 
 ## 설치 (수집 PC)
 
