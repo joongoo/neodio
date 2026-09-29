@@ -55,11 +55,24 @@ export function Button({
   );
 
   if (href) {
-    return (
-      <Link href={href} className={classes}>
+    const content = (
+      <>
         {icon && iconPosition === "start" && icon}
         {children}
         {icon && iconPosition === "end" && icon}
+      </>
+    );
+    // /api/ 경로는 페이지가 아니라 리다이렉트(OAuth 등)를 하는 라우트라 Link의 RSC 프리페치·이동이 실패한다 — 일반 앵커로 이동.
+    if (href.startsWith("/api/")) {
+      return (
+        <a href={href} className={classes}>
+          {content}
+        </a>
+      );
+    }
+    return (
+      <Link href={href} className={classes}>
+        {content}
       </Link>
     );
   }
