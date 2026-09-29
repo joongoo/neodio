@@ -18,15 +18,15 @@ export async function POST(request: NextRequest) {
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   const category = typeof body?.category === "string" ? body.category.trim() : "";
   const topic = typeof body?.topic === "string" ? body.topic.trim() : undefined;
+  const origin = typeof body?.origin === "string" && VALID_ORIGINS.has(body.origin) ? body.origin : undefined;
 
-  if (!prompt || !category) {
+  if (!prompt || (!category && origin !== "csv_import")) {
     return NextResponse.json({ error: "프롬프트와 카테고리가 모두 필요합니다." }, { status: 400 });
   }
 
   // origin이 명시되면(프롬프트 라이브러리의 "프롬프트 추가"/"CSV 가져오기"가
   // 보낸 것) 그 행을 그대로 저장한다 — 프롬프트 전략/가시성 개요의 "추적"
   // 흐름과 달리 source 기반 기본값 조립이 필요 없다.
-  const origin = typeof body?.origin === "string" && VALID_ORIGINS.has(body.origin) ? body.origin : undefined;
   if (origin) {
     const row = await saveLibraryRow(tenant.orgId, tenant.brandId, {
       prompt,

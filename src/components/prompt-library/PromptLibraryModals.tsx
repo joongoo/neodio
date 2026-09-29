@@ -300,7 +300,7 @@ export interface ImportedPromptRow {
 
 // CSV 헤더는 대소문자/순서 무관하게 prompt/category/topic 열만 찾는다
 // — 사용자가 템플릿을 그대로 안 쓰고 엑셀에서 열 순서를 바꿔도 견디도록.
-function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: string | null } {
+export function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: string | null } {
   const table = parseCsv(text);
   if (table.length < 2) return { rows: [], error: "헤더와 데이터 행이 최소 1줄씩 필요합니다." };
 
@@ -309,8 +309,8 @@ function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: stri
   const categoryIdx = header.indexOf("category");
   const topicIdx = header.indexOf("topic");
 
-  if (promptIdx === -1 || categoryIdx === -1) {
-    return { rows: [], error: "필수 컬럼(prompt, category)을 찾을 수 없습니다." };
+  if (promptIdx === -1) {
+    return { rows: [], error: "필수 컬럼(prompt)을 찾을 수 없습니다." };
   }
 
   const rows = table
@@ -320,7 +320,7 @@ function parseImportFile(text: string): { rows: ImportedPromptRow[]; error: stri
       category: (cells[categoryIdx] ?? "").trim(),
       topic: topicIdx >= 0 ? (cells[topicIdx] ?? "").trim() : "",
     }))
-    .filter((r) => r.prompt && r.category);
+    .filter((r) => r.prompt);
 
   if (rows.length === 0) return { rows: [], error: "가져올 수 있는 유효한 행이 없습니다." };
   return { rows, error: null };
@@ -392,8 +392,8 @@ export function ImportPromptsModal({
         <ModalCloseButton onClose={onClose} />
       </div>
       <p className="mt-2 text-xs text-neutral-500">
-        필수 컬럼: <code className="rounded bg-neutral-100 px-1">prompt</code>,{" "}
-        <code className="rounded bg-neutral-100 px-1">category</code> · 선택:{" "}
+        필수 컬럼: <code className="rounded bg-neutral-100 px-1">prompt</code> · 선택:{" "}
+        <code className="rounded bg-neutral-100 px-1">category</code>,{" "}
         <code className="rounded bg-neutral-100 px-1">topic</code> · 최대 10MB
       </p>
 
