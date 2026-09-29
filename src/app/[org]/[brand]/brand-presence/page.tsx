@@ -12,6 +12,7 @@ import {
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { EMPTY_BRAND_PRESENCE } from "@/lib/db/data/emptyOrg";
+import { seedLlmModels } from "@/lib/db/data/seed";
 
 const RANGE = "4w" as const;
 
@@ -39,6 +40,15 @@ export default async function BrandPresencePage() {
         getRealSentimentMovers(RANGE),
       ]);
 
+  // 상단 "모델" 필터가 Share of Voice에도 걸리도록 모델별로 따로 계산해 둔다(수집 데이터가 있는 모델만).
+  const shareOfVoiceByModel = demo
+    ? undefined
+    : Object.fromEntries(
+        (await Promise.all(seedLlmModels.map(async (m) => [m.name, await getRealShareOfVoice({ llmModelId: m.id })] as const))).filter(
+          (entry): entry is readonly [string, NonNullable<(typeof entry)[1]>] => entry[1] !== null
+        )
+      );
+
   // 개요/가시성 개요와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
   // 개선/하락 상위 항목(감성 무버)은 같은 (키워드, 모델) 조합을 최소 2개
   // 주에 걸쳐 반복 수집해야 계산할 수 있다 — 지금은 대부분 한 주 안에서만
@@ -63,6 +73,7 @@ export default async function BrandPresencePage() {
         promptMetricsByWeek: realPromptMetrics ?? data.promptMetricsByWeek,
         dataInsights: realDataInsights ?? data.dataInsights,
         shareOfVoice: realShareOfVoice ?? data.shareOfVoice,
+        shareOfVoiceByModel,
         topMovers: realMovers?.topMovers ?? data.topMovers,
         bottomMovers: realMovers?.bottomMovers ?? data.bottomMovers,
       }}

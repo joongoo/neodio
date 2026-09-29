@@ -8,13 +8,13 @@ import { TablePanel } from "@/components/ui/TablePanel";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
+import { usePagedRows } from "@/lib/usePagedRows";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
 import { CitedDomainRow, OwnCitedUrlRow, ThirdPartyUrlRow, UrlInspectorData } from "@/lib/db";
 
 const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
 const CATEGORY_OPTIONS = ["전체", "마케팅", "브랜드", "여행"];
-const PAGE_SIZE = 10;
 
 // 원본 URL 그대로 새 탭에서 열리게 하되, 화면엔 길이를 줄여서 보여준다 —
 // 실제 링크는 그대로 유지해야 클릭 시 정확히 같은 URL로 들어간다.
@@ -30,7 +30,7 @@ function UrlLink({ url }: { url: string }) {
       target="_blank"
       rel="noopener noreferrer"
       title={url}
-      className="truncate text-blue-600 hover:underline"
+      className="min-w-0 truncate text-blue-600 hover:underline"
       onClick={(e) => e.stopPropagation()}
     >
       {truncateUrl(url)}
@@ -141,22 +141,6 @@ const domainOptional: ColumnOption[] = [
   { key: "citedPrompts", label: "인용된 프롬프트 수" },
   { key: "contentType", label: "콘텐츠 유형" },
 ];
-
-function usePagedRows<T>(rows: T[]) {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  const clampedPage = Math.min(page, pageCount);
-  const pageRows = useMemo(
-    () => rows.slice((clampedPage - 1) * pageSize, clampedPage * pageSize),
-    [rows, clampedPage, pageSize]
-  );
-  const changePageSize = (size: number) => {
-    setPageSize(size);
-    setPage(1);
-  };
-  return { page: clampedPage, setPage, pageCount, pageRows, pageSize, setPageSize: changePageSize };
-}
 
 export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
   const router = useRouter();

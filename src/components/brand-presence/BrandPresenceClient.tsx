@@ -11,6 +11,8 @@ import { StatCard } from "@/components/overview/StatCard";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedRows } from "@/lib/usePagedRows";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MultiLineChart } from "@/components/charts/MultiLineChart";
 import { BrandPresenceDetailsModal } from "@/components/brand-presence/BrandPresenceDetailsModal";
@@ -58,6 +60,12 @@ export function BrandPresenceClient({
     () => data.dataInsights.filter((r) => model === "전체" || r.source === model),
     [data.dataInsights, model]
   );
+  // Share of Voice는 모델별로 따로 계산된 표를 고른다(마켓 필터는 이 표에 마켓 정보가 없어 적용하지 않는다).
+  // 실 수집 데이터가 있는 상태에서 데이터가 없는 모델을 고르면 빈 표가 맞다.
+  const shareOfVoiceRows = useMemo(() => {
+    if (model === "전체" || !data.shareOfVoiceByModel) return data.shareOfVoice;
+    return data.shareOfVoiceByModel[model] ?? [];
+  }, [data.shareOfVoice, data.shareOfVoiceByModel, model]);
   const topMovers = useMemo(
     () => data.topMovers.filter((r) => (market === "전체" || r.market === market) && (model === "전체" || r.source === model)),
     [data.topMovers, market, model]
@@ -71,7 +79,7 @@ export function BrandPresenceClient({
     downloadCsv(
       "share-of-voice.csv",
       ["topic", "popularity", "mentions", "rank", "sharePercent", "topBrands"],
-      data.shareOfVoice.map((r) => [
+      shareOfVoiceRows.map((r) => [
         r.topic,
         String(r.popularity),
         String(r.mentions),
@@ -193,6 +201,8 @@ export function BrandPresenceClient({
   ];
 
   const insight = useColumnVisibility(insightColumns, insightOptional);
+  const insightPaged = usePagedRows(dataInsights);
+  const sovPaged = usePagedRows(shareOfVoiceRows);
   const mover = useColumnVisibility(moverColumns, moverOptional);
   const sov = useColumnVisibility(sovColumns, sovOptional);
 
@@ -315,7 +325,17 @@ export function BrandPresenceClient({
           <GearButton onClick={() => insight.setOpen(true)} />
         </div>
         <div className="mt-4">
-          <DataTable columns={insight.filtered} rows={dataInsights} getRowId={(r) => r.id} />
+          <DataTable columns={insight.filtered} rows={insightPaged.pageRows} getRowId={(r) => r.id} />
+        </div>
+        <div className="mt-3">
+          <Pagination
+            page={insightPaged.page}
+            pageCount={insightPaged.pageCount}
+            pageSize={insightPaged.pageSize}
+            totalCount={dataInsights.length}
+            onPageChange={insightPaged.setPage}
+            onPageSizeChange={insightPaged.setPageSize}
+          />
         </div>
       </Card>
 
@@ -338,7 +358,17 @@ export function BrandPresenceClient({
           </div>
         </div>
         <div className="mt-4">
-          <DataTable columns={sov.filtered} rows={data.shareOfVoice} getRowId={(r) => r.id} />
+          <DataTable columns={sov.filtered} rows={sovPaged.pageRows} getRowId={(r) => r.id} />
+        </div>
+        <div className="mt-3">
+          <Pagination
+            page={sovPaged.page}
+            pageCount={sovPaged.pageCount}
+            pageSize={sovPaged.pageSize}
+            totalCount={shareOfVoiceRows.length}
+            onPageChange={sovPaged.setPage}
+            onPageSizeChange={sovPaged.setPageSize}
+          />
         </div>
       </Card>
 
