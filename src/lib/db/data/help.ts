@@ -89,6 +89,44 @@ export const roadmapGroups: RoadmapGroup[] = [
     ],
   },
   {
+    id: "youtube-video-tracking",
+    trigger: "YouTube 영상 단위 추적 고도화 시 (YouTube Data API 키 연동)",
+    description:
+      "영상 단위 추적의 첫 단계는 영상을 등록하면 그 영상이 어떤 키워드의 AI Overview에 몇 위로, 어느 구간이 인용됐는지를 인용 기록 기준으로 보여줍니다. 아래 기능은 매일의 전체 수집 결과를 영상 기준으로 다시 계산하거나 영상 메타데이터를 안정적으로 받아와야 해서, YouTube Data API 키 연동과 함께 다음 단계에서 추가됩니다.",
+    items: [
+      {
+        id: "yt-video-status",
+        title: "영상별 인용 상태 · 인용 유지율 · 키워드별 14일 추이",
+        description:
+          "'지금 인용 중인지', '최근 14일 중 며칠 인용됐는지', 키워드마다 날짜별로 '이 영상 인용 / 다른 YouTube 인용 / AI Overview 없음'을 한 줄로 보여줍니다. 수집이 중간에 멈춘 날에도 값이 틀리지 않도록 키워드마다 가장 최근 수집 결과를 기준으로 판정합니다.",
+      },
+      {
+        id: "yt-video-metadata",
+        title: "영상 메타데이터 수집 (설명 · 태그 · 길이 · 게시일 · 조회수 · 챕터)",
+        description:
+          "등록한 영상의 상세 정보를 YouTube Data API로 받아와 영상 화면에 보여주고, 필요할 때 다시 받아올 수 있게 합니다. 이 메타데이터는 영상 내용을 바탕으로 추적 키워드를 추천하는 기능의 입력으로도 쓰입니다.",
+      },
+      {
+        id: "yt-chapter-mapping",
+        title: "인용 구간을 챕터에 연결",
+        description:
+          "AI Overview가 인용한 타임스탬프(예: 2분 15초)를 영상 챕터 제목에 연결해 'Slack 앱 설치 구간이 키워드 3개에서 인용됨'처럼 보여줍니다. 어느 챕터가 인용을 끌어오는지 알면 자막·설명란 최적화 우선순위를 정하기 쉬워집니다.",
+      },
+      {
+        id: "yt-unregistered-suggestion",
+        title: "인용됐지만 아직 등록하지 않은 우리 영상 제안",
+        description:
+          "수집 결과에서 우리 채널 영상이 인용됐는데 추적 영상으로 등록되지 않았다면 영상 목록 위에 모아 보여주고 한 번에 등록할 수 있게 합니다. 사용자가 보관한 영상은 다시 제안하지 않습니다.",
+      },
+      {
+        id: "yt-unavailable-video",
+        title: "삭제 · 비공개로 바뀐 영상 표시",
+        description:
+          "메타데이터를 다시 받아올 때 영상을 찾을 수 없으면 '영상을 찾을 수 없음'으로 표시하고, 기존 인용 기록은 그대로 보존합니다.",
+      },
+    ],
+  },
+  {
     id: "auth-and-org",
     trigger: "회원가입/로그인 체계 구축 시",
     description:

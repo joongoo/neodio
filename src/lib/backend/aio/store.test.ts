@@ -236,10 +236,76 @@ test("removing a YouTube channel also removes its social account; citation stats
   assert.deepEqual(body.socialAccounts, [{ platform: "LinkedIn", handle: "salesforce" }]);
 });
 
+test("tracked videos: register, archive, reactivate; citation summaries from citation rows", async () => {
+  const video = { videoId: "bbbbbbbbbbb", channelId: "UCotherotherotherother01", channelTitle: "파트너 채널", title: "파트너 영상", thumbnailUrl: "https://i.ytimg.com/vi/bbbbbbbbbbb/hqdefault.jpg" };
+  assert.equal(await store.addBrandVideo(brandId, video), "added");
+  assert.equal(await store.addBrandVideo(brandId, video), "exists");
+  await store.archiveBrandVideo(brandId, video.videoId);
+  assert.deepEqual(await store.listBrandVideos(brandId), []);
+  assert.equal(await store.addBrandVideo(brandId, video), "reactivated");
+  // 수집기 판정은 채널 이름 없이 캐시한다 — 기존 이름을 지우지 않는다.
+  await store.cacheVideo({ ...video, channelTitle: undefined, title: "파트너 영상 (수정)" });
+  const [listed] = await store.listBrandVideos(brandId);
+  assert.deepEqual([listed.videoId, listed.title, listed.channelTitle], ["bbbbbbbbbbb", "파트너 영상 (수정)", "파트너 채널"]);
+
+  await store.addAioKeywords(brandId, ["영상 키워드 A", "영상 키워드 B"], "howto");
+  const keywords = await store.listAioKeywords(brandId);
+  const a = keywords.find((k) => k.keyword === "영상 키워드 A")!;
+  const b = keywords.find((k) => k.keyword === "영상 키워드 B")!;
+  // 인용 분류와 무관하게 영상 ID로 모은다(타 채널 영상은 other_youtube).
+  const cite = (position: number, t: number | null): AioCitation => ({
+    position,
+    url: `https://www.youtube.com/watch?v=bbbbbbbbbbb${t === null ? "" : `&t=${t}`}`,
+    domain: "youtube.com",
+    title: "파트너 영상",
+    sourceType: "other_youtube",
+    videoId: "bbbbbbbbbbb",
+    channelId: video.channelId,
+    startSeconds: t,
+  });
+  const save = (keywordId: string, device: "mobile" | "desktop", date: string, citations: AioCitation[]) =>
+    store.saveAioObservation(brandId, {
+      keywordId,
+      device,
+      country: "kr",
+      language: "ko",
+      collectedAt: `${date}T03:00:00.000Z`,
+      status: "aio_present",
+      aioText: "본문",
+      paragraphs: [],
+      citations,
+      screenshotPath: null,
+      htmlPath: null,
+      errorMessage: null,
+    });
+  await save(b.id, "mobile", "2026-09-05", [cite(1, null)]); // 등록 전·가장 이른 인용 (나중에 보관할 키워드)
+  await save(a.id, "mobile", "2026-09-10", [blog, cite(3, 60)]);
+  await save(b.id, "mobile", "2026-09-19", [cite(1, null)]);
+  await save(a.id, "mobile", "2026-09-20", [cite(2, 90), cite(4, 30), blog]);
+  await save(b.id, "desktop", "2026-09-20", [cite(1, 15)]);
+  await store.archiveAioKeyword(brandId, b.id);
+
+  const mobile = await store.videoCitationSummaries(brandId, ["bbbbbbbbbbb", "ccccccccccc"], "mobile", "2026-09-15");
+  // 최근 값은 활성 키워드(A)만, 첫 인용일은 보관된 B의 9/5까지 포함.
+  assert.deepEqual(Object.fromEntries(mobile), {
+    bbbbbbbbbbb: { recentKeywords: 1, recentBestPosition: 2, firstCitedDate: "2026-09-05", lastCitedDate: "2026-09-20" },
+  });
+  const desktop = await store.videoCitationSummaries(brandId, ["bbbbbbbbbbb"], "desktop", "2026-09-15");
+  assert.deepEqual(desktop.get("bbbbbbbbbbb"), { recentKeywords: 0, recentBestPosition: null, firstCitedDate: "2026-09-20", lastCitedDate: "2026-09-20" });
+
+  assert.deepEqual(await store.videoKeywordCitations(brandId, "bbbbbbbbbbb", "mobile"), [
+    { keywordId: a.id, keyword: "영상 키워드 A", group: "howto", lastCitedDate: "2026-09-20", lastPosition: 2, startSeconds: [30, 90], citedDays: 2 },
+  ]);
+  assert.deepEqual(await store.videoKeywordCitations(brandId, "bbbbbbbbbbb", "desktop"), []);
+
+  assert.equal(await store.hasMeasurementSince(brandId, "mobile", "2026-09-15"), true);
+  assert.equal(await store.hasMeasurementSince(brandId, "mobile", "2026-09-25"), false);
+});
+
 test("deleting a brand removes its AIO data", async () => {
   const s = await getPromptStore();
   await s.deleteBrand("neodigm", brandId);
-  for (const table of ["aio_keywords", "aio_observations", "aio_video_work_logs", "brand_aio_settings", "brand_youtube_channels"]) {
+  for (const table of ["aio_keywords", "aio_observations", "aio_video_work_logs", "brand_aio_settings", "brand_youtube_channels", "brand_videos"]) {
     const [row] = await s.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table} WHERE brand_id=$1`, [brandId]);
     assert.equal(row.n, 0, table);
   }

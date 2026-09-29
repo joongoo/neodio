@@ -158,6 +158,11 @@ CREATE TABLE IF NOT EXISTS aio_citations (
 CREATE TABLE IF NOT EXISTS youtube_videos (
   video_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, title TEXT NOT NULL, thumbnail_url TEXT NOT NULL, fetched_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS brand_videos (
+  brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE, video_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('active','archived')), added_at TEXT NOT NULL,
+  PRIMARY KEY(brand_id,video_id)
+);
 CREATE TABLE IF NOT EXISTS aio_video_work_logs (
   id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
   video_id TEXT NOT NULL, work_date TEXT NOT NULL, work_type TEXT NOT NULL, note TEXT, created_at TEXT NOT NULL
@@ -174,6 +179,7 @@ CREATE INDEX IF NOT EXISTS citations_domain ON citations(domain,analysis_id);
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS organizations_slug ON organizations(slug);
 CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand_id,collected_date);
+ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS channel_title TEXT;
 CREATE INDEX IF NOT EXISTS aio_citations_video ON aio_citations(video_id);
 CREATE INDEX IF NOT EXISTS aio_work_logs_video ON aio_video_work_logs(brand_id,video_id,work_date);
 CREATE INDEX IF NOT EXISTS detected_brand_decisions_status ON detected_brand_decisions(organization_id,brand_id,status);

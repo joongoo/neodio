@@ -10,11 +10,15 @@ import {
   AioParagraph,
   AioSourceType,
   AioVideoWorkLog,
+  BrandVideo,
+  BrandVideoAddResult,
+  VideoCitationSummary,
+  VideoKeywordCitation,
   YoutubeVideoMeta,
 } from "@/lib/db/types";
 
 // YouTube AIO 인용 트래커 저장소 — 키워드, 수집 결과(관측), 인용, 영상
-// 메타 캐시, 영상 최적화 작업 이력. 전부 brand_id 단위.
+// 메타 캐시, 추적 영상, 영상 최적화 작업 이력. 전부 brand_id 단위.
 
 export const AIO_KEYWORD_GROUPS: AioKeywordGroup[] = ["brand", "category", "comparison", "howto"];
 
@@ -73,19 +77,147 @@ export async function archiveAioKeyword(brandId: string, keywordId: string): Pro
 
 export async function getCachedVideos(videoIds: string[]): Promise<Map<string, YoutubeVideoMeta>> {
   if (videoIds.length === 0) return new Map();
-  const rows = await (await store()).query<{ video_id: string; channel_id: string; title: string; thumbnail_url: string }>(
-    "SELECT video_id,channel_id,title,thumbnail_url FROM youtube_videos WHERE video_id = ANY($1)",
+  const rows = await (await store()).query<VideoRow>(
+    "SELECT video_id,channel_id,channel_title,title,thumbnail_url FROM youtube_videos WHERE video_id = ANY($1)",
     [[...new Set(videoIds)]]
   );
-  return new Map(rows.map((row) => [row.video_id, { videoId: row.video_id, channelId: row.channel_id, title: row.title, thumbnailUrl: row.thumbnail_url }]));
+  return new Map(rows.map((row) => [row.video_id, toVideoMeta(row)]));
 }
 
+type VideoRow = { video_id: string; channel_id: string; channel_title: string | null; title: string; thumbnail_url: string };
+
+function toVideoMeta(row: VideoRow): YoutubeVideoMeta {
+  return { videoId: row.video_id, channelId: row.channel_id, channelTitle: row.channel_title, title: row.title, thumbnailUrl: row.thumbnail_url };
+}
+
+// 채널 이름은 조회 방식에 따라 없을 수 있어(수집기 판정) 비어 있으면 기존 값을 남긴다.
 export async function cacheVideo(video: YoutubeVideoMeta): Promise<void> {
   await (await store()).query(
-    `INSERT INTO youtube_videos (video_id,channel_id,title,thumbnail_url,fetched_at) VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (video_id) DO UPDATE SET channel_id=EXCLUDED.channel_id,title=EXCLUDED.title,thumbnail_url=EXCLUDED.thumbnail_url,fetched_at=EXCLUDED.fetched_at`,
-    [video.videoId, video.channelId, video.title, video.thumbnailUrl, new Date().toISOString()]
+    `INSERT INTO youtube_videos (video_id,channel_id,channel_title,title,thumbnail_url,fetched_at) VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (video_id) DO UPDATE SET channel_id=EXCLUDED.channel_id,channel_title=COALESCE(EXCLUDED.channel_title,youtube_videos.channel_title),
+       title=EXCLUDED.title,thumbnail_url=EXCLUDED.thumbnail_url,fetched_at=EXCLUDED.fetched_at`,
+    [video.videoId, video.channelId, video.channelTitle ?? null, video.title, video.thumbnailUrl, new Date().toISOString()]
   );
+}
+
+// ---- 추적 영상 (영상 단위 인용 추적, docs/youtube-video-tracking-plan.md §7) ----
+// 화면 값은 전부 인용된 행(aio_citations)을 SQL에서 집계해 만든다 — 인용
+// 행은 매일 늘어나므로 서버로 가져와 계산하지 않는다. 우리 채널 여부는
+// 저장하지 않고 읽는 쪽에서 brand_youtube_channels와 대조한다.
+
+export async function listBrandVideos(brandId: string): Promise<BrandVideo[]> {
+  const rows = await (await store()).query<VideoRow & { added_at: string }>(
+    `SELECT b.video_id,v.channel_id,v.channel_title,v.title,v.thumbnail_url,b.added_at FROM brand_videos b
+     JOIN youtube_videos v ON v.video_id=b.video_id WHERE b.brand_id=$1 AND b.status='active' ORDER BY b.added_at DESC,b.video_id`,
+    [brandId]
+  );
+  return rows.map((row) => ({ ...toVideoMeta(row), addedAt: row.added_at }));
+}
+
+/** 영상 메타를 캐시하고 추적 등록한다. 보관된 영상이면 다시 활성화한다. */
+export async function addBrandVideo(brandId: string, video: YoutubeVideoMeta): Promise<BrandVideoAddResult> {
+  const s = await store();
+  return s.transaction(async () => {
+    await cacheVideo(video);
+    const [existing] = await s.query<{ status: string }>("SELECT status FROM brand_videos WHERE brand_id=$1 AND video_id=$2", [brandId, video.videoId]);
+    if (existing?.status === "active") return "exists";
+    await s.query(
+      `INSERT INTO brand_videos (brand_id,video_id,status,added_at) VALUES ($1,$2,'active',$3)
+       ON CONFLICT (brand_id,video_id) DO UPDATE SET status='active'`,
+      [brandId, video.videoId, new Date().toISOString()]
+    );
+    return existing ? "reactivated" : "added";
+  });
+}
+
+// 보관(삭제 아님) — 작업 이력은 남고 다시 등록하면 그대로 보인다.
+export async function archiveBrandVideo(brandId: string, videoId: string): Promise<void> {
+  await (await store()).query("UPDATE brand_videos SET status='archived' WHERE brand_id=$1 AND video_id=$2", [brandId, videoId]);
+}
+
+/**
+ * 영상별 인용 요약(선택 디바이스). 최근 값(sinceDate 이후)은 활성 키워드만,
+ * 첫·마지막 인용일은 보관 키워드까지 — 키워드를 보관해도 기준점이 움직이지 않게.
+ * 인용 기록이 없는 영상은 결과에 없다.
+ */
+export async function videoCitationSummaries(
+  brandId: string,
+  videoIds: string[],
+  device: AioDevice,
+  sinceDate: string
+): Promise<Map<string, VideoCitationSummary>> {
+  if (videoIds.length === 0) return new Map();
+  const rows = await (await store()).query<{
+    video_id: string;
+    recent_keywords: number;
+    recent_best: number | null;
+    first_date: string;
+    last_date: string;
+  }>(
+    `SELECT c.video_id,
+       count(DISTINCT o.keyword_id) FILTER (WHERE k.status='active' AND o.collected_date >= $4)::int AS recent_keywords,
+       min(c.position) FILTER (WHERE k.status='active' AND o.collected_date >= $4) AS recent_best,
+       min(o.collected_date) AS first_date, max(o.collected_date) AS last_date
+     FROM aio_citations c JOIN aio_observations o ON o.id=c.observation_id JOIN aio_keywords k ON k.id=o.keyword_id
+     WHERE o.brand_id=$1 AND o.device=$2 AND c.video_id = ANY($3)
+     GROUP BY c.video_id`,
+    [brandId, device, [...new Set(videoIds)], sinceDate]
+  );
+  return new Map(
+    rows.map((row) => [
+      row.video_id,
+      { recentKeywords: row.recent_keywords, recentBestPosition: row.recent_best, firstCitedDate: row.first_date, lastCitedDate: row.last_date },
+    ])
+  );
+}
+
+const MAX_START_SECONDS = 3;
+
+/** 영상 하나가 인용된 활성 키워드별 한 줄 — 최근 순위·인용 구간은 그 키워드의 마지막 인용일 값. */
+export async function videoKeywordCitations(brandId: string, videoId: string, device: AioDevice): Promise<VideoKeywordCitation[]> {
+  const rows = await (await store()).query<{
+    keyword_id: string;
+    keyword: string;
+    keyword_group: AioKeywordGroup;
+    last_date: string;
+    cited_days: number;
+    last_position: number;
+    starts: number[];
+  }>(
+    `WITH cited AS (
+       SELECT o.keyword_id, o.collected_date, c.position, c.start_seconds
+       FROM aio_citations c JOIN aio_observations o ON o.id=c.observation_id
+       WHERE o.brand_id=$1 AND o.device=$3 AND c.video_id=$2
+     ), per_keyword AS (
+       SELECT keyword_id, max(collected_date) AS last_date, count(DISTINCT collected_date)::int AS cited_days FROM cited GROUP BY keyword_id
+     )
+     SELECT p.keyword_id, k.keyword, k.keyword_group, p.last_date, p.cited_days, min(c.position)::int AS last_position,
+       COALESCE(array_agg(DISTINCT c.start_seconds) FILTER (WHERE c.start_seconds IS NOT NULL), '{}') AS starts
+     FROM per_keyword p
+     JOIN aio_keywords k ON k.id=p.keyword_id AND k.status='active'
+     JOIN cited c ON c.keyword_id=p.keyword_id AND c.collected_date=p.last_date
+     GROUP BY p.keyword_id,k.keyword,k.keyword_group,p.last_date,p.cited_days
+     ORDER BY p.last_date DESC, last_position, k.keyword`,
+    [brandId, videoId, device]
+  );
+  return rows.map((row) => ({
+    keywordId: row.keyword_id,
+    keyword: row.keyword,
+    group: row.keyword_group,
+    lastCitedDate: row.last_date,
+    lastPosition: row.last_position,
+    startSeconds: [...row.starts].sort((a, b) => a - b).slice(0, MAX_START_SECONDS),
+    citedDays: row.cited_days,
+  }));
+}
+
+/** sinceDate 이후 이 디바이스로 성공한 수집이 있었는지 — 없으면 최근 값은 0이 아니라 "–". */
+export async function hasMeasurementSince(brandId: string, device: AioDevice, sinceDate: string): Promise<boolean> {
+  const rows = await (await store()).query(
+    "SELECT 1 FROM aio_observations WHERE brand_id=$1 AND device=$2 AND collected_date >= $3 AND status<>'failed' LIMIT 1",
+    [brandId, device, sinceDate]
+  );
+  return rows.length > 0;
 }
 
 // ---- 관측 ----

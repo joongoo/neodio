@@ -732,6 +732,39 @@ export interface YoutubeVideoMeta {
   channelId: string;
   title: string;
   thumbnailUrl: string;
+  /** 채널 이름 — 타 채널 영상 표시용. 수집기 판정은 없이 캐시하기도 한다. */
+  channelTitle?: string | null;
+}
+
+/** 브랜드가 추적 등록한 영상(영상 단위 인용 추적). */
+export interface BrandVideo extends YoutubeVideoMeta {
+  addedAt: string;
+}
+
+export type BrandVideoAddResult = "added" | "reactivated" | "exists";
+
+/** 영상 목록 한 줄의 인용 요약 — 선택 디바이스 기준. */
+export interface VideoCitationSummary {
+  /** 최근 7일 안에 이 영상을 인용한 활성 키워드 수 */
+  recentKeywords: number;
+  /** 최근 7일 인용 중 가장 앞선 순위(활성 키워드), 없으면 null */
+  recentBestPosition: number | null;
+  /** 보관 키워드 포함 전체 기간 */
+  firstCitedDate: string | null;
+  lastCitedDate: string | null;
+}
+
+/** 영상 상세의 키워드별 인용 한 줄 — 활성 키워드만. */
+export interface VideoKeywordCitation {
+  keywordId: string;
+  keyword: string;
+  group: AioKeywordGroup;
+  lastCitedDate: string;
+  /** 마지막 인용일의 순위 */
+  lastPosition: number;
+  /** 마지막 인용일의 인용 구간(초), 서로 다른 값 최대 3개 */
+  startSeconds: number[];
+  citedDays: number;
 }
 
 export interface AioVideoWorkLog {
