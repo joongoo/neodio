@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Copy, Check, Sparkles, Trash2, Pencil, ShieldCheck, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Copy, Check, Sparkles, Trash2, Pencil, ShieldCheck, Loader2, Wand2 } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { PromptLibraryRow } from "@/lib/db";
@@ -126,7 +126,6 @@ export function PromptLibraryOptimizeModal({
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null);
-  const autoRunRef = useRef(false);
 
   const promptText = buildPromptText(rows);
 
@@ -161,7 +160,7 @@ export function PromptLibraryOptimizeModal({
     setStep("review");
   }
 
-  // 버튼 한 번으로: 라이브러리를 나눠 LLM API에 묻고, 답변을 합쳐 바로 검토 화면으로 보낸다.
+  // "AI로 자동 생성" 버튼 한 번으로: 라이브러리를 나눠 LLM API에 묻고, 답변을 합쳐 바로 검토 화면으로 보낸다.
   // 반영(삭제/수정)은 검토 화면에서 사람이 선택한 것만 일어난다.
   async function runAi() {
     setParseError(null);
@@ -201,18 +200,6 @@ export function PromptLibraryOptimizeModal({
       setAiProgress(null);
     }
   }
-
-  // 모달이 열리는 순간(= "라이브러리 최적화" 버튼을 누른 순간) 한 번만 자동 실행한다.
-  useEffect(() => {
-    if (!open) {
-      autoRunRef.current = false;
-      return;
-    }
-    if (autoRunRef.current || rows.length === 0) return;
-    autoRunRef.current = true;
-    void runAi();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 열릴 때 한 번만
-  }, [open]);
 
   function toggle(id: string) {
     setChecked((prev) => {
@@ -289,13 +276,29 @@ export function PromptLibraryOptimizeModal({
           <p className="mt-2 text-xs text-neutral-500">
             라이브러리 전체({rows.length}개)를 AI가 검토해 삭제/수정을 추천합니다. 추천은 검토 화면에서 고른 것만 반영됩니다.
           </p>
-          {aiProgress && (
-            <p className="mt-3 flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
-              <Loader2 size={14} className="animate-spin" />
-              AI가 검토하는 중… ({aiProgress.done + 1}/{aiProgress.total})
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="flex items-center gap-2 text-xs text-slate-700">
+              {aiProgress ? (
+                <>
+                  <Loader2 size={14} className="shrink-0 animate-spin" />
+                  <span>
+                    AI가 프롬프트를 검토하는 중입니다… ({aiProgress.done + 1}/{aiProgress.total}) 보통 10~30초 걸립니다. 창을 닫지 마세요.
+                  </span>
+                </>
+              ) : (
+                <span>아직 실행 전입니다. 버튼을 누르면 AI가 라이브러리를 검토해 삭제·수정을 추천합니다.</span>
+              )}
             </p>
-          )}
-
+            <button
+              type="button"
+              disabled={aiProgress !== null}
+              onClick={() => void runAi()}
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-slate-800 px-3 py-2 text-xs font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-60"
+            >
+              {aiProgress ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+              {aiProgress ? "생성하는 중..." : "AI로 자동 생성"}
+            </button>
+          </div>
           <div className="mt-4 flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-neutral-700">직접 하려면: 아래 프롬프트를 복사해 LLM(ChatGPT 등)에 붙여넣으세요</span>
@@ -335,9 +338,6 @@ export function PromptLibraryOptimizeModal({
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={close}>
               취소
-            </Button>
-            <Button variant="secondary" disabled={aiProgress !== null} onClick={() => void runAi()}>
-              AI로 다시 실행
             </Button>
             <Button variant="primary" disabled={!pasted.trim()} onClick={() => goToReview()}>
               추천 검토하기
