@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteManagedBrand, updateManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { normalizeUrl } from "@/lib/normalizeUrl";
 import { ManagedBrand } from "@/lib/db/types";
 
 const PATCHABLE_KEYS: (keyof ManagedBrand)[] = [
@@ -30,6 +31,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   for (const key of PATCHABLE_KEYS) {
     if (key in body) (patch as Record<string, unknown>)[key] = body[key];
   }
+  if (typeof patch.sitemapUrl === "string") patch.sitemapUrl = normalizeUrl(patch.sitemapUrl);
   if (patch.status !== undefined && patch.status !== "active" && patch.status !== "pending") {
     return NextResponse.json({ error: "status는 active 또는 pending이어야 합니다." }, { status: 400 });
   }
