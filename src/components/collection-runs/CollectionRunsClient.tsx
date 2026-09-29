@@ -20,6 +20,17 @@ const ENGINE_LABEL: Record<string, string> = {
   "google-ai-overview": "Google AI Overview",
 };
 
+// API로 수집한 실행(source "api")은 collectedBy(`<provider>-api`)로 어떤 LLM인지 구분한다.
+// 새 LLM을 붙이면(src/lib/backend/llm/registry.ts) 여기 한 줄 추가.
+const API_ENGINE_LABEL: Record<string, string> = {
+  "gemini-api": "Gemini",
+};
+
+function engineLabel({ source, collectedBy }: { source: string; collectedBy?: string }) {
+  if (source === "api") return API_ENGINE_LABEL[collectedBy ?? ""] ?? "API";
+  return ENGINE_LABEL[source] ?? source;
+}
+
 function StatusBadge({ file }: { file: CollectedRunFile }) {
   if (isBotBlocked(file.promptRun)) {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">차단됨(캡차)</span>;
@@ -44,7 +55,7 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
       width: "w-[150px]",
       render: (f) => (
         <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
-          {ENGINE_LABEL[f.promptRun.rawMetadata.source] ?? f.promptRun.rawMetadata.source}
+          {engineLabel(f.promptRun.rawMetadata)}
         </span>
       ),
     },
@@ -159,7 +170,7 @@ export function CollectionRunsClient({
     const { rawMetadata } = f.promptRun;
     return (
       (rawMetadata.query ?? "").toLowerCase().includes(q) ||
-      (ENGINE_LABEL[rawMetadata.source] ?? rawMetadata.source).toLowerCase().includes(q) ||
+      engineLabel(rawMetadata).toLowerCase().includes(q) ||
       (rawMetadata.category ?? "").toLowerCase().includes(q) ||
       (rawMetadata.topic ?? "").toLowerCase().includes(q)
     );
@@ -170,7 +181,7 @@ export function CollectionRunsClient({
       <div>
         <h1 className="text-2xl font-semibold text-neutral-900">수집 로그</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          `npm run collect:naver-ai` / `collect:google-ai`가 실제로 저장한 파일(.tmp/naver-ai, .tmp/google-ai)을 그대로 나열합니다.
+          네이버 AI검색·Google AI Overview 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai`)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다.
         </p>
       </div>
 
