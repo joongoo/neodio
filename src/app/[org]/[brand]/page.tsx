@@ -1,3 +1,4 @@
+import { hostnameOfUrl } from "@/lib/normalizeUrl";
 import { listPromptLibrary } from "@/lib/backend/trackedTopics";
 import { ArrowUpRight } from "lucide-react";
 import { SentimentChart } from "@/components/charts/SentimentChart";
@@ -92,14 +93,14 @@ export default async function OverviewPage({
   const brandsData = brandsDataSeed ? { ...brandsDataSeed, brands: realBrands } : null;
   const activeBrands = realBrands.filter((b) => b.status === "active");
   const domainOptions = Array.from(
-    new Set(activeBrands.map((b) => normalizeHostname(new URL(b.url).hostname)).concat(org.domain))
+    new Set(activeBrands.flatMap((b) => { const host = hostnameOfUrl(b.url); return host ? [normalizeHostname(host)] : []; }).concat(org.domain))
   );
   const platformOptions = ["전체", ...llmModels.map((m) => m.name)];
   const categoryOptions = ["전체", ...(brandsData?.categories.map((c) => c.name) ?? [])];
   const marketOptions = ["전체", ...Array.from(new Set(activeBrands.flatMap((b) => b.markets)))];
 
   const ownBrand = brandsData?.brands.find(
-    (b) => normalizeHostname(new URL(b.url).hostname) === normalizeHostname(org.domain)
+    (b) => { const host = hostnameOfUrl(b.url); return !!host && normalizeHostname(host) === normalizeHostname(org.domain); }
   );
   // mock(db.connections.getGsc)은 항상 "connected"라 실 OAuth가 생긴
   // 지금은 체크리스트 판단 근거로 쓰면 안 된다 — Demo 브랜드에서만 mock,
