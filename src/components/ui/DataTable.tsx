@@ -47,7 +47,7 @@ export function DataTable<T>({ columns, rows, getRowId, renderExpanded }: DataTa
               key={col.key}
               className={cn(
                 "text-xs font-semibold text-neutral-500",
-                col.width ? `${col.width} shrink-0` : "flex-1",
+                col.width ? `${col.width} shrink-0` : "min-w-0 flex-1",
                 col.align === "right" && "text-right"
               )}
             >
@@ -73,7 +73,7 @@ export function DataTable<T>({ columns, rows, getRowId, renderExpanded }: DataTa
                     key={col.key}
                     className={cn(
                       "flex items-center gap-2 text-xs text-neutral-700",
-                      col.width ? `${col.width} shrink-0` : "flex-1",
+                      col.width ? `${col.width} shrink-0` : "min-w-0 flex-1",
                       col.align === "right" && "justify-end"
                     )}
                   >
