@@ -13,6 +13,7 @@
     "db:migrate": "tsx scripts/migrate-db.ts",
     "db:push-to-prod": "set -a && . ./.env.neon.local && set +a && tsx scripts/migrate-db.ts",
     "db:sync-to-prod": "set -a && . ./.env.local && SOURCE_POSTGRES_URL=$POSTGRES_URL && . ./.env.neon.local && set +a && tsx scripts/sync-local-to-remote.ts",
+    "db:push-runs-to-prod": "set -a && . ./.env.local && SOURCE_POSTGRES_URL=$POSTGRES_URL && . ./.env.neon.local && set +a && tsx scripts/push-collected-runs.ts",
     "db:sync-org-to-prod": "set -a && . ./.env.local && SOURCE_POSTGRES_URL=$POSTGRES_URL && . ./.env.neon.local && set +a && tsx scripts/sync-org-to-remote.ts",
     "test:db": "node scripts/test-pg-harness.mjs",
     "test:unit": "tsx --test src/lib/backend/youtube.test.ts src/lib/backend/aio/judge.test.ts src/lib/backend/aio/metrics.test.ts src/lib/youtubeSocial.test.ts src/lib/slug.test.ts src/lib/tenantRouting.test.ts",
