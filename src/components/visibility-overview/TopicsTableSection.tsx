@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Ban, Download, GitMerge, Plus, RotateCcw, Settings, Sparkles } from "lucide-react";
+import { Download, Settings, Sparkles } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -13,9 +13,32 @@ import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { formatRunAt } from "@/lib/formatRunAt";
 import { BrandOptimizationModal } from "@/components/brands-management/BrandOptimizationModal";
-import type { BrandOptimizationPlan, OptimizationCompetitor, OptimizationOwnBrand } from "@/lib/brandOptimization";
-import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import {
+  allowsPartnerRole,
+  BRAND_KINDS,
+  BRAND_KIND_LABEL,
+  COMPETITOR_TIERS,
+  TIER_LABEL,
+  type BrandEvidence,
+  type BrandKind,
+  type CompetitorTier,
+  type BrandOptimizationPlan,
+  type OptimizationCompetitor,
+  type OptimizationOwnBrand,
+} from "@/lib/brandOptimization";
+import {
+  countBrandRows,
+  DEFAULT_ROLE_FILTER,
+  DEFAULT_TIER_FILTER,
+  filterBrandRows,
+  rowKey,
+  type BrandRoleInfo,
+  type RoleBucket,
+  type TierBucket,
+} from "@/lib/brandRankFilter";
+import { BrandRoleFilter } from "@/components/visibility-overview/BrandRoleFilter";
 import {
   BrandRankRow,
   CitedPageRow,
@@ -32,7 +55,7 @@ const RANGE_WEEKS: Record<DateRange, number> = { "1w": 1, "2w": 2, "4w": 4 };
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   "top-prompts": "이미 브랜드가 언급된 토픽의 프롬프트입니다.",
   "topic-opportunities": "아직 브랜드가 언급되지 않은 토픽 기회입니다.",
-  "latest-top-brands": "수집된 답변 로그에서 많이 언급된 등록 브랜드와 신규 업체 후보입니다.",
+  "latest-top-brands": "수집된 답변 로그에서 많이 언급된 브랜드입니다. 역할로 걸러 보고, 여러 개를 골라 한 번에 역할을 바꿀 수 있습니다.",
   "cited-pages": "AI 답변에 가장 많이 인용된 페이지입니다.",
   "cited-sources": "AI 답변이 가장 많이 인용한 출처입니다.",
   "source-opportunities": "아직 우리 브랜드가 인용되지 않은 출처 기회입니다.",
@@ -65,7 +88,7 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
     { key: "visibility", label: "가시성" },
     { key: "market", label: "마켓" },
   ],
-  brand: [{ key: "mentions", label: "언급 수" }],
+  brand: [{ key: "mentions", label: "언급 답변 수" }],
   page: [
     { key: "responses", label: "응답 수" },
     { key: "market", label: "마켓" },
@@ -185,104 +208,112 @@ function buildTopicColumns(
   return base;
 }
 
-function buildBrandColumns(
-  competitorBrandNames: Set<string>,
-  onApprove: (row: BrandRankRow) => void,
-  onExclude: (row: BrandRankRow, excluded: boolean) => void,
-  onRemoveCompetitor: (row: BrandRankRow) => void,
-  onMerge: (row: BrandRankRow) => void
-): DataTableColumn<BrandRankRow>[] {
+type RoleChoice = BrandKind | "excluded";
+
+// 브랜드 표 — 선택 체크박스 · 브랜드 · 역할(경쟁사면 등급) · 언급 답변 수. 역할·등급은 행에서 바로 바꾼다
+// (신규 후보는 역할을 고르면 기타 브랜드로 등록, "제외"는 업체가 아닌 것으로 목록에서 뺀다).
+function buildBrandColumns(opts: {
+  roleInfo: Map<string, BrandRoleInfo>;
+  suggestedNames: Set<string>;
+  allowPartner: boolean;
+  selectedIds: Set<string>;
+  pageRows: BrandRankRow[];
+  onToggleRow: (row: BrandRankRow) => void;
+  onTogglePage: (rows: BrandRankRow[], checked: boolean) => void;
+  onChangeRole: (row: BrandRankRow, choice: RoleChoice) => void;
+  onChangeTier: (row: BrandRankRow, tier: CompetitorTier | null) => void;
+}): DataTableColumn<BrandRankRow>[] {
+  const selectable = opts.pageRows.filter((r) => !r.isOwn);
+  const allSelected = selectable.length > 0 && selectable.every((r) => opts.selectedIds.has(r.id));
+  const kinds = BRAND_KINDS.filter((k) => k !== "partner" || opts.allowPartner);
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const selectClass = "h-7 rounded border border-neutral-300 bg-white px-1.5 text-[11px] text-neutral-800";
+
   return [
-    { key: "brand", label: "브랜드", width: "w-[320px]", render: (r) => <span className="truncate text-neutral-700">{r.brand}</span> },
-    { key: "mentions", label: "언급 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
     {
-      key: "action",
-      label: "액션",
-      width: "w-[220px]",
+      key: "select",
+      label: (
+        <input
+          type="checkbox"
+          aria-label="현재 페이지 전체 선택"
+          checked={allSelected}
+          disabled={selectable.length === 0}
+          onChange={(e) => opts.onTogglePage(selectable, e.target.checked)}
+        />
+      ),
+      width: "w-[32px]",
+      render: (r) =>
+        r.isOwn ? null : (
+          <input
+            type="checkbox"
+            aria-label={`${r.brand} 선택`}
+            checked={opts.selectedIds.has(r.id)}
+            onClick={stop}
+            onChange={() => opts.onToggleRow(r)}
+          />
+        ),
+    },
+    {
+      key: "brand",
+      label: "브랜드",
+      width: "w-[280px]",
+      render: (r) => (
+        <span className="flex items-center gap-2 truncate text-neutral-700">
+          {r.brand}
+          {r.isOwn && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700">자사</span>}
+          {opts.suggestedNames.has(rowKey(r)) && (
+            <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">AI 제안(미검증)</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "role",
+      label: "역할",
+      width: "w-[260px]",
       render: (r) => {
-        const registeredCompetitor = competitorBrandNames.has(r.brand.toLocaleLowerCase("ko-KR"));
-        if (r.decisionStatus === "excluded") {
-          return (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onExclude(r, false);
-              }}
-              className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
-            >
-              <RotateCcw size={12} />
-              제외 해제
-            </button>
-          );
-        }
-        if (registeredCompetitor) {
-          return (
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemoveCompetitor(r);
-                }}
-                className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
-              >
-                <Ban size={12} />
-                경쟁사 제외
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMerge(r);
-                }}
-                className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
-              >
-                <GitMerge size={12} />
-                병합
-              </button>
-            </div>
-          );
-        }
+        if (r.isOwn) return <span className="text-neutral-400">자사</span>;
+        const info = opts.roleInfo.get(rowKey(r));
         return (
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onApprove(r);
-              }}
-              className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-700"
+          <span className="flex items-center gap-1.5" onClick={stop}>
+            <select
+              aria-label={`${r.brand} 역할`}
+              value={info?.kind ?? ""}
+              onChange={(e) => e.target.value && opts.onChangeRole(r, e.target.value as RoleChoice)}
+              className={selectClass}
             >
-              <Plus size={12} />
-              경쟁사 등록
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onExclude(r, true);
-              }}
-              className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
-            >
-              <Ban size={12} />
-              제외
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onMerge(r);
-              }}
-              className="inline-flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-700 hover:bg-neutral-200"
-            >
-              <GitMerge size={12} />
-              병합
-            </button>
-          </div>
+              {!info?.kind && (
+                <option value="" disabled>
+                  분류 전
+                </option>
+              )}
+              {kinds.map((k) => (
+                <option key={k} value={k}>
+                  {BRAND_KIND_LABEL[k]}
+                </option>
+              ))}
+              <option value="excluded">제외 (업체 아님)</option>
+            </select>
+            {info?.kind === "competitor" && (
+              <select
+                aria-label={`${r.brand} 경쟁사 등급`}
+                value={info.tier ?? ""}
+                onChange={(e) => opts.onChangeTier(r, (e.target.value || null) as CompetitorTier | null)}
+                className={selectClass}
+              >
+                <option value="">등급 미정</option>
+                {COMPETITOR_TIERS.map((t) => (
+                  <option key={t} value={t}>
+                    {TIER_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+            )}
+          </span>
         );
       },
     },
+    { key: "mentions", label: "언급 답변 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
   ];
 }
 
@@ -369,104 +400,11 @@ function isTopicRow(row: VisibilityTableRow): row is TopicRow {
   return "topic" in row;
 }
 
-function formatRunAt(runAt?: string) {
-  if (!runAt) return "—";
-  const d = new Date(runAt);
-  return Number.isNaN(d.getTime()) ? runAt : d.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
-}
-
-function MergeBrandModal({
-  target,
-  candidates,
-  onClose,
-  onMerge,
-}: {
-  target: BrandRankRow;
-  candidates: BrandRankRow[];
-  onClose: () => void;
-  onMerge: (rows: BrandRankRow[], target: "competitor" | "own") => void;
-}) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set([target.id]));
-  const [query, setQuery] = useState("");
-  const filteredCandidates = candidates.filter((row) => row.brand.toLocaleLowerCase("ko-KR").includes(query.toLocaleLowerCase("ko-KR").trim()));
-  const selectedRows = candidates.filter((row) => selectedIds.has(row.id));
-  const canonical = [...selectedRows].sort((a, b) => b.mentions - a.mentions || a.brand.localeCompare(b.brand, "ko-KR"))[0] ?? target;
-  const aliases = selectedRows.filter((row) => row.id !== canonical.id).map((row) => row.brand);
-
-  function toggle(row: BrandRankRow) {
-    if (row.id === target.id) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(row.id)) next.delete(row.id);
-      else next.add(row.id);
-      return next;
-    });
-  }
-
-  return (
-    <Modal open onClose={onClose}>
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-neutral-900">브랜드 병합</h2>
-        <ModalCloseButton onClose={onClose} />
-      </div>
-      <p className="mt-2 text-xs text-neutral-500">현재 노출된 업체 중 같은 브랜드로 볼 항목을 선택하세요. 언급 수가 가장 높은 항목이 대표 이름이 됩니다.</p>
-
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="업체 검색"
-        className="mt-4 h-10 w-full rounded-md border border-neutral-300 px-3 text-sm text-neutral-800"
-      />
-
-      <div className="mt-3 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
-        <span className="font-bold">경쟁사 대표</span>
-        <span className="ml-2">{canonical.brand}</span>
-        {aliases.length > 0 && <span className="ml-2 text-neutral-500">별칭: {aliases.join(", ")}</span>}
-      </div>
-
-      <div className="mt-4 flex max-h-[360px] flex-col gap-1.5 overflow-y-auto">
-        {filteredCandidates.length === 0 && <p className="rounded-md bg-neutral-50 px-3 py-3 text-xs text-neutral-400">검색 결과가 없습니다.</p>}
-        {filteredCandidates.map((row) => {
-          const selected = selectedIds.has(row.id);
-          return (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => toggle(row)}
-              className={`flex items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-xs transition-colors ${
-                selected ? "bg-slate-100 text-slate-900" : "bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
-              }`}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className={`grid size-4 place-items-center rounded border ${selected ? "border-slate-800 bg-slate-800" : "border-neutral-300 bg-white"}`}>
-                  {selected && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                <span className="truncate">{row.brand}</span>
-              </span>
-              <span className="shrink-0 text-neutral-500">언급 {row.mentions.toLocaleString("ko-KR")}회</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>
-          취소
-        </Button>
-        <Button variant="secondary" onClick={() => onMerge(selectedRows, "own")} disabled={selectedRows.length < 1}>
-          내 브랜드로 등록
-        </Button>
-        <Button variant="primary" onClick={() => onMerge(selectedRows, "competitor")} disabled={selectedRows.length < 2}>
-          경쟁사로 병합
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
 export interface BrandOptimizationContext {
   own: OptimizationOwnBrand;
   registered: OptimizationCompetitor[];
+  /** 역할 분류 근거(브랜드 이름 → 답변 수 등). 없으면 이름 정리만 한다. */
+  evidence?: Record<string, BrandEvidence>;
 }
 
 function allKeys(family: Family) {
@@ -476,13 +414,11 @@ function allKeys(family: Family) {
 export function TopicsTableSection({
   categories,
   topicsByCategory,
-  competitorBrandNames,
   brandContext,
   range,
 }: {
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
-  competitorBrandNames: string[];
   brandContext: BrandOptimizationContext | null;
   /** 토픽 표 자체는 range와 무관한 전체 기간 집계지만, "추이" 스파크라인만
    *  이 값만큼의 최근 주차로 잘라서 보여준다. */
@@ -504,8 +440,10 @@ export function TopicsTableSection({
   const [trackTarget, setTrackTarget] = useState<TrackTarget | null>(null);
   const [registeringSource, setRegisteringSource] = useState<CitedSourceRow | null>(null);
   const [groupingOpen, setGroupingOpen] = useState(false);
-  const [includeExcludedBrands, setIncludeExcludedBrands] = useState(false);
-  const [mergeTarget, setMergeTarget] = useState<BrandRankRow | null>(null);
+  // "최신 상위 브랜드" 표 — 역할 필터(자사·경쟁사가 기본)와 일괄 변경용 선택 상태.
+  const [roleFilter, setRoleFilter] = useState<Set<RoleBucket>>(new Set(DEFAULT_ROLE_FILTER));
+  const [tierFilter, setTierFilter] = useState<Set<TierBucket>>(new Set(DEFAULT_TIER_FILTER));
+  const [selectedBrandIds, setSelectedBrandIds] = useState<Set<string>>(new Set());
   const [brandOptimizationOpen, setBrandOptimizationOpen] = useState(false);
 
   // 실제로 프롬프트 라이브러리에 저장(.tmp/tracked-topics)한 뒤 그 화면으로
@@ -539,11 +477,21 @@ export function TopicsTableSection({
   });
 
   const category = categories.find((c) => c.id === categoryId);
+  // 역할 필터는 "최신 상위 브랜드"에만 걸린다. 제외 처리한 브랜드는 항상 숨긴다.
+  const roleInfo = useMemo(() => {
+    const map = new Map<string, BrandRoleInfo>();
+    for (const b of brandContext?.registered ?? []) map.set(b.name.toLocaleLowerCase("ko-KR"), { kind: b.kind, tier: b.tier });
+    return map;
+  }, [brandContext]);
+  const allBrandRows = useMemo(
+    () => (topicsByCategory["latest-top-brands"] ?? []).filter((row): row is BrandRankRow => "brand" in row),
+    [topicsByCategory]
+  );
+  const brandCounts = useMemo(() => countBrandRows(allBrandRows, roleInfo), [allBrandRows, roleInfo]);
   const allRows = useMemo(() => {
-    const sourceRows = topicsByCategory[categoryId] ?? [];
-    if (categoryId !== "latest-top-brands" || includeExcludedBrands) return sourceRows;
-    return sourceRows.filter((row) => !("brand" in row) || row.decisionStatus !== "excluded");
-  }, [topicsByCategory, categoryId, includeExcludedBrands]);
+    if (categoryId === "latest-top-brands") return filterBrandRows(allBrandRows, roleInfo, roleFilter, tierFilter);
+    return topicsByCategory[categoryId] ?? [];
+  }, [topicsByCategory, categoryId, allBrandRows, roleInfo, roleFilter, tierFilter]);
   const pageCount = Math.max(1, Math.ceil(allRows.length / pageSize));
   const rows = useMemo(() => allRows.slice((page - 1) * pageSize, page * pageSize), [allRows, page, pageSize]);
 
@@ -592,50 +540,70 @@ export function TopicsTableSection({
     [trackedIds, isTopicOpportunities, range, tenantBase]
   );
   const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
-  const competitorBrandNameSet = useMemo(() => new Set(competitorBrandNames.map((name) => name.toLocaleLowerCase("ko-KR"))), [competitorBrandNames]);
-  const setBrandDecision = useCallback(async (row: BrandRankRow, status: "approved" | "excluded" | "competitor_removed" | null) => {
-    const res = await fetch("/api/detected-brand-decisions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: row.brand, evidenceDomain: row.evidenceDomain, status }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      window.alert(body.error ?? "브랜드 상태를 저장하지 못했습니다.");
-      return;
-    }
-    router.refresh();
-  }, [router]);
-  const brandRows = useMemo(() => allRows.filter((row): row is BrandRankRow => "brand" in row), [allRows]);
-  const mergeCandidates = useMemo(() => brandRows.filter((row) => row.decisionStatus !== "excluded"), [brandRows]);
-  async function mergeBrands(selectedRows: BrandRankRow[], mergeTarget: "competitor" | "own") {
-    const res = await fetch("/api/detected-brand-decisions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: "merged",
-        mergeTarget,
-        brands: selectedRows.map((row) => ({ name: row.brand, mentions: row.mentions, evidenceDomain: row.evidenceDomain })),
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      window.alert(body.error ?? "브랜드를 병합하지 못했습니다.");
-      return;
-    }
-    setMergeTarget(null);
-    router.refresh();
+  // 역할·등급 변경(행 하나 또는 선택한 여러 개) — 서버가 등록·제외까지 처리한다. 끝나면 서버 데이터를 다시 불러온다.
+  const applyRoleChanges = useCallback(
+    async (targets: BrandRankRow[], choice: RoleChoice, tier?: CompetitorTier | null) => {
+      const res = await fetch("/api/detected-brand-decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "roles",
+          items: targets.map((row) => ({ name: row.brand, kind: choice, tier, evidenceDomain: row.evidenceDomain })),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        window.alert(body.error ?? "역할을 저장하지 못했습니다.");
+        return;
+      }
+      setSelectedBrandIds(new Set());
+      router.refresh();
+    },
+    [router]
+  );
+  // 브랜드 최적화에 넘기는 후보는 화면 필터와 무관하게 제외·자사를 뺀 전체다.
+  const optimizationCandidates = useMemo(() => allBrandRows.filter((row) => row.decisionStatus !== "excluded" && !row.isOwn), [allBrandRows]);
+  const selectedBrandRows = useMemo(() => allBrandRows.filter((row) => !row.isOwn && selectedBrandIds.has(row.id)), [allBrandRows, selectedBrandIds]);
+  const suggestedNames = useMemo(
+    () => new Set((brandContext?.registered ?? []).filter((b) => b.origin === "ai-suggested").map((b) => b.name.toLocaleLowerCase("ko-KR"))),
+    [brandContext]
+  );
+  const partnerAllowed = brandContext ? allowsPartnerRole(brandContext.own) : false;
+  const showPartnerFilter = partnerAllowed && brandCounts.roles.partner > 0;
+  function changeFilter(roles: Set<RoleBucket>, tiers: Set<TierBucket>) {
+    setRoleFilter(roles);
+    setTierFilter(tiers);
+    setPage(1);
   }
+  const pageBrandRows = useMemo(() => rows.filter((row): row is BrandRankRow => "brand" in row), [rows]);
   const brandColumns = useMemo(
     () =>
-      buildBrandColumns(
-        competitorBrandNameSet,
-        (row) => setBrandDecision(row, "approved"),
-        (row, excluded) => setBrandDecision(row, excluded ? "excluded" : null),
-        (row) => setBrandDecision(row, "competitor_removed"),
-        (row) => setMergeTarget(row)
-      ),
-    [competitorBrandNameSet, setBrandDecision]
+      buildBrandColumns({
+        roleInfo,
+        suggestedNames,
+        allowPartner: partnerAllowed,
+        selectedIds: selectedBrandIds,
+        pageRows: pageBrandRows,
+        onToggleRow: (row) =>
+          setSelectedBrandIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(row.id)) next.delete(row.id);
+            else next.add(row.id);
+            return next;
+          }),
+        onTogglePage: (list, checked) =>
+          setSelectedBrandIds((prev) => {
+            const next = new Set(prev);
+            for (const row of list) {
+              if (checked) next.add(row.id);
+              else next.delete(row.id);
+            }
+            return next;
+          }),
+        onChangeRole: (row, choice) => void applyRoleChanges([row], choice),
+        onChangeTier: (row, tier) => void applyRoleChanges([row], "competitor", tier),
+      }),
+    [roleInfo, suggestedNames, partnerAllowed, selectedBrandIds, pageBrandRows, applyRoleChanges]
   );
   const visibleBrandColumns = brandColumns.filter((c) => !["mentions"].includes(c.key) || visible.has(c.key));
   const visiblePageColumns = pageColumns.filter((c) => !["responses", "market"].includes(c.key) || visible.has(c.key));
@@ -671,7 +639,7 @@ export function TopicsTableSection({
         >
           <Settings size={16} />
         </button>
-        {isBrandFamily && mergeCandidates.length > 0 && (
+        {isBrandFamily && optimizationCandidates.length > 0 && (
           <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setBrandOptimizationOpen(true)}>
             브랜드 최적화
           </Button>
@@ -691,29 +659,62 @@ export function TopicsTableSection({
         </div>
       )}
 
-      {isBrandFamily && (
-        <div className="mt-3 flex items-center justify-end gap-3">
-          <span className="text-xs font-medium text-neutral-500">제외 포함 전체 보기</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={includeExcludedBrands}
-            onClick={() => setIncludeExcludedBrands((v) => !v)}
-            className={`flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors ${
-              includeExcludedBrands ? "justify-end bg-slate-800" : "justify-start bg-neutral-300"
-            }`}
-          >
-            <span className="size-4 rounded-full bg-white" />
-          </button>
+      {isBrandFamily ? (
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <BrandRoleFilter roles={roleFilter} tiers={tierFilter} counts={brandCounts} showPartner={showPartnerFilter} onChange={changeFilter} />
+            <span className="ml-auto text-xs text-neutral-500">
+              {allRows.length.toLocaleString("ko-KR")}개 표시 · 전체 {(allBrandRows.length - brandCounts.excluded).toLocaleString("ko-KR")}개
+            </span>
+          </div>
+          {selectedBrandRows.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-4 py-2.5 text-xs">
+              <span className="font-bold text-slate-800">{selectedBrandRows.length}개 선택</span>
+              <select
+                aria-label="선택한 브랜드 역할 변경"
+                value=""
+                onChange={(e) => e.target.value && void applyRoleChanges(selectedBrandRows, e.target.value as RoleChoice)}
+                className="h-8 rounded border border-neutral-300 bg-white px-2 text-xs"
+              >
+                <option value="">역할 변경…</option>
+                {BRAND_KINDS.filter((k) => k !== "partner" || partnerAllowed).map((k) => (
+                  <option key={k} value={k}>
+                    {BRAND_KIND_LABEL[k]}(으)로
+                  </option>
+                ))}
+                <option value="excluded">제외 (업체 아님)</option>
+              </select>
+              <select
+                aria-label="선택한 경쟁사 등급 변경"
+                value=""
+                onChange={(e) => e.target.value && void applyRoleChanges(selectedBrandRows, "competitor", e.target.value === "none" ? null : (e.target.value as CompetitorTier))}
+                className="h-8 rounded border border-neutral-300 bg-white px-2 text-xs"
+              >
+                <option value="">경쟁사로 지정 + 등급…</option>
+                {COMPETITOR_TIERS.map((t) => (
+                  <option key={t} value={t}>
+                    경쟁사 · {TIER_LABEL[t]}
+                  </option>
+                ))}
+                <option value="none">경쟁사 · 등급 미정</option>
+              </select>
+              <button type="button" onClick={() => void applyRoleChanges(selectedBrandRows, "excluded")} className="h-8 rounded bg-white px-3 font-bold text-red-700 ring-1 ring-red-200 cursor-pointer hover:bg-red-50">
+                목록에서 제외
+              </button>
+              <button type="button" onClick={() => setSelectedBrandIds(new Set())} className="ml-auto text-neutral-500 cursor-pointer hover:underline">
+                선택 해제
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="mt-3 flex items-center justify-end gap-2.5">
+          {isTopicFamily && <Dropdown label="" value="AI 가시성: 전체" bold options={["AI 가시성: 전체"]} />}
+          <div className="flex h-10 w-[189px] items-center justify-end rounded-md border border-neutral-300 px-3">
+            <span className="text-xs text-neutral-500">0/{category?.badge ?? allRows.length}</span>
+          </div>
         </div>
       )}
-
-      <div className="mt-3 flex items-center justify-end gap-2.5">
-        {isTopicFamily && <Dropdown label="" value="AI 가시성: 전체" bold options={["AI 가시성: 전체"]} />}
-        <div className="flex h-10 w-[189px] items-center justify-end rounded-md border border-neutral-300 px-3">
-          <span className="text-xs text-neutral-500">0/{category?.badge ?? allRows.length}</span>
-        </div>
-      </div>
 
       <div className="mt-4">
         {isTopicFamily && (
@@ -853,15 +854,6 @@ export function TopicsTableSection({
         onTrack={(target, category) => handleTrack(target, category)}
       />
 
-      {mergeTarget && (
-        <MergeBrandModal
-          target={mergeTarget}
-          candidates={mergeCandidates}
-          onClose={() => setMergeTarget(null)}
-          onMerge={mergeBrands}
-        />
-      )}
-
       {brandContext && (
         <BrandOptimizationModal
           open={brandOptimizationOpen}
@@ -869,10 +861,11 @@ export function TopicsTableSection({
           input={{
             own: brandContext.own,
             registered: brandContext.registered,
-            candidates: mergeCandidates.map((row) => ({ name: row.brand, mentions: row.mentions, evidenceDomain: row.evidenceDomain ?? null })),
+            candidates: optimizationCandidates.map((row) => ({ name: row.brand, mentions: row.mentions, evidenceDomain: row.evidenceDomain ?? null })),
+            evidence: brandContext.evidence,
           }}
           onApply={async (plan: BrandOptimizationPlan) => {
-            const evidence = new Map(mergeCandidates.map((row) => [row.brand.toLocaleLowerCase("ko-KR"), row.evidenceDomain ?? null]));
+            const evidence = new Map(optimizationCandidates.map((row) => [row.brand.toLocaleLowerCase("ko-KR"), row.evidenceDomain ?? null]));
             const domainOf = (name: string) => evidence.get(name.toLocaleLowerCase("ko-KR")) ?? null;
             const res = await fetch("/api/detected-brand-decisions", {
               method: "POST",
@@ -883,6 +876,8 @@ export function TopicsTableSection({
                   ownAliases: plan.ownAliases,
                   competitors: plan.competitors.map((c) => ({ ...c, evidenceDomain: domainOf(c.name) })),
                   exclude: plan.exclude.map((name) => ({ name, evidenceDomain: domainOf(name) })),
+                  roles: plan.roles ?? [],
+                  suggestions: plan.suggestions ?? [],
                 },
               }),
             });

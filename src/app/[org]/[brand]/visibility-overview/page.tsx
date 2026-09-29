@@ -7,6 +7,7 @@ import {
   getRealMentionsByModel,
   getRealSourceOpportunities,
   getRealStatSeries,
+  getRealBrandEvidence,
   getRealTopBrands,
   getRealTopicRows,
 } from "@/lib/backend/collectionStatsReader";
@@ -68,7 +69,7 @@ export default async function VisibilityOverviewPage({
         getRealMentionsByModel(range),
         getRealMentionsByMarket(range),
         getRealTopicRows({}, { libraryPrompts, targetUrls }),
-        getRealTopBrands({ range }),
+        getRealTopBrands({ range, includeOwn: true }),
         getRealCitedPages(),
         getRealCitedSources({}, { trackedDomains }),
         getRealSourceOpportunities({}, { trackedDomains }),
@@ -101,6 +102,7 @@ export default async function VisibilityOverviewPage({
   }
   if (realTopBrands) {
     topicsByCategory["latest-top-brands"] = realTopBrands.map((row) => {
+      if (row.isOwn) return row;
       const decision = brandDecisions.get(row.brand.toLocaleLowerCase("ko-KR").replace(/\s+/g, " ").trim());
       return { ...row, decisionStatus: decision?.status, evidenceDomain: row.evidenceDomain ?? decision?.evidenceDomain };
     });
@@ -119,6 +121,11 @@ export default async function VisibilityOverviewPage({
     }));
   }
 
+  // 브랜드 최적화의 역할 분류 근거 — 등록된 기타 브랜드와 순위표에 나온 브랜드(자사 제외)의 답변 근거.
+  const brandEvidence = demo || !ownBrand
+    ? undefined
+    : await getRealBrandEvidence([...new Set([...ownBrand.otherBrands.map((b) => b.name), ...(realTopBrands ?? []).filter((row) => !row.isOwn).map((row) => row.brand)])]);
+
   return (
     <VisibilityOverviewClient
       org={org}
@@ -128,12 +135,19 @@ export default async function VisibilityOverviewPage({
       mentionsByMarket={mentionsByMarket}
       categories={topicCategories}
       topicsByCategory={topicsByCategory}
-      competitorBrandNames={ownBrand?.otherBrands.map((b) => b.name) ?? []}
       brandContext={
         ownBrand
           ? {
-              own: { name: ownBrand.name, domain: (() => { try { return new URL(ownBrand.url).hostname; } catch { return undefined; } })(), aliases: ownBrand.aliases },
-              registered: ownBrand.otherBrands.map((b) => ({ name: b.name, aliases: b.aliases })),
+              own: {
+                name: ownBrand.name,
+                domain: (() => { try { return new URL(ownBrand.url).hostname; } catch { return undefined; } })(),
+                aliases: ownBrand.aliases,
+                description: ownBrand.description,
+                industry: ownBrand.industry,
+                markets: ownBrand.markets,
+              },
+              registered: ownBrand.otherBrands.map((b) => ({ name: b.name, aliases: b.aliases, kind: b.kind, tier: b.tier, description: b.description, origin: b.origin })),
+              evidence: brandEvidence,
             }
           : null
       }
