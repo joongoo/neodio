@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Ban, Check, Copy, Download, GitMerge, Plus, RotateCcw, Settings, Sparkles } from "lucide-react";
+import { Ban, Download, GitMerge, Plus, RotateCcw, Settings, Sparkles } from "lucide-react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -13,6 +13,8 @@ import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { TrackTarget, TrackTopicModal } from "@/components/prompt-strategy/TrackTopicModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { BrandOptimizationModal } from "@/components/brands-management/BrandOptimizationModal";
+import type { BrandOptimizationPlan, OptimizationCompetitor, OptimizationOwnBrand } from "@/lib/brandOptimization";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import {
   BrandRankRow,
@@ -462,122 +464,9 @@ function MergeBrandModal({
   );
 }
 
-function BrandOptimizationBridgeModal({
-  rows,
-  onClose,
-  onSaved,
-}: {
-  rows: BrandRankRow[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [pasted, setPasted] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const promptText = `다음은 AI 답변 수집 로그에서 발견된 업체 후보 목록입니다. 실제 브랜드/업체만 정리해주세요.
-
-규칙:
-- 우리 브랜드의 다른 표기라고 판단되는 항목은 ownAliases에 넣으세요.
-- 같은 경쟁사의 다른 표기는 competitors에 대표 name과 aliases로 묶으세요.
-- 업체명이 아니라 일반 개념어/부서명/기능명/분야명은 exclude에 넣으세요.
-- 목록에 없는 새 이름은 만들지 마세요.
-- 반드시 JSON 하나만 답하세요.
-
-응답 형식:
-{
-  "ownAliases": ["우리 브랜드의 다른 표기"],
-  "competitors": [{"name": "대표 경쟁사명", "aliases": ["다른 표기"]}],
-  "exclude": [{"name": "제외할 후보명"}]
-}
-
-후보 목록:
-${rows.map((row) => `- ${row.brand} | 언급 ${row.mentions}회${row.evidenceDomain ? ` | 근거 도메인 ${row.evidenceDomain}` : ""}`).join("\n")}`;
-
-  async function copyPrompt() {
-    await navigator.clipboard.writeText(promptText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  async function save() {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(pasted);
-    } catch {
-      setError("JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요.");
-      return;
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      setError("JSON 객체 형식이어야 합니다.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/detected-brand-decisions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "optimized", data: parsed }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "브랜드 최적화 결과를 저장하지 못했습니다.");
-        return;
-      }
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal open onClose={onClose}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-slate-500" />
-          <h2 className="text-lg font-bold text-neutral-900">브랜드 최적화</h2>
-        </div>
-        <ModalCloseButton onClose={onClose} />
-      </div>
-      <p className="mt-2 text-xs text-neutral-500">현재 노출된 업체 후보를 LLM으로 정리해 내 브랜드 별칭, 경쟁사 병합, 제외 상태에 반영합니다.</p>
-
-      <div className="mt-4 flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-neutral-700">1. 프롬프트 복사</span>
-          <button
-            type="button"
-            onClick={copyPrompt}
-            className="flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-200"
-          >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? "복사됨" : "복사"}
-          </button>
-        </div>
-        <textarea readOnly value={promptText} rows={8} className="w-full rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600" />
-      </div>
-
-      <div className="mt-4 flex flex-col gap-1.5">
-        <span className="text-xs font-bold text-neutral-700">2. LLM 답변 붙여넣기</span>
-        <textarea
-          value={pasted}
-          onChange={(e) => setPasted(e.target.value)}
-          rows={8}
-          placeholder="JSON 답변을 붙여넣으세요"
-          className="w-full rounded-md border border-neutral-300 p-3 text-xs text-neutral-800"
-        />
-      </div>
-      {error && <p className="mt-2 text-xs font-medium text-red-600">{error}</p>}
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>
-          취소
-        </Button>
-        <Button variant="primary" onClick={save} disabled={saving}>
-          {saving ? "저장 중..." : "결과 반영"}
-        </Button>
-      </div>
-    </Modal>
-  );
+export interface BrandOptimizationContext {
+  own: OptimizationOwnBrand;
+  registered: OptimizationCompetitor[];
 }
 
 function allKeys(family: Family) {
@@ -588,11 +477,13 @@ export function TopicsTableSection({
   categories,
   topicsByCategory,
   competitorBrandNames,
+  brandContext,
   range,
 }: {
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
   competitorBrandNames: string[];
+  brandContext: BrandOptimizationContext | null;
   /** 토픽 표 자체는 range와 무관한 전체 기간 집계지만, "추이" 스파크라인만
    *  이 값만큼의 최근 주차로 잘라서 보여준다. */
   range: DateRange;
@@ -971,13 +862,33 @@ export function TopicsTableSection({
         />
       )}
 
-      {brandOptimizationOpen && (
-        <BrandOptimizationBridgeModal
-          rows={mergeCandidates}
+      {brandContext && (
+        <BrandOptimizationModal
+          open={brandOptimizationOpen}
           onClose={() => setBrandOptimizationOpen(false)}
-          onSaved={() => {
-            setBrandOptimizationOpen(false);
+          input={{
+            own: brandContext.own,
+            registered: brandContext.registered,
+            candidates: mergeCandidates.map((row) => ({ name: row.brand, mentions: row.mentions, evidenceDomain: row.evidenceDomain ?? null })),
+          }}
+          onApply={async (plan: BrandOptimizationPlan) => {
+            const evidence = new Map(mergeCandidates.map((row) => [row.brand.toLocaleLowerCase("ko-KR"), row.evidenceDomain ?? null]));
+            const domainOf = (name: string) => evidence.get(name.toLocaleLowerCase("ko-KR")) ?? null;
+            const res = await fetch("/api/detected-brand-decisions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                status: "optimized",
+                data: {
+                  ownAliases: plan.ownAliases,
+                  competitors: plan.competitors.map((c) => ({ ...c, evidenceDomain: domainOf(c.name) })),
+                  exclude: plan.exclude.map((name) => ({ name, evidenceDomain: domainOf(name) })),
+                },
+              }),
+            });
+            if (!res.ok) return (await res.json().catch(() => ({}))).error ?? "브랜드 정리 결과를 저장하지 못했습니다.";
             router.refresh();
+            return null;
           }}
         />
       )}
@@ -987,7 +898,7 @@ export function TopicsTableSection({
           open={registeringSource !== null}
           onClose={() => setRegisteringSource(null)}
           title={`${registeringSource.domain} 공략 추천 등록`}
-          instructions="LLM API 연동 전까지, 이 소스를 어떻게 공략하면 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          instructions="AI가 이 소스를 어떻게 공략하면 좋을지 추천과 근거를 작성합니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣어 등록할 수도 있습니다."
           scope="source-recommendation"
           itemKey={registeringSource.domain}
           promptText={`도메인 "${registeringSource.domain}"이(가) 우리 브랜드 관련 AI 답변에서 ${registeringSource.prompts}개 프롬프트에 걸쳐 인용되고 있는데, 우리 브랜드 언급은 ${registeringSource.myBrandMentions}건뿐입니다.\n이 도메인에 어떤 콘텐츠를 기고하거나 어떻게 접근하면 우리 브랜드가 이 소스에서도 함께 언급/인용될 수 있을지 추천해주세요.\n\n반드시 아래 JSON 형식으로만 답변하세요:\n{"recommendation": "실행 가능한 한 문장 추천", "reasoning": "왜 이 추천이 유효한지 근거"}`}
@@ -1011,7 +922,7 @@ export function TopicsTableSection({
           open={groupingOpen}
           onClose={() => setGroupingOpen(false)}
           title="AI로 토픽 묶기"
-          instructions="LLM API 연동 전까지, 아래 프롬프트 목록을 LLM에게 그대로 물어본 뒤 답변을 붙여넣으면 프롬프트들이 토픽 단위로 묶여 보입니다. 다시 실행하면 그룹핑 결과가 갱신됩니다."
+          instructions="AI가 아래 프롬프트 목록을 토픽 단위로 묶어 줍니다. 다시 실행하면 그룹핑 결과가 갱신됩니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣을 수도 있습니다."
           scope="prompt-topic-groups"
           itemKey="current"
           promptText={groupingPromptText}

@@ -1,4 +1,5 @@
 import { getPromptStore } from "./database";
+import { applyBrandOptimization, nameKey } from "@/lib/brandOptimization";
 
 export async function listDetectedBrandDecisions(orgId: string, brandId: string) {
   return (await getPromptStore()).listDetectedBrandDecisions(orgId, brandId);
@@ -100,35 +101,23 @@ export async function applyDetectedBrandOptimization(
     const brand = await store.getBrand(orgId, brandId);
     if (!brand) throw new Error(`Unknown brand: ${brandId}`);
 
-    const ownAliases = [...new Set((params.ownAliases ?? []).map((name) => name.trim()).filter(Boolean))];
-    const ownAliasSet = new Set(ownAliases.map((name) => name.toLocaleLowerCase("ko-KR")));
-    const competitorItems = params.competitors ?? [];
-
-    let otherBrands = brand.otherBrands.filter((other) => !ownAliasSet.has(other.name.toLocaleLowerCase("ko-KR")));
-    for (const item of competitorItems) {
-      const name = item.name.trim();
-      if (!name) continue;
-      const aliases = [...new Set((item.aliases ?? []).map((alias) => alias.trim()).filter(Boolean))];
-      const aliasSet = new Set(aliases.map((alias) => alias.toLocaleLowerCase("ko-KR")));
-      const existing = otherBrands.find((other) => other.name.toLocaleLowerCase("ko-KR") === name.toLocaleLowerCase("ko-KR"));
-      otherBrands = otherBrands.filter((other) => {
-        const key = other.name.toLocaleLowerCase("ko-KR");
-        return key === name.toLocaleLowerCase("ko-KR") || !aliasSet.has(key);
-      });
-      const next = { name: existing?.name ?? name, aliases: [...new Set([...(existing?.aliases ?? []), ...aliases])] };
-      if (existing) otherBrands = otherBrands.map((other) => (other.name === existing.name ? next : other));
-      else otherBrands.push(next);
-      await store.setDetectedBrandDecision(orgId, brandId, { name, status: "approved", evidenceDomain: item.evidenceDomain });
-      for (const alias of aliases) await store.clearDetectedBrandDecision(orgId, brandId, alias);
-    }
-
-    await store.updateBrand(orgId, brandId, {
-      aliases: [...new Set([...brand.aliases, ...ownAliases])],
-      otherBrands: otherBrands.filter((other) => !ownAliasSet.has(other.name.toLocaleLowerCase("ko-KR"))),
+    // 적용 규칙은 브랜드 설정 화면의 미리보기와 같은 함수(src/lib/brandOptimization.ts)를 쓴다.
+    // 제외(exclude)는 이미 경쟁사로 등록된 항목도 목록에서 빼고 "제외" 결정으로 남긴다.
+    const applied = applyBrandOptimization(brand, {
+      ownAliases: params.ownAliases ?? [],
+      competitors: (params.competitors ?? []).map((item) => ({ name: item.name, aliases: item.aliases ?? [] })),
+      exclude: (params.exclude ?? []).map((item) => item.name),
     });
-    for (const alias of ownAliases) await store.clearDetectedBrandDecision(orgId, brandId, alias);
-    for (const item of params.exclude ?? []) {
-      if (item.name.trim()) await store.setDetectedBrandDecision(orgId, brandId, { name: item.name.trim(), status: "excluded", evidenceDomain: item.evidenceDomain });
+    await store.updateBrand(orgId, brandId, { aliases: applied.aliases, otherBrands: applied.otherBrands });
+
+    const evidence = new Map<string, string | null | undefined>();
+    for (const item of [...(params.competitors ?? []), ...(params.exclude ?? [])]) evidence.set(nameKey(item.name), item.evidenceDomain);
+    for (const name of applied.approved) {
+      await store.setDetectedBrandDecision(orgId, brandId, { name, status: "approved", evidenceDomain: evidence.get(nameKey(name)) });
+    }
+    for (const name of applied.absorbed) await store.clearDetectedBrandDecision(orgId, brandId, name);
+    for (const name of applied.excluded) {
+      await store.setDetectedBrandDecision(orgId, brandId, { name, status: "excluded", evidenceDomain: evidence.get(nameKey(name)) });
     }
   });
 }

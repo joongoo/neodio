@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import {
   applyDetectedBrandOptimization,
   approveDetectedBrand,
@@ -22,10 +23,16 @@ function isOptimizationExclusion(item: unknown): item is OptimizationExclusion {
 
 export async function POST(request: NextRequest) {
   const tenant = await getCurrentTenant();
-  if (!tenant.brandId) return NextResponse.json({ error: "브랜드를 먼저 등록하세요." }, { status: 400 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+  }
+  // 브랜드 설정 화면은 헤더에서 고른 브랜드가 아니라 지금 보고 있는 브랜드를 정리하므로 brandId를 받을 수 있다
+  // (같은 조직의 브랜드만 허용).
+  const brandId = typeof body.brandId === "string" && body.brandId ? body.brandId : tenant.brandId;
+  if (!brandId) return NextResponse.json({ error: "브랜드를 먼저 등록하세요." }, { status: 400 });
+  if (brandId !== tenant.brandId && !(await getManagedBrand(tenant.orgId, brandId))) {
+    return NextResponse.json({ error: "이 조직의 브랜드가 아닙니다." }, { status: 404 });
   }
 
   if (body.status === "merged") {
@@ -45,7 +52,7 @@ export async function POST(request: NextRequest) {
       })),
       mergeTarget,
       tenant.orgId,
-      tenant.brandId
+      brandId
     );
     return NextResponse.json({ ok: true });
   }
@@ -68,7 +75,7 @@ export async function POST(request: NextRequest) {
       exclude: exclude
         .filter(isOptimizationExclusion)
         .map((item) => ({ name: item.name, evidenceDomain: typeof item.evidenceDomain === "string" ? item.evidenceDomain : null })),
-    }, tenant.orgId, tenant.brandId);
+    }, tenant.orgId, brandId);
     return NextResponse.json({ ok: true });
   }
 
@@ -77,10 +84,10 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = { name: body.name.trim(), evidenceDomain: typeof body.evidenceDomain === "string" ? body.evidenceDomain : null };
-  if (body.status === "approved") await approveDetectedBrand(payload, tenant.orgId, tenant.brandId);
-  else if (body.status === "excluded") await excludeDetectedBrand(payload, tenant.orgId, tenant.brandId);
-  else if (body.status === "competitor_removed") await removeDetectedCompetitor(payload.name, tenant.orgId, tenant.brandId);
-  else if (body.status === null) await clearDetectedBrandDecision(payload.name, tenant.orgId, tenant.brandId);
+  if (body.status === "approved") await approveDetectedBrand(payload, tenant.orgId, brandId);
+  else if (body.status === "excluded") await excludeDetectedBrand(payload, tenant.orgId, brandId);
+  else if (body.status === "competitor_removed") await removeDetectedCompetitor(payload.name, tenant.orgId, brandId);
+  else if (body.status === null) await clearDetectedBrandDecision(payload.name, tenant.orgId, brandId);
   else return NextResponse.json({ error: "status는 approved, excluded, competitor_removed, merged, optimized 또는 null이어야 합니다." }, { status: 400 });
 
   return NextResponse.json({ ok: true });

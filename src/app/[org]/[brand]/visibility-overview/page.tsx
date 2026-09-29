@@ -129,6 +129,14 @@ export default async function VisibilityOverviewPage({
       categories={topicCategories}
       topicsByCategory={topicsByCategory}
       competitorBrandNames={ownBrand?.otherBrands.map((b) => b.name) ?? []}
+      brandContext={
+        ownBrand
+          ? {
+              own: { name: ownBrand.name, domain: (() => { try { return new URL(ownBrand.url).hostname; } catch { return undefined; } })(), aliases: ownBrand.aliases },
+              registered: ownBrand.otherBrands.map((b) => ({ name: b.name, aliases: b.aliases })),
+            }
+          : null
+      }
     />
   );
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
+import type { BrandOptimizationContext } from "@/components/visibility-overview/TopicsTableSection";
 import { StatCard } from "@/components/overview/StatCard";
 import { RangeDropdown } from "@/components/overview/RangeDropdown";
 import { RankedBarList } from "@/components/overview/RankedBarList";
@@ -43,6 +44,7 @@ export function VisibilityOverviewClient({
   categories,
   topicsByCategory,
   competitorBrandNames,
+  brandContext,
 }: {
   org: Organization;
   range: DateRange;
@@ -52,6 +54,8 @@ export function VisibilityOverviewClient({
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
   competitorBrandNames: string[];
+  /** 브랜드 최적화(AI 브랜드 정리)가 쓰는 자사·등록 경쟁사 정보. 브랜드가 없으면 null. */
+  brandContext: BrandOptimizationContext | null;
 }) {
   const [market, setMarket] = useState("전체");
   const [model, setModel] = useState("전체");
@@ -101,6 +105,7 @@ export function VisibilityOverviewClient({
         categories={filteredCategories}
         topicsByCategory={filteredTopicsByCategory}
         competitorBrandNames={competitorBrandNames}
+        brandContext={brandContext}
         range={range}
       />
     </div>
