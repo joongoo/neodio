@@ -4,6 +4,7 @@ import { getRunOutcome } from "./collectionRunsTypes";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { brandPatterns } from "./processing/text";
+import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
 import { getPromptTopicGroups } from "./promptTopics";
 import { seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
 import { getRealBrandSeeds } from "./brandSeeds";
@@ -25,6 +26,7 @@ import {
   SentimentMoverRow,
   SentimentWeek,
   ShareOfVoiceRow,
+  CitedPromptRun,
   StatCard,
   StrategyBrandMention,
   ThirdPartyUrlRow,
@@ -51,7 +53,23 @@ const COMPANY_NAME_RE = new RegExp(
   `\\b([A-Z][A-Za-z0-9&.+-]*(?:\\s+[A-Z][A-Za-z0-9&.+-]*){0,3}\\s+${COMPANY_SUFFIX_PATTERN}|[A-Z][A-Za-z0-9&.+-]{2,}(?:\\s+[A-Z][A-Za-z0-9&.+-]{2,}){0,2})\\b`,
   "g"
 );
+// 신규 업체 후보로 인정하려면 서로 다른 답변 몇 개에서 나와야 하는지.
+const MIN_DETECTED_ANSWERS = 2;
 const COMPANY_BLOCKLIST = new Set([
+  // 직책·플랫폼 속성·일반 개념어 — 회사 이름이 아닌데 대문자 단어 규칙에 걸리는 것들
+  "CIO",
+  "CEO",
+  "CTO",
+  "CMO",
+  "CFO",
+  "CISO",
+  "Naver Blog",
+  "Naver Cafe",
+  "Lead Scoring",
+  "Scoring",
+  "Content",
+  "Account Management",
+  "Account-Based Marketing",
   "AI",
   "API",
   "B2B",
@@ -114,15 +132,6 @@ function normalizeDetectedCompanyName(value: string) {
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function countBrandPatternHits(text: string, patterns: string[]) {
-  return patterns.reduce((sum, pattern) => {
-    const normalized = pattern.trim();
-    if (!normalized) return sum;
-    const matches = text.match(new RegExp(`${escapeRegex(normalized)}(?:은|는|이|가|을|를|의|과|와|로|으로)?`, "gi"));
-    return sum + (matches?.length ?? 0);
-  }, 0);
 }
 
 function contextAround(text: string, index: number, length: number) {
@@ -676,6 +685,48 @@ export async function getRealMarketWeeklyTracking(
   return { mentionsByWeek: mentions, citationsByWeek: citations };
 }
 
+// 검색어 트렌드 교차 분석용 — 수집된 전체 기간의 주(월요일 시작, 네이버 데이터랩 주 단위와 같은 기준)별
+// 총 실행 수와 브랜드별 언급 수. range 창으로 자르지 않는다(검색 추이와 같은 기간을 겹쳐 봐야 하므로).
+export interface BrandMentionWeek {
+  /** 주 시작일(월요일, yyyy-mm-dd). */
+  weekStart: string;
+  runs: number;
+  mentions: Record<string, number>;
+}
+
+export async function getRealBrandMentionWeeks(filters: RealDataFilters = {}): Promise<BrandMentionWeek[] | null> {
+  const result = await getProcessedWithWeeks("4w", filters);
+  if (!result) return null;
+  const { processed, weekOfRun, brands } = result;
+
+  // 수집 주(일요일 시작) → 월요일 시작으로 하루 민다.
+  const toMonday = (sunday: string) => {
+    const d = new Date(`${sunday}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  };
+  const weeks = new Map<string, BrandMentionWeek>();
+  const weekFor = (runId: string) => {
+    const sunday = weekOfRun.get(runId);
+    if (!sunday) return null;
+    const key = toMonday(sunday);
+    if (!weeks.has(key)) weeks.set(key, { weekStart: key, runs: 0, mentions: {} });
+    return weeks.get(key)!;
+  };
+  for (const runId of weekOfRun.keys()) {
+    const week = weekFor(runId);
+    if (week) week.runs += 1;
+  }
+  const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
+  for (const mention of processed.mentions) {
+    if (!mention.isPresent) continue;
+    const brand = brandNameById.get(mention.brandId);
+    const week = weekFor(mention.promptRunId);
+    if (brand && week) week.mentions[brand] = (week.mentions[brand] ?? 0) + 1;
+  }
+  return [...weeks.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+}
+
 // "프롬프트 지표" — 주별 총 실행 수 vs 우리 브랜드가 실제로 언급된 실행 수.
 export async function getRealPromptMetricsByWeek(
   range: DateRange,
@@ -941,6 +992,15 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
   };
   const queryOf = (runId: string) => runsById.get(runId)?.rawMetadata.query?.trim();
   const promptTitlesOf = (runIds: Set<string>) => [...new Set([...runIds].map(queryOf).filter((q): q is string => !!q))];
+  const citedRunsOf = (runIds: Set<string>): CitedPromptRun[] =>
+    [...runIds]
+      .flatMap((runId) => {
+        const run = runsById.get(runId);
+        const prompt = queryOf(runId);
+        if (!run || !prompt) return [];
+        return [{ prompt, runAt: run.runAt, model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId, market: marketOf(runId) }];
+      })
+      .sort((a, b) => b.runAt.localeCompare(a.runAt));
 
   interface UrlAgg {
     isOwnDomain: boolean;
@@ -982,6 +1042,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
         citations: agg.citations,
         citedPrompts: agg.promptRunIds.size,
         citedPromptTitles: promptTitlesOf(agg.promptRunIds),
+        citedPromptRuns: citedRunsOf(agg.promptRunIds),
         contentVisibility: null,
         category: "미분류",
         market: topMarket(agg),
@@ -994,6 +1055,7 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
         citations: agg.citations,
         citedPrompts: agg.promptRunIds.size,
         citedPromptTitles: promptTitlesOf(agg.promptRunIds),
+        citedPromptRuns: citedRunsOf(agg.promptRunIds),
         category: "미분류",
         market: topMarket(agg),
       });
@@ -1042,10 +1104,15 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
   };
 }
 
-// 가시성 개요의 "최신 상위 브랜드" — 전체 기간 언급 수 기준 브랜드 랭킹.
-// 우리 브랜드도 포함해서 실제 언급 순위 그대로 보여준다 (share-of-voice와
-// 달리 여기는 순위표라 자사 제외 안 함).
-export async function getRealTopBrands(filters: RealDataFilters & { range?: DateRange } = {}): Promise<BrandRankRow[] | null> {
+// 가시성 개요의 "최신 상위 브랜드" — 브랜드가 언급된 "답변 수" 기준 랭킹(mentions).
+//  · 한 답변에서 여러 번 나와도 1로 센다 — 출현 횟수는 답변이 길수록 부풀어서 순위를 왜곡하고,
+//    다른 화면의 언급 집계(실행 단위)와도 기준이 어긋난다. 출현 횟수는 occurrences로 따로 두고 동률 정렬에만 쓴다.
+//  · 별칭이 겹쳐도(예: "Adobe"와 "Adobe Marketo Engage") 같은 자리를 두 번 세지 않는다.
+//  · includeOwn=true면 자사도 순위에 넣고 isOwn으로 표시한다. 기본(false)은 "추적할 브랜드 추천"처럼
+//    자사를 빼야 하는 호출(브랜드 상세)을 위한 것이다.
+export async function getRealTopBrands(
+  filters: RealDataFilters & { range?: DateRange; includeOwn?: boolean } = {}
+): Promise<BrandRankRow[] | null> {
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
   const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
@@ -1068,29 +1135,35 @@ export async function getRealTopBrands(filters: RealDataFilters & { range?: Date
   const knownBrandNames = new Set(
     brands.flatMap((brand) => [brand.name, brand.domain, ...brand.aliases].filter(Boolean)).map((name) => name.toLocaleLowerCase("ko-KR"))
   );
-  const mentionsByBrand = new Map<string, { mentions: number; sampleContext?: string }>();
+  const mentionsByBrand = new Map<string, { answers: number; occurrences: number; sampleContext?: string }>();
   for (const brand of brands) {
-    const patterns = brandPatterns(brand);
+    // 긴 패턴부터 한 번에 매칭해서 겹치는 별칭이 같은 자리를 두 번 세지 않게 한다.
+    const patterns = [...new Set(brandPatterns(brand).map((pattern) => pattern.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+    if (patterns.length === 0) continue;
+    const regex = new RegExp(patterns.map(escapeRegex).join("|"), "gi");
     for (const run of promptRuns) {
-      const count = countBrandPatternHits(run.rawResponse, patterns);
-      if (count === 0) continue;
-      const firstPattern = patterns.find((pattern) => run.rawResponse.toLocaleLowerCase("ko-KR").includes(pattern.toLocaleLowerCase("ko-KR")));
-      const index = firstPattern ? run.rawResponse.toLocaleLowerCase("ko-KR").indexOf(firstPattern.toLocaleLowerCase("ko-KR")) : -1;
+      const matches = [...run.rawResponse.matchAll(regex)];
+      if (matches.length === 0) continue;
       const current = mentionsByBrand.get(brand.id);
       mentionsByBrand.set(brand.id, {
-        mentions: (current?.mentions ?? 0) + count,
-        sampleContext: current?.sampleContext ?? (index >= 0 ? contextAround(run.rawResponse, index, firstPattern?.length ?? brand.name.length) : undefined),
+        answers: (current?.answers ?? 0) + 1,
+        occurrences: (current?.occurrences ?? 0) + matches.length,
+        sampleContext: current?.sampleContext ?? contextAround(run.rawResponse, matches[0].index ?? 0, matches[0][0].length),
       });
     }
   }
 
-  const trackedRows: BrandRankRow[] = [...mentionsByBrand.entries()].map(([brandId, agg]) => ({
+  const trackedRows: BrandRankRow[] = [...mentionsByBrand.entries()]
+    .filter(([brandId]) => filters.includeOwn || brandId !== OWN_BRAND_ID)
+    .map(([brandId, agg]) => ({
       id: `real-brand-${brandId}`,
       brand: brands.find((b) => b.id === brandId)?.name ?? brandId,
-      mentions: agg.mentions,
+      mentions: agg.answers,
+      occurrences: agg.occurrences,
       source: "tracked" as const,
+      isOwn: brandId === OWN_BRAND_ID || undefined,
       sampleContext: agg.sampleContext,
-    })).filter((row) => row.id !== `real-brand-${OWN_BRAND_ID}`);
+    }));
 
   const detectedByName = new Map<string, BrandRankRow>();
   const citationDomainsByRun = new Map<string, string[]>();
@@ -1106,16 +1179,66 @@ export async function getRealTopBrands(filters: RealDataFilters & { range?: Date
       detectedByName.set(key, {
         id: `detected-brand-${key.replace(/[^a-z0-9가-힣]+/gi, "-")}`,
         brand: current?.brand ?? candidate.name,
-        mentions: (current?.mentions ?? 0) + candidate.count,
+        mentions: (current?.mentions ?? 0) + 1,
+        occurrences: (current?.occurrences ?? 0) + candidate.count,
         source: "detected",
         sampleContext: current?.sampleContext ?? candidate.sampleContext,
         evidenceDomain: current?.evidenceDomain ?? candidate.evidenceDomain,
       });
     }
   }
+  // 정규식으로 찾은 후보는 한 답변에서만 나온 우연(직책·일반어)이 많아 2개 답변 이상에서 나온 것만 보인다.
+  const detectedRows = [...detectedByName.values()].filter((row) => row.mentions >= MIN_DETECTED_ANSWERS);
 
-  const rows = [...trackedRows, ...detectedByName.values()].sort((a, b) => b.mentions - a.mentions);
+  const rows = [...trackedRows, ...detectedRows].sort(
+    (a, b) => b.mentions - a.mentions || (b.occurrences ?? 0) - (a.occurrences ?? 0) || a.brand.localeCompare(b.brand, "ko-KR")
+  );
   return rows.length > 0 ? rows : null;
+}
+
+// 브랜드 역할 분류(브랜드 최적화)의 근거 — 이름별로 "몇 개 답변에서 언급됐고, 그중 자사도 함께 나온 답변은 몇 개인지",
+// 그리고 답변이 그 브랜드를 소개한 대목. AI에게 판단을 맡기되 근거 숫자는 우리가 센다.
+// 등록된 브랜드는 별칭까지 함께 찾고, 후보는 이름 그대로 찾는다. 긴 표기부터 한 번에 매칭해 겹치는 별칭을 두 번 세지 않는다.
+export async function getRealBrandEvidence(names: string[]): Promise<Record<string, BrandEvidence>> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runs = (await listCollectedRuns(ORG_ID)).map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (runs.length === 0 || names.length === 0) return {};
+
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
+  const own = brands.find((b) => b.id === OWN_BRAND_ID);
+  const compile = (patterns: string[]) => {
+    const list = [...new Set(patterns.map((p) => p.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+    return list.length ? new RegExp(list.map(escapeRegex).join("|"), "gi") : null;
+  };
+  const ownRegex = own ? compile(brandPatterns(own)) : null;
+  const registered = new Map(brands.filter((b) => !b.isOwnBrand).map((b) => [nameKey(b.name), b]));
+
+  const result: Record<string, BrandEvidence> = {};
+  for (const name of names) {
+    const key = nameKey(name);
+    const seed = registered.get(key);
+    const regex = compile(seed ? brandPatterns(seed) : [name]);
+    if (!regex) continue;
+    let answers = 0;
+    let withOwn = 0;
+    let snippet: string | undefined;
+    let snippetWithOwn = false;
+    for (const run of runs) {
+      const match = run.rawResponse.match(regex);
+      if (!match) continue;
+      answers += 1;
+      const alsoOwn = !!ownRegex && new RegExp(ownRegex.source, "i").test(run.rawResponse);
+      if (alsoOwn) withOwn += 1;
+      // 소개 대목은 자사와 함께 나온 답변을 우선한다 — 같은 목록 안에서 어떤 역할로 소개되는지가 보이므로.
+      if (!snippet || (alsoOwn && !snippetWithOwn)) {
+        const at = run.rawResponse.search(new RegExp(regex.source, "i"));
+        snippet = run.rawResponse.slice(Math.max(0, at - 30), at + match[0].length + 110).replace(/\s+/g, " ").trim();
+        snippetWithOwn = alsoOwn;
+      }
+    }
+    if (answers > 0) result[key] = { answers, withOwn, snippet };
+  }
+  return result;
 }
 
 // 가시성 개요의 "인용된 페이지" — 자사 도메인 URL별로 응답 수(그 URL을

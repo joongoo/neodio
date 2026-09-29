@@ -378,7 +378,12 @@ export interface TopicCategory {
 export interface BrandRankRow {
   id: string;
   brand: string;
+  /** 이 브랜드가 언급된 답변 수(한 답변에서 여러 번 나와도 1). */
   mentions: number;
+  /** 답변 안에서 이름이 나온 총 횟수 — 동률 정렬용 보조값. */
+  occurrences?: number;
+  /** 자사 브랜드 행(순위에는 넣되 등록·제외 같은 경쟁사 액션 대상이 아니다). */
+  isOwn?: boolean;
   source?: "tracked" | "detected";
   sampleContext?: string;
   evidenceDomain?: string;
@@ -1033,6 +1038,14 @@ export interface ContentAuditOpportunity {
 // analytics, or a domain-authority index, none of which we have
 // (neodigm_p0_scope.md §2). Everything below comes from our own citations.
 
+/** 이 URL을 인용한 응답 한 건 — 확장 행에서 프롬프트와 함께 실행일·모델·마켓을 보여 준다. */
+export interface CitedPromptRun {
+  prompt: string;
+  runAt: string;
+  model: string;
+  market: string;
+}
+
 export interface OwnCitedUrlRow {
   id: string;
   url: string;
@@ -1040,6 +1053,8 @@ export interface OwnCitedUrlRow {
   citedPrompts: number;
   /** Prompt texts that cited this URL, for the "상세" detail view. */
   citedPromptTitles: string[];
+  /** 실측 인용의 프롬프트별 실행 정보(실행일 최신순). 목업 데이터에는 없다. */
+  citedPromptRuns?: CitedPromptRun[];
   /** null when there's no real source for this yet (실 인용 집계엔 없고 사이트맵 크롤과 별도 매칭이 필요) */
   contentVisibility: number | null;
   category: string;
@@ -1054,6 +1069,8 @@ export interface ThirdPartyUrlRow {
   citedPrompts: number;
   /** Prompt texts that cited this URL, for the "상세" detail view. */
   citedPromptTitles: string[];
+  /** 실측 인용의 프롬프트별 실행 정보(실행일 최신순). 목업 데이터에는 없다. */
+  citedPromptRuns?: CitedPromptRun[];
   category: string;
   market: string;
 }
@@ -1091,9 +1108,23 @@ export interface SocialAccount {
 // "Salesforce"/"세일즈포스"/"세일즈포스 닷컴")를 alias로 묶어야 실제 언급
 // 집계(brandSeeds.ts)에서 같은 브랜드로 카운팅된다. 예전엔 문자열 배열이라
 // 표기가 다르면 서로 다른 브랜드로 잡혔다.
+/** 기타 브랜드가 우리와 맺는 관계 — 경쟁사만 "경쟁 비교"(검색어 트렌드 기본 그룹 등)에 쓴다. */
+export type BrandKind = "competitor" | "solution" | "partner" | "channel" | "other" | "unclassified";
+
+/** 경쟁사 등급 — 핵심(체급·포트폴리오 유사) / 인접(일부 영역에서 직접 경쟁하는 중견) / 상위 시장(더 크지만 대형 사업에서 맞붙음) / 소규모 전문(핵심 경쟁사 아님). */
+export type CompetitorTier = "core" | "adjacent" | "enterprise" | "niche";
+
 export interface TrackedOtherBrand {
   name: string;
   aliases: string[];
+  /** AI 브랜드 최적화(또는 사람)가 정한 역할. 없으면 아직 분류 전. */
+  kind?: BrandKind;
+  /** kind가 competitor일 때의 등급. */
+  tier?: CompetitorTier;
+  /** AI가 지식만으로 제안해 사람이 추가한 브랜드 — 실존·규모를 따로 확인하기 전까지 미검증이다. */
+  origin?: "ai-suggested";
+  /** 수집된 답변에 근거한 한 줄 설명. */
+  description?: string;
 }
 
 export interface ManagedBrand {

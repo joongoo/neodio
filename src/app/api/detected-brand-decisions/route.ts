@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { isBrandKind, isCompetitorTier, MAX_SUGGESTIONS, type BrandRoleAssignment, type BrandSuggestion } from "@/lib/brandOptimization";
 import {
   applyDetectedBrandOptimization,
   approveDetectedBrand,
@@ -8,6 +9,8 @@ import {
   excludeDetectedBrand,
   mergeDetectedBrands,
   removeDetectedCompetitor,
+  setBrandRoles,
+  type BrandRoleChange,
 } from "@/lib/backend/detectedBrandDecisions";
 
 type OptimizationCompetitor = { name: string; aliases?: string[]; evidenceDomain?: string | null };
@@ -57,6 +60,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // 순위표에서 고른 브랜드들의 역할·등급을 한 번에 바꾼다(일괄 변경).
+  if (body.status === "roles") {
+    const items: BrandRoleChange[] = (Array.isArray(body.items) ? (body.items as unknown[]) : []).flatMap((item) => {
+      const entry = item as { name?: unknown; kind?: unknown; tier?: unknown; evidenceDomain?: unknown };
+      if (typeof entry?.name !== "string" || !entry.name.trim() || entry.name.length > 100) return [];
+      if (entry.kind !== "excluded" && !isBrandKind(entry.kind)) return [];
+      const tier = entry.tier === null ? null : isCompetitorTier(entry.tier) ? entry.tier : undefined;
+      return [{ name: entry.name.trim(), kind: entry.kind as BrandRoleChange["kind"], tier, evidenceDomain: typeof entry.evidenceDomain === "string" ? entry.evidenceDomain : null }];
+    });
+    if (items.length === 0 || items.length > 200) {
+      return NextResponse.json({ error: "바꿀 브랜드를 1~200개 선택해주세요." }, { status: 400 });
+    }
+    await setBrandRoles(items, tenant.orgId, brandId);
+    return NextResponse.json({ ok: true });
+  }
+
   if (body.status === "optimized") {
     const data = body.data;
     if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -65,6 +84,16 @@ export async function POST(request: NextRequest) {
     const ownAliases = Array.isArray(data.ownAliases) ? (data.ownAliases as unknown[]) : [];
     const competitors = Array.isArray(data.competitors) ? (data.competitors as unknown[]) : [];
     const exclude = Array.isArray(data.exclude) ? (data.exclude as unknown[]) : [];
+    const roles: BrandRoleAssignment[] = (Array.isArray(data.roles) ? (data.roles as unknown[]) : []).flatMap((item) => {
+      const entry = item as { name?: unknown; kind?: unknown; tier?: unknown; description?: unknown };
+      if (typeof entry?.name !== "string" || !entry.name.trim() || !isBrandKind(entry.kind)) return [];
+      return [{ name: entry.name.trim(), kind: entry.kind, tier: entry.kind === "competitor" && isCompetitorTier(entry.tier) ? entry.tier : undefined, description: typeof entry.description === "string" && entry.description.trim() ? entry.description.trim().slice(0, 120) : undefined }];
+    });
+    const suggestions: BrandSuggestion[] = (Array.isArray(data.suggestions) ? (data.suggestions as unknown[]) : []).slice(0, MAX_SUGGESTIONS).flatMap((item) => {
+      const entry = item as { name?: unknown; tier?: unknown; description?: unknown };
+      if (typeof entry?.name !== "string" || !entry.name.trim() || entry.name.length > 60) return [];
+      return [{ name: entry.name.trim(), tier: isCompetitorTier(entry.tier) ? entry.tier : undefined, description: typeof entry.description === "string" && entry.description.trim() ? entry.description.trim().slice(0, 120) : undefined }];
+    });
     await applyDetectedBrandOptimization({
       ownAliases: ownAliases.filter((item: unknown): item is string => typeof item === "string"),
       competitors: competitors.filter(isOptimizationCompetitor).map((item) => ({
@@ -75,6 +104,8 @@ export async function POST(request: NextRequest) {
       exclude: exclude
         .filter(isOptimizationExclusion)
         .map((item) => ({ name: item.name, evidenceDomain: typeof item.evidenceDomain === "string" ? item.evidenceDomain : null })),
+      roles,
+      suggestions,
     }, tenant.orgId, brandId);
     return NextResponse.json({ ok: true });
   }

@@ -1,7 +1,8 @@
 import { BrandDetailClient } from "@/components/brands-management/BrandDetailClient";
 import { getManagedBrand, getManagedBrands } from "@/lib/backend/brandsManagementStore";
 import { assignBrandSlugs } from "@/lib/slug";
-import { getRealTopBrands } from "@/lib/backend/collectionStatsReader";
+import { getRealBrandEvidence, getRealTopBrands } from "@/lib/backend/collectionStatsReader";
+import type { BrandEvidence } from "@/lib/brandOptimization";
 import { listBrandYoutubeChannels } from "@/lib/backend/brandAioConfig";
 import { channelCitationStats, seoulDate } from "@/lib/backend/aio/store";
 import { addDays } from "@/lib/backend/aio/metrics";
@@ -35,9 +36,19 @@ export default async function BrandDetailPage({ params }: { params: Promise<{ br
     .filter((b) => b.brand.trim().toLowerCase() !== ownNameLower)
     .map((b) => ({ name: b.brand, mentions: b.mentions }));
 
+  // 브랜드 최적화의 역할 분류 근거 — 이 브랜드의 기타 브랜드별 답변 근거(수집 데이터는 헤더에서 고른 자사 기준이므로
+  // 지금 보는 브랜드가 그 자사일 때만 의미가 있다).
+  // 수집 데이터는 헤더에서 고른 자사 기준이라 지금 보는 브랜드가 그 자사일 때만 근거로 쓴다. 아니면 근거 없이(빈 값)
+  // 자사 설명만으로 분류·제안한다 — undefined가 아니라 {}여야 역할 분류와 경쟁사 제안이 켜진다.
+  const roleEvidence: Record<string, BrandEvidence> =
+    brand.id === tenant.brandId && brand.otherBrands.length > 0
+      ? await getRealBrandEvidence(brand.otherBrands.map((b) => b.name)).catch(() => ({}))
+      : {};
+
   return (
     <BrandDetailClient
       initial={brand}
+      roleEvidence={roleEvidence}
       observedBrands={observedBrands}
       youtubeChannels={youtubeChannels}
       channelCitationStats={stats ? Object.fromEntries(stats) : null}
