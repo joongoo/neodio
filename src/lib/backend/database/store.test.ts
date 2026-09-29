@@ -182,7 +182,8 @@ test("organizations: create, rename, list with brand counts, delete only when em
   assert.deepEqual((await store.library("neodigm", "brand-neodigm")).map((r) => r.prompt), ["Neodigm only"]);
 
   assert.equal(await store.deleteOrganization(sf.id), false, "brands still exist");
-  await store.deleteBrand(sf.id, brand.id);
+  await store.setDetectedBrandDecision(sf.id, brand.id, { name: "HubSpot", status: "excluded" });
+  assert.equal(await store.deleteBrand(sf.id, brand.id), true, "a brand with detected-brand decisions can be deleted");
   assert.equal(await store.deleteOrganization(sf.id), true);
   const [{ n }] = await store.query<{ n: number }>("SELECT count(*)::int AS n FROM prompts WHERE organization_id=$1", [sf.id]);
   assert.equal(n, 0, "the organization's prompts are removed with it");
