@@ -16,7 +16,7 @@ process.env.POSTGRES_URL_NON_POOLING = scopedUrl;
 let db: typeof import("./database");
 let importRoute: typeof import("../../app/api/collection-runs/import/route");
 
-const run = (id: string, query: string, source = "naver-ai", status = "success") => ({
+const run = (id: string, query: string, source = "naver-ai-search", status = "success") => ({
   filename: `${source}-${id}.json`,
   promptRun: {
     id,
@@ -51,7 +51,7 @@ after(async () => {
 test("collector results are imported into the current organization, idempotently", async () => {
   const store = await db.getPromptStore();
   const before = (await store.runs("neodigm")).length;
-  const res = await post({ runs: [run("run-a", "CRM 추천"), run("run-b", "CRM 추천", "google-ai", "failed")] });
+  const res = await post({ runs: [run("run-a", "CRM 추천"), run("run-b", "CRM 추천", "google-ai-overview", "failed")] });
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { imported: 2 });
 

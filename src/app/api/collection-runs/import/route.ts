@@ -4,7 +4,11 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import type { PromptRunSeed } from "@/lib/db/types";
 
 const MAX_RUNS_PER_REQUEST = 50;
-const SOURCES = new Set(["naver-ai", "google-ai"]);
+// 수집 스크립트가 rawMetadata.source에 쓰는 값 → 저장 위치(dir). 로컬 수집 결과 폴더 이름과 같다.
+const SOURCE_DIRS: Record<string, string> = {
+  "naver-ai-search": ".tmp/naver-ai",
+  "google-ai-overview": ".tmp/google-ai",
+};
 
 // 선택 수집의 "반영" — 사용자 PC의 수집기가 모은 결과(수집 스크립트가 쓴 JSON의
 // promptRun)를 브라우저가 받아 올린다. 지금 보고 있는 조직으로 저장하고, 같은
@@ -31,9 +35,9 @@ export async function POST(request: NextRequest) {
       typeof promptRun.rawResponse === "string" &&
       typeof promptRun.rawMetadata?.query === "string" &&
       typeof source === "string" &&
-      SOURCES.has(source);
+      Object.hasOwn(SOURCE_DIRS, source);
     if (!valid) return NextResponse.json({ error: "수집 결과 형식이 올바르지 않습니다." }, { status: 400 });
-    files.push({ dir: `.tmp/${source}`, filename: filename as string, promptRun: promptRun as PromptRunSeed });
+    files.push({ dir: SOURCE_DIRS[source as string], filename: filename as string, promptRun: promptRun as PromptRunSeed });
   }
 
   const orgId = (await getCurrentTenant()).orgId;
