@@ -8,6 +8,9 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlModal";
+import { BrandOptimizationModal } from "@/components/brands-management/BrandOptimizationModal";
+import { AiGenerateButton } from "@/components/ui/AiGenerateButton";
+import { applyBrandOptimization, type BrandOptimizationPlan } from "@/lib/brandOptimization";
 import { ChannelCitationSummary, SocialAccountsSection } from "@/components/brands-management/SocialAccountsSection";
 import { BrandYoutubeChannel, ManagedBrand, TrackedOtherBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
@@ -49,6 +52,7 @@ export function BrandDetailClient({
   const [pickObservedOpen, setPickObservedOpen] = useState(false);
   const [editingOtherBrand, setEditingOtherBrand] = useState<TrackedOtherBrand | null>(null);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const [addUrlOpen, setAddUrlOpen] = useState(false);
   const [channels, setChannels] = useState(youtubeChannels);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
@@ -358,6 +362,9 @@ export function BrandDetailClient({
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
+            <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setCleanupOpen(true)} disabled={brand.otherBrands.length === 0}>
+              AI로 브랜드 정리
+            </Button>
             <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setPickObservedOpen(true)}>
               가시성 개요에서 추가
             </Button>
@@ -429,6 +436,37 @@ export function BrandDetailClient({
           }}
         />
       )}
+      <BrandOptimizationModal
+        open={cleanupOpen}
+        onClose={() => setCleanupOpen(false)}
+        input={{
+          own: { name: brand.name, domain: hostnameOf(brand.url), aliases: brand.aliases },
+          registered: brand.otherBrands,
+          candidates: [],
+        }}
+        onApply={async (plan: BrandOptimizationPlan) => {
+          // 가시성 개요의 "브랜드 최적화"와 같은 서버 경로·같은 규칙(applyBrandOptimization)으로 저장한다.
+          const res = await fetch("/api/detected-brand-decisions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              brandId: brand.id,
+              status: "optimized",
+              data: {
+                ownAliases: plan.ownAliases,
+                competitors: plan.competitors,
+                exclude: plan.exclude.map((name) => ({ name })),
+              },
+            }),
+          });
+          if (!res.ok) return (await res.json().catch(() => ({}))).error ?? "브랜드 정리 결과를 저장하지 못했습니다.";
+          const applied = applyBrandOptimization(brand, plan);
+          setBrand((b) => ({ ...b, aliases: applied.aliases, otherBrands: applied.otherBrands }));
+          setDraft((d) => ({ ...d, aliases: applied.aliases, otherBrands: applied.otherBrands }));
+          showToast("브랜드 목록을 정리했습니다.");
+          return null;
+        }}
+      />
       <OptimizeAliasesModal
         open={optimizeOpen}
         onClose={() => setOptimizeOpen(false)}
@@ -755,6 +793,14 @@ function OtherBrandAliasesModal({
 // {브랜드명: [별칭...]} JSON을 붙여넣으면 본 브랜드/기타 브랜드 각각의
 // aliases에 병합한다. LlmBridgeModal과 같은 패턴이지만 결과를 서버 저장소가
 // 아니라 이 브랜드의 aliases/otherBrands에 직접 합치므로 전용 컴포넌트로 둔다.
+function hostnameOf(url: string) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 function OptimizeAliasesModal({
   open,
   onClose,
@@ -815,7 +861,7 @@ function OptimizeAliasesModal({
         <ModalCloseButton onClose={close} />
       </div>
       <p className="mt-2 text-xs text-neutral-500">
-        LLM API 연동 전까지, 아래 프롬프트를 LLM에게 물어본 뒤 답변을 붙여넣으면 이 브랜드와 기타 브랜드 전체의 별칭이 한 번에 채워집니다.
+        AI가 이 브랜드와 기타 브랜드 전체의 다른 표기를 한 번에 채워 줍니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣을 수도 있습니다.
       </p>
 
       <div className="mt-4 flex flex-col gap-1.5">
@@ -833,7 +879,10 @@ function OptimizeAliasesModal({
       </div>
 
       <div className="mt-4 flex flex-col gap-1.5">
-        <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+          <AiGenerateButton promptText={promptText} onGenerated={setPasted} onError={setError} />
+        </div>
         <textarea
           value={pasted}
           onChange={(e) => setPasted(e.target.value)}
