@@ -543,7 +543,7 @@ export function PromptStrategyClient({
         open={gscWizardOpen}
         onClose={() => setGscWizardOpen(false)}
         title="구글서치콘솔 분석 — 프롬프트 일괄 등록"
-        instructions="LLM API 연동 전까지, 아래 실측 검색어 전체에 대해 한 번에 자연어 질문을 만들어달라고 LLM에 물어본 뒤 답변을 붙여넣어 등록합니다."
+        instructions="AI가 아래 실측 검색어 전체에 대해 한 번에 자연어 질문을 만들어 줍니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣어 등록할 수도 있습니다."
         scope="gsc-keyword-prompts"
         promptText={
           gscKeywordTargets.length === 0
@@ -580,7 +580,7 @@ export function PromptStrategyClient({
         open={citationWizardOpen}
         onClose={() => setCitationWizardOpen(false)}
         title="인용 테스트 분석 — 프롬프트 일괄 등록"
-        instructions="LLM API 연동 전까지, 아래 실측 저클릭 페이지 전체에 대해 한 번에 인용 테스트 질문을 만들어달라고 LLM에 물어본 뒤 답변을 붙여넣어 등록합니다."
+        instructions="AI가 아래 실측 저클릭 페이지 전체에 대해 한 번에 인용 테스트 질문을 만들어 줍니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣어 등록할 수도 있습니다."
         scope="citation-test-prompts"
         promptText={
           citationTargets.length === 0

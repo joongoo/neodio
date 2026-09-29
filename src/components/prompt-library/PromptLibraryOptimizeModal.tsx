@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Copy, Check, Sparkles, Trash2, Pencil, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Copy, Check, Sparkles, Trash2, Pencil, ShieldCheck, Loader2 } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { PromptLibraryRow } from "@/lib/db";
@@ -28,6 +28,29 @@ const VALID_ACTIONS = new Set<Action>(["keep", "delete", "modify"]);
 function buildPromptText(rows: PromptLibraryRow[]): string {
   const dump = rows.map((r) => `${r.id}\t${r.category}\t${r.topic}\t${r.prompt}`).join("\n");
   return `다음은 우리 프롬프트 라이브러리 전체입니다 (형식: id\\t카테고리\\t토픽\\t프롬프트 원문, 총 ${rows.length}개):\n\n${dump}\n\n각 프롬프트를 검토해서 다음 중 하나로 판단해주세요:\n- keep: 그대로 유지할 것 (좋은 프롬프트)\n- delete: 삭제 권장 (중복, 브랜드명이 과도하게 들어감, 의도가 불분명, 실효성이 낮음 등)\n- modify: 문구/카테고리/토픽을 다듬으면 더 좋아질 것\n\n반드시 라이브러리의 모든 ${rows.length}개 id 각각에 대해 정확히 하나의 항목을 포함한 JSON 배열로만 답변하세요. 다른 설명은 쓰지 마세요.\n\n각 항목의 형식:\n{"id": "위 목록의 id 그대로", "action": "keep | delete | modify", "reason": "이 판단의 짧은 이유(한 문장)", "prompt": "action이 modify일 때만, 수정된 프롬프트 전문", "category": "action이 modify이고 카테고리를 바꿀 때만", "topic": "action이 modify이고 토픽을 바꿀 때만"}\n\nkeep 항목에는 prompt/category/topic을 넣지 마세요. modify 항목은 prompt/category/topic 중 실제로 바뀌는 필드만 넣어도 됩니다(안 바뀌는 필드는 생략).`;
+}
+
+// 서버가 API로 물을 때 쓰는 프롬프트 — 유지(keep)는 검토 목록에 들어가지 않으므로 답변에서 생략하게 해
+// 출력 길이를 줄인다. 라이브러리가 길면 CHUNK_SIZE개씩 나눠 물어 답변이 잘리지 않게 한다.
+const CHUNK_SIZE = 60;
+
+function buildApiPromptText(chunk: PromptLibraryRow[]): string {
+  const dump = chunk.map((r) => `${r.id}\t${r.category}\t${r.topic}\t${r.prompt}`).join("\n");
+  return `다음은 우리 프롬프트 라이브러리의 일부입니다 (형식: id\\t카테고리\\t토픽\\t프롬프트 원문, ${chunk.length}개):\n\n${dump}\n\n각 프롬프트를 검토해서 삭제하거나 수정할 것만 골라주세요:\n- delete: 삭제 권장 (중복, 브랜드명이 과도하게 들어감, 의도가 불분명, 실효성이 낮음 등)\n- modify: 문구/카테고리/토픽을 다듬으면 더 좋아질 것\n그대로 유지할 프롬프트는 답변에 포함하지 마세요.\n\n반드시 JSON 배열로만 답변하세요(설명 금지). 바꿀 게 없으면 [] 만 답하세요.\n\n각 항목의 형식:\n{"id": "위 목록의 id 그대로", "action": "delete | modify", "reason": "이 판단의 짧은 이유(한 문장)", "prompt": "action이 modify일 때만, 수정된 프롬프트 전문", "category": "action이 modify이고 카테고리를 바꿀 때만", "topic": "action이 modify이고 토픽을 바꿀 때만"}\n\nmodify 항목은 prompt/category/topic 중 실제로 바뀌는 필드만 넣어도 됩니다.`;
+}
+
+function extractJsonArray(raw: string): unknown[] | null {
+  const tryParse = (text: string) => {
+    try {
+      const value = JSON.parse(text);
+      return Array.isArray(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
+  const start = raw.indexOf("[");
+  const end = raw.lastIndexOf("]");
+  return tryParse(raw) ?? (start !== -1 && end > start ? tryParse(raw.slice(start, end + 1)) : null);
 }
 
 function parseResponse(raw: string, rows: PromptLibraryRow[]): ParsedResult | { error: string } {
@@ -102,6 +125,8 @@ export function PromptLibraryOptimizeModal({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null);
+  const autoRunRef = useRef(false);
 
   const promptText = buildPromptText(rows);
 
@@ -123,8 +148,8 @@ export function PromptLibraryOptimizeModal({
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function goToReview() {
-    const result = parseResponse(pasted, rows);
+  function goToReview(raw: string = pasted) {
+    const result = parseResponse(raw, rows);
     if ("error" in result) {
       setParseError(result.error);
       return;
@@ -135,6 +160,59 @@ export function PromptLibraryOptimizeModal({
     setChecked(new Set(result.recommendations.map((r) => r.id)));
     setStep("review");
   }
+
+  // 버튼 한 번으로: 라이브러리를 나눠 LLM API에 묻고, 답변을 합쳐 바로 검토 화면으로 보낸다.
+  // 반영(삭제/수정)은 검토 화면에서 사람이 선택한 것만 일어난다.
+  async function runAi() {
+    setParseError(null);
+    const chunks: PromptLibraryRow[][] = [];
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) chunks.push(rows.slice(i, i + CHUNK_SIZE));
+    const merged: unknown[] = [];
+    try {
+      for (const [index, chunk] of chunks.entries()) {
+        setAiProgress({ done: index, total: chunks.length });
+        const res = await fetch("/api/llm-generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promptText: buildApiPromptText(chunk) }),
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          setParseError(body?.error ?? "자동 생성하지 못했습니다. 아래에서 직접 붙여넣을 수 있습니다.");
+          return;
+        }
+        const items = extractJsonArray(body.text);
+        if (!items) {
+          setParseError("AI 답변을 JSON으로 해석하지 못했습니다. 다시 시도하거나 직접 붙여넣어 주세요.");
+          return;
+        }
+        merged.push(...items);
+      }
+      const raw = JSON.stringify(merged);
+      setPasted(raw);
+      if (merged.length === 0) {
+        setParseError("AI가 바꿀 프롬프트를 찾지 못했습니다(전부 유지).");
+        return;
+      }
+      goToReview(raw);
+    } catch {
+      setParseError("자동 생성하지 못했습니다. 네트워크를 확인해 주세요.");
+    } finally {
+      setAiProgress(null);
+    }
+  }
+
+  // 모달이 열리는 순간(= "라이브러리 최적화" 버튼을 누른 순간) 한 번만 자동 실행한다.
+  useEffect(() => {
+    if (!open) {
+      autoRunRef.current = false;
+      return;
+    }
+    if (autoRunRef.current || rows.length === 0) return;
+    autoRunRef.current = true;
+    void runAi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 열릴 때 한 번만
+  }, [open]);
 
   function toggle(id: string) {
     setChecked((prev) => {
@@ -209,12 +287,18 @@ export function PromptLibraryOptimizeModal({
       {step === "input" && (
         <>
           <p className="mt-2 text-xs text-neutral-500">
-            라이브러리 전체({rows.length}개)를 LLM에게 보내 유지/삭제/수정을 추천받고, 그 답변을 다시 붙여넣으면 검토 후 라이브러리에 반영합니다.
+            라이브러리 전체({rows.length}개)를 AI가 검토해 삭제/수정을 추천합니다. 추천은 검토 화면에서 고른 것만 반영됩니다.
           </p>
+          {aiProgress && (
+            <p className="mt-3 flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <Loader2 size={14} className="animate-spin" />
+              AI가 검토하는 중… ({aiProgress.done + 1}/{aiProgress.total})
+            </p>
+          )}
 
           <div className="mt-4 flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-neutral-700">1. 아래 프롬프트를 복사해 LLM(ChatGPT 등)에 붙여넣으세요</span>
+              <span className="text-xs font-bold text-neutral-700">직접 하려면: 아래 프롬프트를 복사해 LLM(ChatGPT 등)에 붙여넣으세요</span>
               <button
                 type="button"
                 onClick={copyPrompt}
@@ -233,7 +317,7 @@ export function PromptLibraryOptimizeModal({
           </div>
 
           <div className="mt-4 flex flex-col gap-1.5">
-            <span className="text-xs font-bold text-neutral-700">2. LLM의 답변(JSON)을 그대로 붙여넣으세요</span>
+            <span className="text-xs font-bold text-neutral-700">LLM의 답변(JSON)을 그대로 붙여넣으세요</span>
             <textarea
               value={pasted}
               onChange={(e) => {
@@ -252,7 +336,10 @@ export function PromptLibraryOptimizeModal({
             <Button variant="secondary" onClick={close}>
               취소
             </Button>
-            <Button variant="primary" disabled={!pasted.trim()} onClick={goToReview}>
+            <Button variant="secondary" disabled={aiProgress !== null} onClick={() => void runAi()}>
+              AI로 다시 실행
+            </Button>
+            <Button variant="primary" disabled={!pasted.trim()} onClick={() => goToReview()}>
               추천 검토하기
             </Button>
           </div>

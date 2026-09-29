@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Copy, Check, Sparkles } from "lucide-react";
+import { AiGenerateButton } from "@/components/ui/AiGenerateButton";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
@@ -16,6 +17,7 @@ export function LlmBridgeModal({
   title,
   instructions,
   promptText,
+  sourceUrl,
   scope,
   itemKey,
   parse,
@@ -26,6 +28,8 @@ export function LlmBridgeModal({
   title: string;
   instructions?: string;
   promptText: string;
+  /** 페이지를 근거로 답해야 할 때 그 URL — AI 자동 생성이 본문을 가져와 붙인다. */
+  sourceUrl?: string;
   scope: string;
   itemKey: string;
   /** 붙여넣은 텍스트를 저장 가능한 데이터로 바꾼다. 실패하면 error 메시지를 반환한다. */
@@ -120,7 +124,10 @@ export function LlmBridgeModal({
       </div>
 
       <div className="mt-4 flex flex-col gap-1.5">
-        <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+          <AiGenerateButton promptText={promptText} sourceUrl={sourceUrl} onGenerated={setPasted} onError={setError} />
+        </div>
         <textarea
           value={pasted}
           onChange={(e) => setPasted(e.target.value)}

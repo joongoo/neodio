@@ -537,7 +537,8 @@ export function ContentAuditClient({
           open={guideTarget !== null}
           onClose={() => setGuideTarget(null)}
           title="LLM 기반 수정 가이드 등록"
-          instructions="LLM API 연동 전까지, 이 URL을 어떻게 수정하면 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          instructions="AI가 이 페이지의 실제 본문을 읽고 수정 가이드를 작성합니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣어 등록할 수도 있습니다."
+          sourceUrl={guideTarget.url}
           scope={`content-guide-${data.metricKey}`}
           itemKey={guideTarget.url}
           promptText={`다음 URL의 "${data.metricLabel}"이(가) 기준(${data.unit === "pt" ? "60pt 이상" : "50% 이상"})에 못 미칩니다: ${guideTarget.url}\n현재 점수: ${guideTarget.score}${data.unit}\n\n${data.description}\n\n이 페이지를 실제로 어떻게 수정하면 이 지표를 개선할 수 있을지, 구체적인 수정 가이드를 문단으로 작성해주세요.`}

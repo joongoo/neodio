@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Copy, Check, Sparkles } from "lucide-react";
+import { AiGenerateButton } from "@/components/ui/AiGenerateButton";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
@@ -117,7 +118,10 @@ export function LlmBulkBridgeModal({
       </div>
 
       <div className="mt-4 flex flex-col gap-1.5">
-        <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-neutral-700">2. LLM의 답변을 그대로 붙여넣으세요</span>
+          <AiGenerateButton promptText={promptText} onGenerated={setPasted} onError={setError} />
+        </div>
         <textarea
           value={pasted}
           onChange={(e) => setPasted(e.target.value)}

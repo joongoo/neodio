@@ -180,7 +180,7 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
           open={guideOpen}
           onClose={() => setGuideOpen(false)}
           title="LLM 기반 콘텐츠 생성 가이드 등록"
-          instructions="LLM API 연동 전까지, 이 토픽으로 콘텐츠를 만들 때 어떤 내용/형식이 좋을지 LLM에게 직접 물어본 뒤 답변을 붙여넣어 등록합니다."
+          instructions="AI가 이 토픽으로 콘텐츠를 만들 때 어떤 내용과 형식이 좋을지 가이드를 작성합니다. 직접 하려면 프롬프트를 복사해 LLM에 물어본 뒤 답변을 붙여넣어 등록할 수도 있습니다."
           scope="topic-guide"
           itemKey={row.topic}
           promptText={`다음은 AI 검색/챗봇에서 자주 등장하지만 아직 우리 브랜드가 언급되지 않는 토픽입니다: "${row.topic}" (마켓: ${row.market})\n\n이 토픽에 대해 우리 브랜드가 언급/인용될 수 있는 콘텐츠를 만들려면 어떤 제목/구성/핵심 내용으로 작성하면 좋을지 구체적인 콘텐츠 생성 가이드를 문단으로 작성해주세요.`}
