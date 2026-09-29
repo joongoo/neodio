@@ -269,3 +269,24 @@ test("partner role exists only when the own brand sells a product: prompt offers
   assert.deepEqual(dropped.plan.roles?.map((r) => r.name), ["Adobe"]);
   assert.equal(dropped.droppedCount, 1);
 });
+
+test("prompt asks for deletion of unrelated brands first, with reasons, without deleting related vendors", () => {
+  const text = buildBrandOptimizationPrompt(input);
+  assert.match(text, /가장 먼저 삭제할 것\(exclude\)/);
+  assert.match(text, /업종·시장과 무관하거나/);
+  assert.match(text, /exclude에 넣지 말고 역할로 분류/);
+  assert.match(text, /"exclude": \[\{"name": "삭제할 이름", "reason"/);
+});
+
+test("parse keeps the deletion reason of excluded brands, trimmed and per name", () => {
+  const raw = JSON.stringify({
+    ownAliases: [],
+    competitors: [],
+    exclude: [{ name: "마케팅 자동화", reason: "  분야명이라 업체가 아님 " }, { name: "HubSpot" }],
+  });
+  const result = parseBrandOptimization(raw, input);
+  assert.ok("plan" in result);
+  assert.deepEqual(result.plan.exclude, ["마케팅 자동화", "HubSpot"]);
+  assert.equal(result.plan.excludeReasons?.["마케팅 자동화"], "분야명이라 업체가 아님");
+  assert.equal(result.plan.excludeReasons?.["hubspot"], undefined);
+});

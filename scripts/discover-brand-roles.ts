@@ -50,7 +50,10 @@ async function main() {
       console.log(`  - ${r.name}${r.tier ? ` [${TIER_LABEL[r.tier]}]` : ""}${registeredKeys.has(nameKey(r.name)) ? "" : " [미등록 후보]"}  (답변 ${e?.answers ?? 0}, 자사 동반 ${e?.withOwn ?? 0}) ${r.description ?? ""}\n      ↳ ${r.reason ?? ""}`);
     }
   }
-  if (plan.exclude.length) console.log(`\n■ 제외 제안: ${plan.exclude.join(", ")}`);
+  if (plan.exclude.length) {
+    console.log(`\n■ 삭제 제안 (${plan.exclude.length})`);
+    for (const name of plan.exclude) console.log(`  - ${name}${plan.excludeReasons?.[nameKey(name)] ? ` — ${plan.excludeReasons[nameKey(name)]}` : ""}`);
+  }
   // 웹 검색 없이 AI 지식만으로 제안한 목록에 없는 경쟁사 — 미검증이라 이 스크립트는 저장하지 않는다(화면의 브랜드 최적화에서 확인 후 등록).
   const suggestions = plan.suggestions ?? [];
   if (suggestions.length) {

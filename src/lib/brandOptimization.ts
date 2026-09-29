@@ -108,8 +108,11 @@ export interface BrandOptimizationPlan {
   ownAliases: string[];
   /** 같은 경쟁사의 다른 표기를 대표 이름 하나로 묶은 것 */
   competitors: OptimizationCompetitor[];
-  /** 업체가 아닌 것(일반 개념어·부서·기능·분야명) — 경쟁 목록에 있으면 빼고, 후보에서는 숨긴다 */
+  /** 삭제할 것 — 업체가 아닌 것(일반 개념어·부서·기능·분야명)과 우리 업종과 무관하거나 경쟁사로 추적할 가치가 없는 업체.
+   *  기타 브랜드 목록에 있으면 빼고, 후보에서는 숨긴다. */
   exclude: string[];
+  /** 삭제 이유(nameKey → 이유) — 검토 화면에 보여준다. */
+  excludeReasons?: Record<string, string>;
   /** 역할 분류(경쟁사·솔루션·채널…)와 한 줄 설명 */
   roles?: BrandRoleAssignment[];
   /** 목록에 없는 경쟁사 제안(미검증) */
@@ -169,7 +172,10 @@ export function buildBrandOptimizationPrompt({ own, registered, candidates, evid
     "규칙:",
     "- 우리 브랜드의 다른 표기(한글/영문/띄어쓰기/줄임말 등)로 판단되는 항목은 ownAliases에 넣으세요.",
     "- 같은 회사의 다른 표기는 competitors에 대표 name 하나와 aliases로 묶으세요(역할 분류와 별개로, 표기를 합칠 때만 씁니다).",
-    "- exclude에는 회사가 아닌 것만 넣으세요: 직책, 일반 개념어, 부서명, 기능명, 분야명, 제품 카테고리. 소프트웨어·서비스를 파는 회사, 플랫폼, 매체는 회사이므로 exclude에 넣지 말고 역할로 분류하세요.",
+    "- 가장 먼저 삭제할 것(exclude)을 고르세요. 다음 둘 중 하나면 exclude에 넣고 reason에 이유를 한 줄로 쓰세요:",
+    "  (1) 회사가 아닌 것: 직책, 일반 개념어, 부서명, 기능명, 분야명, 제품 카테고리.",
+    "  (2) 우리 업종·시장과 무관하거나 경쟁사·솔루션·파트너·채널 어느 쪽으로도 추적할 가치가 없는 회사: 다른 산업의 브랜드(예: 소비재·금융·제조·유통 대기업), 우리 고객이 우리와 비교하거나 함께 쓸 일이 없는 회사.",
+    "  단, 우리가 구축·연동·재판매하는 소프트웨어 벤더와 플랫폼, 같은 서비스를 파는 다른 에이전시·SI·컨설팅사, 우리 고객과 만나는 매체는 무관하지 않습니다 — exclude에 넣지 말고 역할로 분류하세요. 삭제는 되돌리기 어려우니 애매하면 넣지 마세요.",
     "- exclude와 competitors에는 아래 목록의 대표 이름만 쓰세요. 괄호 안 다른 표기나 그 회사의 제품명·하위 서비스명은 쓰지 마세요.",
     "- 위 목록에 없는 이름은 절대 만들지 마세요. 판단이 애매하면 넣지 마세요.",
     "- 바꿀 것이 없는 항목은 어디에도 넣지 않습니다.",
@@ -178,7 +184,7 @@ export function buildBrandOptimizationPrompt({ own, registered, candidates, evid
   if (classify) {
     lines.push(
       "",
-      "역할 분류(roles): exclude에 넣지 않은 등록 브랜드와 후보 전부에 대해 빠짐없이 우리와의 관계를 kind로 판정하세요.",
+      "삭제하지 않고 남긴 등록 브랜드와 후보 전부에 대해 역할 분류(roles)를 하세요 — 삭제는 위에서 끝났으므로 여기서는 남은 것만 다룹니다. exclude에 넣지 않은 등록 브랜드와 후보 전부에 대해 빠짐없이 우리와의 관계를 kind로 판정하세요.",
       "먼저 위 '우리 사업'을 읽고 우리가 (가) 소프트웨어 제품을 파는 회사인지, (나) 구축·컨설팅·대행 같은 서비스를 파는 회사인지 정한 뒤, 같은 유형의 공급자만 경쟁사로 보세요.",
       "예) 우리가 소프트웨어 구축·컨설팅 서비스를 제공하는 에이전시라면, 그 소프트웨어를 만드는 벤더·플랫폼 회사는 competitor가 아니라 solution이고, 같은 구축·컨설팅 서비스를 파는 다른 에이전시·SI·컨설팅사가 competitor입니다. 우리가 소프트웨어 제품을 파는 회사라면 같은 문제를 푸는 다른 제품(회사)이 competitor입니다.",
       '- "competitor"(경쟁사): 우리 고객이 같은 문제를 풀려고 우리 대신 고를 수 있는, 우리와 같은 유형의 공급자(같은 층위, 같은 시장·고객군). 핵심은 "대체 가능성"입니다. 단순히 서비스가 일부 겹치는 정도가 아니라, 비슷한 고객과 프로젝트 예산을 놓고 실제로 맞붙을 가능성이 있어야 합니다.',
@@ -189,7 +195,7 @@ export function buildBrandOptimizationPrompt({ own, registered, candidates, evid
         ? ['- "partner"(파트너·구축사): 우리가 소프트웨어 제품·플랫폼을 파는 회사이므로, 그 제품을 구축·판매·연동·운영해 주는 에이전시·SI·리셀러(판매·구축 쪽 협력 업체). 우리와 같은 제품을 파는 회사는 partner가 아니라 competitor입니다.']
         : []),
       '- "channel"(채널·매체): 고객과 만나는 매체·커뮤니티·SNS·포털·미디어.',
-      '- "other"(기타): 위에 해당하지 않는 업체(예: 무관한 대기업).',
+      '- "other"(기타): 우리 업종과 관련은 있지만 위 어디에도 맞지 않는 업체. 업종과 무관한 업체는 여기 말고 exclude로 삭제하세요.',
       '- "unclassified"(미분류): 근거가 부족하거나 판단이 애매함. 애매하면 competitor로 넣지 말고 이걸 쓰세요 — 잘못 넣은 경쟁사는 경쟁 비교를 왜곡합니다.',
       "- 우리와 함께 언급된 답변 수가 많다는 것만으로 경쟁사라고 판단하지 마세요. 파트너·솔루션도 함께 나옵니다. 답변에서 어떤 역할로 소개되는지를 보세요.",
       "- description에는 위 답변 대목에 근거한 한 줄 설명(60자 이내)을 쓰세요. 근거가 없으면 비우세요. reason에는 판정 이유를 짧게 쓰세요.",
@@ -199,13 +205,13 @@ export function buildBrandOptimizationPrompt({ own, registered, candidates, evid
       "- name은 공식 표기 하나, description은 사업을 한 줄(60자 이내), reason은 왜 우리와 경쟁하는지 짧게 쓰세요.",
       "",
       "응답 형식:",
-      '{"ownAliases": ["우리 브랜드의 다른 표기"], "competitors": [{"name": "대표 이름", "aliases": ["다른 표기"]}], "exclude": ["제외할 이름"], "roles": [{"name": "브랜드", "kind": "' + kindChoices + '", "tier": "core|adjacent|enterprise|niche (competitor일 때만)", "description": "한 줄 설명", "reason": "판정 이유"}], "suggestions": [{"name": "목록에 없는 경쟁사", "tier": "core|adjacent|enterprise|niche", "description": "한 줄 설명", "reason": "경쟁 이유"}]}'
+      '{"ownAliases": ["우리 브랜드의 다른 표기"], "competitors": [{"name": "대표 이름", "aliases": ["다른 표기"]}], "exclude": [{"name": "삭제할 이름", "reason": "삭제 이유 한 줄"}], "roles": [{"name": "브랜드", "kind": "' + kindChoices + '", "tier": "core|adjacent|enterprise|niche (competitor일 때만)", "description": "한 줄 설명", "reason": "판정 이유"}], "suggestions": [{"name": "목록에 없는 경쟁사", "tier": "core|adjacent|enterprise|niche", "description": "한 줄 설명", "reason": "경쟁 이유"}]}'
     );
   } else {
     lines.push(
       "",
       "응답 형식:",
-      '{"ownAliases": ["우리 브랜드의 다른 표기"], "competitors": [{"name": "대표 경쟁사명", "aliases": ["다른 표기"]}], "exclude": ["제외할 이름"]}'
+      '{"ownAliases": ["우리 브랜드의 다른 표기"], "competitors": [{"name": "대표 경쟁사명", "aliases": ["다른 표기"]}], "exclude": [{"name": "삭제할 이름", "reason": "삭제 이유 한 줄"}]}'
     );
   }
   return lines.join("\n");
@@ -255,8 +261,15 @@ export function parseBrandOptimization(raw: string, input: BrandOptimizationInpu
   );
   // 제외는 등록된 브랜드나 후보의 대표 이름만 — 별칭·제품명을 제외 대상으로 삼는 답은 버린다.
   const excludable = new Set([...input.registered.map((r) => r.name), ...input.candidates.map((c) => c.name)].map(nameKey));
+  const excludeReasons: Record<string, string> = {};
   const exclude = unique(
     (Array.isArray(data.exclude) ? data.exclude : [])
+      .map((item) => {
+        const reason = typeof item === "object" && item !== null ? (item as { reason?: unknown }).reason : undefined;
+        const name = typeof item === "object" && item !== null ? (item as { name?: unknown }).name : item;
+        if (typeof name === "string" && typeof reason === "string" && reason.trim()) excludeReasons[nameKey(name)] = reason.trim().slice(0, 160);
+        return item;
+      })
       .map((item) => accept(typeof item === "object" && item !== null ? (item as { name?: unknown }).name : item))
       .filter((v): v is string => v !== null)
       .filter((name) => {
@@ -331,7 +344,7 @@ export function parseBrandOptimization(raw: string, input: BrandOptimizationInpu
   if (ownAliases.length === 0 && exclude.length === 0 && competitors.length === 0 && roles.length === 0 && suggestions.length === 0) {
     return { error: "정리할 항목이 없습니다 — AI가 바꿀 것을 찾지 못했거나 목록에 없는 이름만 답했습니다." };
   }
-  return { plan: { ownAliases, competitors, exclude, roles, suggestions }, droppedCount: dropped };
+  return { plan: { ownAliases, competitors, exclude, excludeReasons, roles, suggestions }, droppedCount: dropped };
 }
 
 export interface BrandForOptimization {

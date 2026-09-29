@@ -165,7 +165,7 @@ export function BrandOptimizationModal({
       {step === "input" && (
         <>
           <p className="mt-2 text-xs text-neutral-500">
-            브랜드 이름들을 AI가 검토해 자사 표기, 같은 경쟁사의 다른 표기, 업체가 아닌 항목(제외)으로 나누고, 수집된 답변을 근거로 경쟁사·솔루션·채널 같은 역할도 분류합니다. 결과는 확인하고 고른 것만 반영됩니다.
+            브랜드 이름들을 AI가 검토해 먼저 업종과 무관하거나 경쟁사로 추적할 가치가 없는 브랜드를 삭제 대상으로 고르고, 남은 브랜드의 역할(경쟁사·솔루션·채널)·등급·설명·별칭을 정리합니다. 결과는 확인하고 고른 것만 반영됩니다.
           </p>
           {nothingToDo ? (
             <p className="mt-4 rounded-md bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500">정리할 경쟁 브랜드나 후보가 아직 없습니다.</p>
@@ -248,6 +248,20 @@ export function BrandOptimizationModal({
             {droppedCount > 0 && <span className="ml-1 text-amber-700">(목록에 없는 이름 {droppedCount}개는 무시했습니다)</span>}
           </p>
           <div className="mt-3 flex max-h-[50vh] flex-col gap-4 overflow-y-auto pr-1">
+            {plan.exclude.length > 0 && (
+              <ReviewGroup title="삭제 — 업종과 무관하거나 경쟁사로 추적할 가치가 없는 브랜드">
+                {plan.exclude.map((name) => {
+                  const reason = plan.excludeReasons?.[nameKey(name)];
+                  return (
+                    <ReviewItem key={name} checked={checked.has(`ex:${nameKey(name)}`)} onToggle={() => toggle(`ex:${nameKey(name)}`)}>
+                      <b>{name}</b>
+                      <Note>{registeredKeys.has(nameKey(name)) ? "기타 브랜드에서 삭제" : "후보에서 숨김"}</Note>
+                      {reason && <span className="basis-full text-[11px] text-neutral-500">{reason}</span>}
+                    </ReviewItem>
+                  );
+                })}
+              </ReviewGroup>
+            )}
             {plan.ownAliases.length > 0 && (
               <ReviewGroup title="우리 브랜드의 다른 표기로 이동">
                 {plan.ownAliases.map((name) => (
@@ -341,16 +355,6 @@ export function BrandOptimizationModal({
                     </ReviewItem>
                   );
                 })}
-              </ReviewGroup>
-            )}
-            {plan.exclude.length > 0 && (
-              <ReviewGroup title="업체가 아니어서 제외">
-                {plan.exclude.map((name) => (
-                  <ReviewItem key={name} checked={checked.has(`ex:${nameKey(name)}`)} onToggle={() => toggle(`ex:${nameKey(name)}`)}>
-                    <b>{name}</b>
-                    {registeredKeys.has(nameKey(name)) && <Note>경쟁사 목록에서 제거</Note>}
-                  </ReviewItem>
-                ))}
               </ReviewGroup>
             )}
           </div>
