@@ -547,7 +547,7 @@ async function install() {
     // 인터넷에서 받은 파일 표시를 지워야 macOS가 실행을 막지 않는다.
     if (process.platform === "darwin") spawnSync("xattr", ["-dr", "com.apple.quarantine", RUNTIME_DIR], { stdio: "ignore" });
   }
-  const nodePath = path.join(RUNTIME_DIR, process.platform === "win32" ? "node.exe" : "node");
+  const nodePath = path.join(RUNTIME_DIR, process.platform === "win32" ? "neodio-collector.exe" : "neodio-collector");
   const agentPath = path.join(RUNTIME_DIR, "app", "agent.mjs");
   registerAutostart(nodePath, agentPath);
 

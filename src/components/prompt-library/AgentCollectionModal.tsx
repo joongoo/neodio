@@ -341,7 +341,17 @@ function CollectorProblem({
           <>
             <li>받은 zip 파일을 더블클릭해 압축을 풉니다.</li>
             <li>
-              폴더 안의 <b>install.command</b>를 우클릭 → <b>열기</b>를 누릅니다(처음 한 번은 보안 확인 창이 뜹니다).
+              폴더 안의 <b>install.command</b>를 더블클릭합니다. 아래 창이 뜨면 <b>완료</b>를 누릅니다(휴지통으로 이동은 누르지 마세요).
+              <GuideImage src="mac-1-blocked" alt="install.command 열지 않음 창" width={230} />
+            </li>
+            <li>
+              <b>시스템 설정 → 개인정보 보호 및 보안</b>을 열고 <b>맨 아래로 스크롤</b>하면 나오는 &quot;install.command&quot; 항목에서 <b>그래도 열기</b>를
+              누릅니다.
+              <GuideImage src="mac-2-settings" alt="개인정보 보호 및 보안의 그래도 열기 버튼" width={380} />
+            </li>
+            <li>
+              다시 확인 창이 뜨면 <b>그래도 열기</b>를 누르고 Mac 암호를 입력합니다. 터미널이 열리며 설치가 진행됩니다.
+              <GuideImage src="mac-3-confirm" alt="열겠습니까 확인 창" width={230} />
             </li>
             <li>터미널에 &quot;설치 완료&quot;가 보이면 아래 &quot;다시 확인&quot;을 누릅니다.</li>
           </>
@@ -365,6 +375,13 @@ function CollectorProblem({
 
       <ProblemActions busy={busy} onRetry={onRetry} onBack={onBack} />
     </div>
+  );
+}
+
+function GuideImage({ src, alt, width }: { src: string; alt: string; width: number }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- 안내용 고정 스크린샷, 최적화 불필요
+    <img src={`/collector-guide/${src}.png`} alt={alt} width={width} className="mt-1.5 max-w-full rounded-md border border-neutral-200" />
   );
 }
 

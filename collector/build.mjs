@@ -23,6 +23,9 @@ const PLATFORMS = {
   "win-x64": { node: `node-v${NODE_VERSION}-win-x64`, archive: "zip", exe: "node.exe" },
 };
 
+// 번들 안 Node 실행 파일의 이름 — macOS "로그인 항목/백그라운드 허용"과 작업 관리자에 이 이름이 보인다.
+const RUNTIME_NAME = { "mac-arm64": "neodio-collector", "mac-x64": "neodio-collector", "win-x64": "neodio-collector.exe" };
+
 function args(name) {
   return process.argv.flatMap((arg, i) => (arg === `--${name}` && process.argv[i + 1] ? [process.argv[i + 1]] : arg.startsWith(`--${name}=`) ? [arg.slice(name.length + 3)] : []));
 }
@@ -89,26 +92,24 @@ async function bundle(appDir, origins) {
 
 function writeLaunchers(dir, platform, version) {
   if (platform.startsWith("mac")) {
-    const launcher = path.join(dir, "neodio-collector");
-    writeFileSync(launcher, `#!/bin/sh\nDIR="$(cd "$(dirname "$0")" && pwd)"\nexec "$DIR/node" "$DIR/app/agent.mjs" "$@"\n`);
     const installer = path.join(dir, "install.command");
     writeFileSync(
       installer,
-      `#!/bin/sh\ncd "$(dirname "$0")"\nxattr -dr com.apple.quarantine . 2>/dev/null\n./node app/agent.mjs install "$@"\necho\nread -p "Enter 키를 누르면 창이 닫힙니다." _\n`
+      `#!/bin/sh\ncd "$(dirname "$0")"\nxattr -dr com.apple.quarantine . 2>/dev/null\n./neodio-collector app/agent.mjs install "$@"\necho\nread -p "Enter 키를 누르면 창이 닫힙니다." _\n`
     );
     const uninstaller = path.join(dir, "uninstall.command");
-    writeFileSync(uninstaller, `#!/bin/sh\ncd "$(dirname "$0")"\n./node app/agent.mjs uninstall\necho\nread -p "Enter 키를 누르면 창이 닫힙니다." _\n`);
-    for (const file of [launcher, installer, uninstaller, path.join(dir, "node")]) chmodSync(file, 0o755);
+    writeFileSync(uninstaller, `#!/bin/sh\ncd "$(dirname "$0")"\n./neodio-collector app/agent.mjs uninstall\necho\nread -p "Enter 키를 누르면 창이 닫힙니다." _\n`);
+    for (const file of [installer, uninstaller, path.join(dir, RUNTIME_NAME[platform])]) chmodSync(file, 0o755);
   } else {
-    writeFileSync(path.join(dir, "install.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nnode.exe app\\agent.mjs install %*\r\necho.\r\npause\r\n`);
-    writeFileSync(path.join(dir, "uninstall.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nnode.exe app\\agent.mjs uninstall\r\necho.\r\npause\r\n`);
+    writeFileSync(path.join(dir, "install.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs install %*\r\necho.\r\npause\r\n`);
+    writeFileSync(path.join(dir, "uninstall.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs uninstall\r\necho.\r\npause\r\n`);
   }
   writeFileSync(
     path.join(dir, "README.txt"),
     [
       `네오디오 수집기 ${version}`,
       "",
-      platform.startsWith("mac") ? "설치: install.command를 우클릭 → 열기" : "설치: install.cmd 더블클릭",
+      platform.startsWith("mac") ? "설치: install.command를 더블클릭 → 차단되면 시스템 설정 > 개인정보 보호 및 보안 > 맨 아래로 스크롤 > 그래도 열기" : "설치: install.cmd 더블클릭",
       "설치하면 로그인할 때마다 자동으로 실행되고, 웹의 '선택 수집'이 이 PC의 Chrome으로 수집합니다.",
       "Google Chrome이 설치돼 있어야 합니다.",
       platform.startsWith("mac") ? "제거: uninstall.command" : "제거: uninstall.cmd",
@@ -133,7 +134,7 @@ async function main() {
     mkdirSync(path.join(dir, "app"), { recursive: true });
     console.log(`▶ ${name}`);
     await bundle(path.join(dir, "app"), origins);
-    copyFileSync(local ? process.execPath : await nodeBinary(platform), path.join(dir, PLATFORMS[platform].exe));
+    copyFileSync(local ? process.execPath : await nodeBinary(platform), path.join(dir, RUNTIME_NAME[platform]));
     writeLaunchers(dir, platform, version);
     const zip = path.join(OUT, `${name}.zip`);
     rmSync(zip, { force: true });

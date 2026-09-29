@@ -74,13 +74,13 @@ node collector/build.mjs --local-node                             # 이 PC용만
 
 Google Chrome이 있어야 한다.
 
-- **macOS**: zip 풀기 → `install.command` 우클릭 → 열기(처음 한 번 보안 확인). `~/.neodio-collector/runtime`에
+- **macOS**: zip 풀기 → `install.command` 더블클릭 → "열지 않음" 창에서 완료 → 시스템 설정 → 개인정보 보호 및 보안 → 맨 아래로 스크롤 → "그래도 열기" → 확인 창에서 다시 "그래도 열기" + 암호. `~/.neodio-collector/runtime`에
   복사되고 `~/Library/LaunchAgents/com.neodio.collector.plist`로 로그인 시 자동 실행된다.
 - **Windows**: zip 풀기 → `install.cmd` 더블클릭. `%LOCALAPPDATA%\NeodioCollector\runtime`에 복사되고
   시작프로그램 폴더의 `neodio-collector.vbs`로 로그인 시 창 없이 실행된다(관리자 권한 불필요).
 - 제거: `uninstall.command` / `uninstall.cmd`. 수집 결과·설정·로그(`logs/agent.log`)는 남는다.
 
-설치 파일은 코드 서명·공증을 하지 않았다. macOS는 우클릭 → 열기, Windows는 "추가 정보 → 실행"이 한 번 필요하다.
+설치 파일은 코드 서명·공증을 하지 않았다. macOS는 시스템 설정의 "그래도 열기"(Sequoia 이후 우클릭 → 열기로는 우회되지 않는다), Windows는 "추가 정보 → 실행"이 한 번 필요하다.
 
 ## 업데이트
 
