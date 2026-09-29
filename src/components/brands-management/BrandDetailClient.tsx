@@ -10,7 +10,17 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { SitemapCrawlModal } from "@/components/brands-management/SitemapCrawlModal";
 import { BrandOptimizationModal } from "@/components/brands-management/BrandOptimizationModal";
 import { AiGenerateButton } from "@/components/ui/AiGenerateButton";
-import { applyBrandOptimization, type BrandOptimizationPlan } from "@/lib/brandOptimization";
+import {
+  applyBrandOptimization,
+  BRAND_KINDS,
+  BRAND_KIND_LABEL,
+  COMPETITOR_TIERS,
+  TIER_LABEL,
+  type BrandEvidence,
+  type BrandKind,
+  type BrandOptimizationPlan,
+  type CompetitorTier,
+} from "@/lib/brandOptimization";
 import { ChannelCitationSummary, SocialAccountsSection } from "@/components/brands-management/SocialAccountsSection";
 import { BrandYoutubeChannel, ManagedBrand, TrackedOtherBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
@@ -25,12 +35,15 @@ type SitemapCrawlStatus = Pick<SitemapCrawlJob, "stage" | "log" | "error" | "res
 // (brandsManagementStore.ts)에 반영된다.
 export function BrandDetailClient({
   initial,
+  roleEvidence,
   observedBrands = [],
   youtubeChannels = [],
   channelCitationStats = null,
   citationsHref,
 }: {
   initial: ManagedBrand;
+  /** 브랜드 최적화의 역할 분류 근거(브랜드 이름 → 답변 근거). 수집 데이터가 없으면 이름 정리만 한다. */
+  roleEvidence?: Record<string, BrandEvidence>;
   /** 가시성 개요에서 실제로 언급된 브랜드 목록 — "추적할 기타 브랜드" +버튼이 여기서 고른다. */
   observedBrands?: { name: string; mentions: number }[];
   /** YouTube AIO 인용 판정용 채널 — 소셜 계정의 YouTube 항목과 짝지어 보여준다. */
@@ -354,16 +367,16 @@ export function BrandDetailClient({
       </Card>
 
       <Card className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-[280px] flex-1">
             <h2 className="text-base font-bold text-neutral-900">추적할 기타 브랜드</h2>
             <p className="mt-0.5 text-xs text-neutral-500">
-              경쟁사 등 함께 추적할 다른 브랜드입니다. 이름을 누르면 별칭(다른 표기)을 관리할 수 있습니다.
+              함께 추적할 다른 브랜드를 경쟁사·솔루션·채널 같은 역할로 나눠 관리합니다. 이름을 누르면 역할, 등급, 설명, 별칭(다른 표기)을 고칠 수 있습니다.
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setCleanupOpen(true)} disabled={brand.otherBrands.length === 0}>
-              AI로 브랜드 정리
+            <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setCleanupOpen(true)}>
+              AI로 브랜드 정리·경쟁사 탐색
             </Button>
             <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setPickObservedOpen(true)}>
               가시성 개요에서 추가
@@ -374,30 +387,46 @@ export function BrandDetailClient({
           </div>
         </div>
         {brand.otherBrands.length === 0 ? (
-          <p className="text-xs text-neutral-400">아직 추가된 브랜드가 없습니다.</p>
+          <p className="text-xs text-neutral-400">아직 추가된 브랜드가 없습니다. &quot;AI로 브랜드 정리·경쟁사 탐색&quot;을 누르면 자사 설명을 기준으로 경쟁사를 제안합니다.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {brand.otherBrands.map((b, i) => (
-              <span key={b.name} className="flex items-center gap-1.5 rounded-full bg-neutral-100 py-1 pl-3 pr-2 text-xs text-neutral-700">
-                <button
-                  type="button"
-                  onClick={() => setEditingOtherBrand(b)}
-                  className="flex items-center gap-1 cursor-pointer hover:underline"
-                  title={b.aliases.length > 0 ? `별칭: ${b.aliases.join(", ")}` : "별칭 없음 — 눌러서 추가"}
-                >
-                  {b.name}
-                  {b.aliases.length > 0 && <span className="text-neutral-400">({b.aliases.length})</span>}
-                  <Pencil size={10} className="text-neutral-400" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`${b.name} 삭제`}
-                  onClick={() => applyListChange({ otherBrands: brand.otherBrands.filter((_, idx) => idx !== i) })}
-                  className="cursor-pointer text-neutral-400 hover:text-red-600"
-                >
-                  <X size={12} />
-                </button>
-              </span>
+          <div className="flex flex-col gap-4">
+            {!brand.otherBrands.some((b) => b.kind) && (
+              <p className="text-xs text-neutral-400">아직 역할이 나뉘지 않았습니다. &quot;AI로 브랜드 정리·경쟁사 탐색&quot;을 누르면 경쟁사·솔루션·채널로 분류해 줍니다.</p>
+            )}
+            {groupOtherBrands(brand.otherBrands).map((group) => (
+              <div key={group.id} className="flex flex-col gap-1.5">
+                {brand.otherBrands.some((b) => b.kind) && (
+                  <h3 className="text-xs font-bold text-neutral-600">
+                    {group.label} <span className="font-normal text-neutral-400">{group.items.length}</span>
+                  </h3>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {group.items.map(({ brand: b, index: i }) => (
+                    <span key={b.name} className="flex items-center gap-1.5 rounded-full bg-neutral-100 py-1 pl-3 pr-2 text-xs text-neutral-700">
+                      <button
+                        type="button"
+                        onClick={() => setEditingOtherBrand(b)}
+                        className="flex items-center gap-1 cursor-pointer hover:underline"
+                        title={[b.description, b.aliases.length > 0 ? `별칭: ${b.aliases.join(", ")}` : "별칭 없음 — 눌러서 추가"].filter(Boolean).join("\n")}
+                      >
+                        {b.name}
+                        {b.tier && <span className="rounded bg-emerald-50 px-1 text-[10px] font-bold text-emerald-700">{TIER_LABEL[b.tier]}</span>}
+                        {b.origin === "ai-suggested" && <span className="rounded bg-amber-50 px-1 text-[10px] font-bold text-amber-700">AI 제안</span>}
+                        {b.aliases.length > 0 && <span className="text-neutral-400">({b.aliases.length})</span>}
+                        <Pencil size={10} className="text-neutral-400" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${b.name} 삭제`}
+                        onClick={() => applyListChange({ otherBrands: brand.otherBrands.filter((_, idx) => idx !== i) })}
+                        className="cursor-pointer text-neutral-400 hover:text-red-600"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -425,12 +454,12 @@ export function BrandDetailClient({
         }
       />
       {editingOtherBrand && (
-        <OtherBrandAliasesModal
+        <OtherBrandEditModal
           otherBrand={editingOtherBrand}
           onClose={() => setEditingOtherBrand(null)}
-          onSave={(aliases) => {
+          onSave={(patch) => {
             applyListChange({
-              otherBrands: brand.otherBrands.map((b) => (b.name === editingOtherBrand.name ? { ...b, aliases } : b)),
+              otherBrands: brand.otherBrands.map((b) => (b.name === editingOtherBrand.name ? { ...b, ...patch } : b)),
             });
             setEditingOtherBrand(null);
           }}
@@ -440,9 +469,10 @@ export function BrandDetailClient({
         open={cleanupOpen}
         onClose={() => setCleanupOpen(false)}
         input={{
-          own: { name: brand.name, domain: hostnameOf(brand.url), aliases: brand.aliases },
+          own: { name: brand.name, domain: hostnameOf(brand.url), aliases: brand.aliases, description: brand.description, industry: brand.industry, markets: brand.markets },
           registered: brand.otherBrands,
           candidates: [],
+          evidence: roleEvidence,
         }}
         onApply={async (plan: BrandOptimizationPlan) => {
           // 가시성 개요의 "브랜드 최적화"와 같은 서버 경로·같은 규칙(applyBrandOptimization)으로 저장한다.
@@ -456,6 +486,8 @@ export function BrandDetailClient({
                 ownAliases: plan.ownAliases,
                 competitors: plan.competitors,
                 exclude: plan.exclude.map((name) => ({ name })),
+                roles: plan.roles ?? [],
+                suggestions: plan.suggestions ?? [],
               },
             }),
           });
@@ -717,19 +749,51 @@ function PickObservedBrandsModal({
   );
 }
 
-// "추적할 기타 브랜드" 칩 하나의 별칭 편집 — Salesforce/세일즈포스/세일즈포스
-// 닷컴처럼 표기가 다른 언급을 같은 브랜드로 묶는다.
-function OtherBrandAliasesModal({
+// 기타 브랜드를 역할별로 묶는다 — 경쟁사는 등급 순(핵심 → 인접 → 상위 시장 → 소규모 전문 → 등급 미정), 분류 전은 마지막.
+const OTHER_BRAND_GROUPS: { id: string; label: string; match: (b: TrackedOtherBrand) => boolean }[] = [
+  { id: "competitor", label: "경쟁사", match: (b) => b.kind === "competitor" },
+  { id: "solution", label: "솔루션·플랫폼", match: (b) => b.kind === "solution" },
+  { id: "partner", label: "파트너·구축사", match: (b) => b.kind === "partner" },
+  { id: "channel", label: "채널·매체", match: (b) => b.kind === "channel" },
+  { id: "other", label: "기타", match: (b) => b.kind === "other" },
+  { id: "unclassified", label: "미분류", match: (b) => b.kind === "unclassified" },
+  { id: "none", label: "분류 전", match: (b) => !b.kind },
+];
+const TIER_ORDER = ["core", "adjacent", "enterprise", "niche"];
+
+function groupOtherBrands(list: TrackedOtherBrand[]) {
+  const indexed = list.map((brand, index) => ({ brand, index }));
+  return OTHER_BRAND_GROUPS.map((group) => ({
+    id: group.id,
+    label: group.label,
+    items: indexed
+      .filter(({ brand }) => group.match(brand))
+      .sort((a, b) => {
+        const rank = (t?: string) => (t ? TIER_ORDER.indexOf(t) : TIER_ORDER.length);
+        return group.id === "competitor" ? rank(a.brand.tier) - rank(b.brand.tier) || a.index - b.index : a.index - b.index;
+      }),
+  })).filter((group) => group.items.length > 0);
+}
+
+// "추적할 기타 브랜드" 하나의 편집 — 역할(경쟁사·솔루션·채널…)과 경쟁사 등급, 설명, 그리고 Salesforce/세일즈포스/세일즈포스
+// 닷컴처럼 표기가 다른 언급을 같은 브랜드로 묶는 별칭.
+type OtherBrandPatch = Pick<TrackedOtherBrand, "aliases" | "kind" | "tier" | "description" | "origin">;
+
+function OtherBrandEditModal({
   otherBrand,
   onClose,
   onSave,
 }: {
   otherBrand: TrackedOtherBrand;
   onClose: () => void;
-  onSave: (aliases: string[]) => void;
+  onSave: (patch: OtherBrandPatch) => void;
 }) {
   const [aliases, setAliases] = useState(otherBrand.aliases);
   const [value, setValue] = useState("");
+  const [kind, setKind] = useState<BrandKind | "">(otherBrand.kind ?? "");
+  const [tier, setTier] = useState<CompetitorTier | "">(otherBrand.tier ?? "");
+  const [description, setDescription] = useState(otherBrand.description ?? "");
+  const [verified, setVerified] = useState(otherBrand.origin !== "ai-suggested");
 
   function add() {
     if (!value.trim() || aliases.includes(value.trim())) return;
@@ -737,13 +801,64 @@ function OtherBrandAliasesModal({
     setValue("");
   }
 
+  function save() {
+    onSave({
+      aliases,
+      kind: kind || undefined,
+      // 경쟁사가 아니면 등급은 의미가 없다.
+      tier: kind === "competitor" && tier ? tier : undefined,
+      description: description.trim() || undefined,
+      // AI 제안은 사람이 확인했다고 표시하기 전까지 미검증으로 남긴다.
+      origin: otherBrand.origin === "ai-suggested" && !verified ? "ai-suggested" : undefined,
+    });
+  }
+
+  const field = "h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm";
+
   return (
     <Modal open onClose={onClose}>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-neutral-900">{otherBrand.name} — 별칭 관리</h2>
+        <h2 className="text-lg font-bold text-neutral-900">{otherBrand.name} — 브랜드 편집</h2>
         <ModalCloseButton onClose={onClose} />
       </div>
-      <p className="mt-2 text-xs text-neutral-500">AI 답변에서 이 브랜드가 다르게 표기되는 이름을 추가하면 같은 브랜드 언급으로 집계됩니다.</p>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-neutral-500">역할</span>
+          <select value={kind} onChange={(e) => setKind(e.target.value as BrandKind | "")} className={field}>
+            <option value="">분류 전</option>
+            {BRAND_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {BRAND_KIND_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-neutral-500">경쟁사 등급</span>
+          <select value={tier} onChange={(e) => setTier(e.target.value as CompetitorTier | "")} disabled={kind !== "competitor"} className={`${field} disabled:bg-neutral-50 disabled:text-neutral-400`}>
+            <option value="">등급 미정</option>
+            {COMPETITOR_TIERS.map((t) => (
+              <option key={t} value={t}>
+                {TIER_LABEL[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="mt-3 flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-neutral-500">설명</span>
+        <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={120} placeholder="이 브랜드가 무엇을 하는 곳인지 한 줄" className={field} />
+      </label>
+      {otherBrand.origin === "ai-suggested" && (
+        <label className="mt-3 flex items-center gap-2 text-xs text-neutral-700">
+          <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
+          AI가 제안한 브랜드입니다 — 실존과 규모를 직접 확인했습니다(체크하면 &quot;AI 제안&quot; 표시가 사라집니다)
+        </label>
+      )}
+
+      <p className="mt-5 text-xs font-medium text-neutral-500">별칭</p>
+      <p className="mt-1 text-xs text-neutral-500">AI 답변에서 이 브랜드가 다르게 표기되는 이름을 추가하면 같은 브랜드 언급으로 집계됩니다.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {aliases.length === 0 && <p className="text-xs text-neutral-400">아직 별칭이 없습니다.</p>}
         {aliases.map((a) => (
@@ -771,7 +886,7 @@ function OtherBrandAliasesModal({
             }
           }}
           placeholder="예: 세일즈포스 닷컴"
-          className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+          className={field}
         />
         <Button type="button" variant="secondary" onClick={add}>
           추가
@@ -781,7 +896,7 @@ function OtherBrandAliasesModal({
         <Button variant="secondary" onClick={onClose}>
           취소
         </Button>
-        <Button variant="primary" onClick={() => onSave(aliases)}>
+        <Button variant="primary" onClick={save}>
           저장
         </Button>
       </div>
@@ -835,8 +950,16 @@ function OptimizeAliasesModal({
     try {
       parsed = JSON.parse(pasted);
     } catch {
-      setError("JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요.");
-      return;
+      // LLM이 ```json 코드 펜스나 앞뒤 설명을 붙여 답해도 받도록 { ... } 구간만 다시 해석한다.
+      const start = pasted.indexOf("{");
+      const end = pasted.lastIndexOf("}");
+      try {
+        if (start === -1 || end <= start) throw new Error("no object");
+        parsed = JSON.parse(pasted.slice(start, end + 1));
+      } catch {
+        setError("JSON으로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요.");
+        return;
+      }
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       setError("브랜드명을 key로 갖는 JSON 객체 형식이어야 합니다.");

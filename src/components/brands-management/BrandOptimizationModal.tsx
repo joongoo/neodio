@@ -1,19 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Loader2, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Check, Copy, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import {
+  BRAND_KINDS,
+  BRAND_KIND_LABEL,
+  COMPETITOR_TIERS,
+  TIER_LABEL,
   buildBrandOptimizationPrompt,
   nameKey,
   parseBrandOptimization,
+  type BrandKind,
+  type CompetitorTier,
   type BrandOptimizationInput,
   type BrandOptimizationPlan,
 } from "@/lib/brandOptimization";
 
 // 브랜드 이름 정리(브랜드 최적화)의 공용 모달 — 가시성 개요의 "브랜드 최적화"와 브랜드 설정의
-// "AI로 브랜드 정리"가 같이 쓴다. 열리면 AI가 바로 정리안을 만들고(수동 붙여넣기도 가능),
+// "AI로 브랜드 정리"가 같이 쓴다. "AI로 자동 생성" 버튼을 누르면 AI가 정리안을 만들고(수동 붙여넣기도 가능),
 // 항목별로 확인·체크한 것만 onApply로 넘겨 반영한다. 규칙(검증·적용)은 src/lib/brandOptimization.ts.
 export function BrandOptimizationModal({
   open,
@@ -35,12 +41,14 @@ export function BrandOptimizationModal({
   const [plan, setPlan] = useState<BrandOptimizationPlan | null>(null);
   const [droppedCount, setDroppedCount] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  /** 검토 중 사람이 바꾼 역할 — 없으면 AI 판정 그대로 */
+  const [roleKinds, setRoleKinds] = useState<Record<string, BrandKind>>({});
+  const [roleTiers, setRoleTiers] = useState<Record<string, CompetitorTier | "">>({});
   const [applying, setApplying] = useState(false);
-  const autoRunRef = useRef(false);
 
   const promptText = buildBrandOptimizationPrompt(input);
   const registeredKeys = new Set(input.registered.map((r) => nameKey(r.name)));
-  const nothingToDo = input.registered.length === 0 && input.candidates.length === 0;
+  const nothingToDo = input.registered.length === 0 && input.candidates.length === 0 && !input.evidence;
 
   function close() {
     setStep("input");
@@ -48,6 +56,8 @@ export function BrandOptimizationModal({
     setError(null);
     setPlan(null);
     setChecked(new Set());
+    setRoleKinds({});
+    setRoleTiers({});
     setGenerating(false);
     setApplying(false);
     onClose();
@@ -67,8 +77,11 @@ export function BrandOptimizationModal({
         ...result.plan.ownAliases.map((n) => `own:${nameKey(n)}`),
         ...result.plan.competitors.map((c) => `comp:${nameKey(c.name)}`),
         ...result.plan.exclude.map((n) => `ex:${nameKey(n)}`),
+        ...(result.plan.roles ?? []).map((r) => `role:${nameKey(r.name)}`),
       ])
     );
+    setRoleKinds({});
+    setRoleTiers({});
     setStep("review");
   }
 
@@ -95,18 +108,6 @@ export function BrandOptimizationModal({
     }
   }
 
-  // 모달이 열리는 순간(= 버튼을 누른 순간) 한 번만 자동 실행한다.
-  useEffect(() => {
-    if (!open) {
-      autoRunRef.current = false;
-      return;
-    }
-    if (autoRunRef.current || nothingToDo) return;
-    autoRunRef.current = true;
-    void runAi();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 열릴 때 한 번만
-  }, [open]);
-
   function toggle(key: string) {
     setChecked((prev) => {
       const next = new Set(prev);
@@ -122,6 +123,18 @@ export function BrandOptimizationModal({
       ownAliases: plan.ownAliases.filter((n) => checked.has(`own:${nameKey(n)}`)),
       competitors: plan.competitors.filter((c) => checked.has(`comp:${nameKey(c.name)}`)),
       exclude: plan.exclude.filter((n) => checked.has(`ex:${nameKey(n)}`)),
+      suggestions: (plan.suggestions ?? [])
+        .filter((item) => checked.has(`sug:${nameKey(item.name)}`))
+        .map((item) => {
+          const picked = roleTiers[nameKey(item.name)];
+          return { ...item, tier: picked === undefined ? item.tier : picked || undefined };
+        }),
+      roles: (plan.roles ?? []).filter((r) => checked.has(`role:${nameKey(r.name)}`)).map((r) => {
+        const kind = roleKinds[nameKey(r.name)] ?? r.kind;
+        const picked = roleTiers[nameKey(r.name)];
+        const tier = kind === "competitor" ? (picked === undefined ? r.tier : picked || undefined) : undefined;
+        return { ...r, kind, tier };
+      }),
     };
     setApplying(true);
     setError(null);
@@ -152,18 +165,33 @@ export function BrandOptimizationModal({
       {step === "input" && (
         <>
           <p className="mt-2 text-xs text-neutral-500">
-            브랜드 이름들을 AI가 검토해 자사 표기, 같은 경쟁사의 다른 표기, 업체가 아닌 항목(제외)으로 나눕니다. 결과는 확인하고 고른 것만 반영됩니다.
+            브랜드 이름들을 AI가 검토해 자사 표기, 같은 경쟁사의 다른 표기, 업체가 아닌 항목(제외)으로 나누고, 수집된 답변을 근거로 경쟁사·솔루션·채널 같은 역할도 분류합니다. 결과는 확인하고 고른 것만 반영됩니다.
           </p>
           {nothingToDo ? (
             <p className="mt-4 rounded-md bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500">정리할 경쟁 브랜드나 후보가 아직 없습니다.</p>
           ) : (
             <>
-              {generating && (
-                <p className="mt-3 flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  <Loader2 size={14} className="animate-spin" />
-                  AI가 브랜드 이름을 검토하는 중…
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="flex items-center gap-2 text-xs text-slate-700">
+                  {generating ? (
+                    <>
+                      <Loader2 size={14} className="shrink-0 animate-spin" />
+                      <span>AI가 브랜드 이름을 검토하는 중입니다… 보통 10~30초 걸립니다. 창을 닫지 마세요.</span>
+                    </>
+                  ) : (
+                    <span>아직 실행 전입니다. 버튼을 누르면 AI가 목록을 검토해 정리안을 만듭니다.</span>
+                  )}
                 </p>
-              )}
+                <button
+                  type="button"
+                  disabled={generating}
+                  onClick={() => void runAi()}
+                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-slate-800 px-3 py-2 text-xs font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-60"
+                >
+                  {generating ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                  {generating ? "생성하는 중..." : "AI로 자동 생성"}
+                </button>
+              </div>
               <div className="mt-4 flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-neutral-700">직접 하려면: 아래 프롬프트를 복사해 LLM(ChatGPT 등)에 붙여넣으세요</span>
@@ -204,9 +232,6 @@ export function BrandOptimizationModal({
             </Button>
             {!nothingToDo && (
               <>
-                <Button variant="secondary" disabled={generating} onClick={() => void runAi()}>
-                  AI로 다시 실행
-                </Button>
                 <Button variant="primary" disabled={!pasted.trim() || generating} onClick={() => review(pasted)}>
                   정리안 검토하기
                 </Button>
@@ -242,6 +267,80 @@ export function BrandOptimizationModal({
                       <b>{c.name}</b> ← {c.aliases.join(", ")}
                     </ReviewItem>
                   ))}
+              </ReviewGroup>
+            )}
+            {(plan.roles ?? []).length > 0 && (
+              <ReviewGroup title="역할 분류 (경쟁사·솔루션·채널)">
+                {[...(plan.roles ?? [])]
+                  .sort((a, b) => BRAND_KINDS.indexOf(roleKinds[nameKey(a.name)] ?? a.kind) - BRAND_KINDS.indexOf(roleKinds[nameKey(b.name)] ?? b.kind))
+                  .map((r) => {
+                    const key = nameKey(r.name);
+                    const kind = roleKinds[key] ?? r.kind;
+                    return (
+                      <ReviewItem key={r.name} checked={checked.has(`role:${key}`)} onToggle={() => toggle(`role:${key}`)}>
+                        <b>{r.name}</b>
+                        <select
+                          aria-label={`${r.name} 역할`}
+                          value={kind}
+                          onChange={(e) => setRoleKinds((prev) => ({ ...prev, [key]: e.target.value as BrandKind }))}
+                          className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[11px]"
+                        >
+                          {BRAND_KINDS.map((k) => (
+                            <option key={k} value={k}>
+                              {BRAND_KIND_LABEL[k]}
+                            </option>
+                          ))}
+                        </select>
+                        {kind === "competitor" && (
+                          <select
+                            aria-label={`${r.name} 경쟁사 등급`}
+                            value={roleTiers[key] === undefined ? (r.tier ?? "") : roleTiers[key]}
+                            onChange={(e) => setRoleTiers((prev) => ({ ...prev, [key]: e.target.value as CompetitorTier | "" }))}
+                            className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[11px]"
+                          >
+                            <option value="">등급 미정</option>
+                            {COMPETITOR_TIERS.map((t) => (
+                              <option key={t} value={t}>
+                                {TIER_LABEL[t]}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {!registeredKeys.has(key) && kind === "competitor" && <Note>경쟁사로 새로 등록</Note>}
+                        {!registeredKeys.has(key) && kind !== "competitor" && <Note>미등록 후보 — 경쟁사가 아니면 반영 안 됨</Note>}
+                        {r.description && <span className="basis-full text-neutral-600">{r.description}</span>}
+                        {r.reason && <span className="basis-full text-[11px] text-neutral-400">{r.reason}</span>}
+                      </ReviewItem>
+                    );
+                  })}
+              </ReviewGroup>
+            )}
+            {(plan.suggestions ?? []).length > 0 && (
+              <ReviewGroup title="AI가 추가로 제안한 경쟁사 (미검증 · 기본은 선택 안 됨)">
+                {(plan.suggestions ?? []).map((item) => {
+                  const key = nameKey(item.name);
+                  return (
+                    <ReviewItem key={item.name} checked={checked.has(`sug:${key}`)} onToggle={() => toggle(`sug:${key}`)}>
+                      <b>{item.name}</b>
+                      <select
+                        aria-label={`${item.name} 경쟁사 등급`}
+                        value={roleTiers[key] === undefined ? (item.tier ?? "") : roleTiers[key]}
+                        onChange={(e) => setRoleTiers((prev) => ({ ...prev, [key]: e.target.value as CompetitorTier | "" }))}
+                        className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[11px]"
+                      >
+                        <option value="">등급 미정</option>
+                        {COMPETITOR_TIERS.map((t) => (
+                          <option key={t} value={t}>
+                            {TIER_LABEL[t]}
+                          </option>
+                        ))}
+                      </select>
+                      <Note>미검증 — 실존·규모를 확인하세요</Note>
+                      {item.description && <span className="basis-full text-neutral-600">{item.description}</span>}
+                      {item.reason && <span className="basis-full text-[11px] text-neutral-400">{item.reason}</span>}
+                    </ReviewItem>
+                  );
+                })}
               </ReviewGroup>
             )}
             {plan.exclude.length > 0 && (
