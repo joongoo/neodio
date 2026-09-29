@@ -31,6 +31,7 @@
     "crawl:sitemap": "node scripts/crawl-sitemap.mjs"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.34.0",
     "next": "16.3.3",

@@ -26,7 +26,7 @@
 | [src/lib/collectorClient.ts](../src/lib/collectorClient.ts) | 브라우저에서 수집기 호출 |
 | [AgentCollectionModal](../src/components/prompt-library/AgentCollectionModal.tsx) | 선택 수집 화면(확인 → 설치 안내 → 진행 → 반영) |
 | `/api/collection-runs/import` | 반영 — 지금 조직으로 저장, 같은 실행은 덮어쓰기 |
-| `/api/collector-download?platform=` | 설치 파일로 보내기(`COLLECTOR_DOWNLOAD_BASE_URL`) |
+| `/api/collector-download?platform=` | 비공개 Blob의 설치 파일로 가는 임시 링크(10분) — 로그인한 화면에서만 |
 
 수집기는 저장소의 수집 스크립트(`scripts/collect-naver-ai.mjs`, `collect-google-ai.mjs`)를 그대로 번들해 실행한다.
 네이버도 `--browser-channel chrome`으로 설치된 Chrome을 쓰므로 설치 파일에 Playwright 브라우저를 넣지 않는다.
@@ -50,10 +50,24 @@ node collector/build.mjs --origin https://<운영 주소> --platform win-x64
 node collector/build.mjs --local-node                             # 이 PC용만, 지금 node로(시험용)
 ```
 
-- 결과: `dist/collector/neodio-collector-<platform>-<version>.zip`(각 약 20~30MB). Node 런타임(v22)은
+- 결과: `dist/collector/neodio-collector-<platform>-<version>.zip`(각 약 40MB). Node 런타임(v22)은
   nodejs.org에서 받아 `.tmp/collector-build/`에 보관한다.
-- 이 zip들을 한 곳(예: Vercel Blob, S3, 사내 파일 서버)에 **이름 그대로** 올리고, 운영 환경변수
-  `COLLECTOR_DOWNLOAD_BASE_URL`에 그 폴더 주소를 넣는다. 설정이 없으면 화면의 받기 버튼이 비활성으로 보인다.
+- 설치 파일은 **비공개** Vercel Blob 저장소 `neodio-collector`(icn1)의 `collector/`에 이름 그대로 둔다.
+  공개 주소가 없고, 받기는 운영 화면(사이트 로그인 뒤)에서 서버가 만든 10분짜리 임시 링크로만 된다
+  (`@vercel/blob`의 `issueSignedToken` + `presignUrl`).
+- 저장소는 Vercel 대시보드에서 neodio 프로젝트에 연결한다(Storage → neodio-collector → Connect Project).
+  연결하면 `BLOB_READ_WRITE_TOKEN`이 프로젝트 환경변수로 생기고, 없으면 받기 버튼이 비활성으로 보인다.
+  CLI로 연결·링크하면 로컬 `.env.local`을 Vercel 값으로 덮어쓰므로 쓰지 않는다.
+- 올리기(저장소의 읽기·쓰기 토큰으로, 새 버전을 빌드할 때마다):
+
+  ```bash
+  cd dist/collector
+  export BLOB_READ_WRITE_TOKEN='…'
+  for f in neodio-collector-*-<version>.zip; do
+    npx -y vercel@latest blob put "$f" --pathname "collector/$f" --access private --force < /dev/null
+  done
+  unset BLOB_READ_WRITE_TOKEN
+  ```
 
 ## 설치 (수집 PC)
 

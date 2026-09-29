@@ -4,7 +4,7 @@ import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTop
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getTopicOptionsByCategory } from "@/lib/backend/promptTopics";
 import { getCurrentTenant } from "@/lib/backend/tenant";
-import { collectionUsesLocalAgent, collectorDownloadUrl } from "@/lib/backend/collectionMode";
+import { collectionUsesLocalAgent, collectorDownloadsConfigured } from "@/lib/backend/collectionMode";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 
 const COLLECTOR_PLATFORMS: CollectorPlatform[] = ["mac-arm64", "mac-x64", "win-x64"];
@@ -35,7 +35,7 @@ export default async function PromptLibraryPage() {
       uncategorizedTopicOptions={topicOptions.uncategorized}
       collectionAgent={
         collectionUsesLocalAgent()
-          ? { orgName: tenant.org.name, downloadPlatforms: COLLECTOR_PLATFORMS.filter((p) => collectorDownloadUrl(p)) }
+          ? { orgName: tenant.org.name, downloadPlatforms: collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : [] }
           : null
       }
     />
