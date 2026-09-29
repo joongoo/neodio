@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { CollectionStage } from "@/lib/backend/collectionJobTypes";
 
 const STAGE_LABEL: Record<Exclude<CollectionStage, "done" | "error" | "cancelled">, string> = {
+  queued: "수집 PC 대기 중",
   install: "수집 도구 설치 중",
   naver: "네이버 엔진 검색 수집 중",
   google: "구글 엔진 검색 수집 중",
@@ -16,8 +17,8 @@ const ENGINE_LABEL: Record<"naver" | "google", string> = {
   google: "구글 AI 모드",
 };
 
-function buildSteps(engines: ("naver" | "google")[]): (keyof typeof STAGE_LABEL)[] {
-  const steps: (keyof typeof STAGE_LABEL)[] = ["install"];
+function buildSteps(engines: ("naver" | "google")[], queued: boolean): (keyof typeof STAGE_LABEL)[] {
+  const steps: (keyof typeof STAGE_LABEL)[] = queued ? ["queued", "install"] : ["install"];
   if (engines.includes("naver")) steps.push("naver");
   if (engines.includes("google")) steps.push("google");
   steps.push("save");
@@ -40,6 +41,8 @@ export function CollectionProgressModal({
   onClose,
   onCancel,
   cancelling,
+  runner = "local",
+  workerOnline = null,
 }: {
   open: boolean;
   keyword: string;
@@ -51,7 +54,13 @@ export function CollectionProgressModal({
   /** 진행 중 "중단" 버튼 — 서버에서 실행 중인 프로세스를 실제로 죽인다. 없으면 버튼을 숨긴다. */
   onCancel?: () => void;
   cancelling?: boolean;
+  /** "worker"면 수집 PC의 워커가 실행한다(운영). 크롬 창은 그 PC에서 열린다. */
+  runner?: "local" | "worker";
+  /** 워커 작업이 안 끝났을 때 수집 PC가 연결돼 있는지. */
+  workerOnline?: boolean | null;
 }) {
+  const remote = runner === "worker";
+  const cautionNote = remote ? null : CAUTION_NOTE;
   if (stage === "done") {
     return (
       <Modal open={open} onClose={onClose}>
@@ -115,13 +124,13 @@ export function CollectionProgressModal({
           >
             닫기
           </button>
-          <div className="w-full">{CAUTION_NOTE}</div>
+          <div className="w-full">{cautionNote}</div>
         </div>
       </Modal>
     );
   }
 
-  const steps = buildSteps(engines);
+  const steps = buildSteps(engines, remote);
   const currentIndex = steps.indexOf(stage as keyof typeof STAGE_LABEL);
 
   return (
@@ -129,8 +138,16 @@ export function CollectionProgressModal({
       <div className="flex flex-col gap-4">
         <div>
           <h2 className="text-lg font-bold text-neutral-900">&quot;{keyword}&quot; 수집 진행 중</h2>
-          <p className="mt-1 text-xs text-neutral-500">완료될 때까지 이 창을 닫지 않아도 백그라운드에서 계속 진행됩니다.</p>
+          <p className="mt-1 text-xs text-neutral-500">
+            {remote ? "수집 PC에서 실행되며, 이 화면을 떠나도 계속 진행됩니다." : "완료될 때까지 이 창을 닫지 않아도 백그라운드에서 계속 진행됩니다."}
+          </p>
         </div>
+
+        {remote && stage === "queued" && workerOnline === false && (
+          <p className="rounded-md bg-amber-50 p-3 text-xs text-amber-800">
+            지금 연결된 수집 PC가 없어 대기 중입니다. 수집 PC가 연결되면 순서대로 시작됩니다.
+          </p>
+        )}
 
         <div className="flex flex-col gap-2.5">
           {steps.map((step, i) => {
@@ -172,7 +189,7 @@ export function CollectionProgressModal({
           </div>
         )}
 
-        {CAUTION_NOTE}
+        {cautionNote}
       </div>
     </Modal>
   );

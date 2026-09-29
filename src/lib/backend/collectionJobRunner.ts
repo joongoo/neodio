@@ -74,15 +74,40 @@ export function startCollectionJob(organizationId: string, keyword: string, engi
     finishedAt: null,
   };
   jobs.set(id, job);
+  execute(job, { jobFilesOnly: false }).catch((error) => console.error("Unable to persist collection job", error));
+  return job;
+}
 
-  runJob(job).catch(async (error) => {
+/**
+ * 수집 워커(scripts/collection-worker.ts)가 대기열에서 가져온 작업을 실행한다.
+ * 워커는 운영 DB에 붙어 돌기 때문에 저장 단계에서 이 PC의 .tmp 전체가 아니라
+ * 이 작업이 만든 파일만 넣는다. 분석(언급·인용)은 화면이 조직의 브랜드 설정으로
+ * 읽을 때 계산·캐시하므로 여기서 돌리지 않는다.
+ */
+export async function runClaimedCollectionJob(job: CollectionJob): Promise<CollectionJob> {
+  jobs.set(job.id, job);
+  try {
+    await execute(job, { jobFilesOnly: true });
+    return job;
+  } finally {
+    jobs.delete(job.id);
+    cancelledJobs.delete(job.id);
+  }
+}
+
+interface RunOptions {
+  jobFilesOnly: boolean;
+}
+
+async function execute(job: CollectionJob, options: RunOptions) {
+  try {
+    await runJob(job, options);
+  } catch (error) {
     job.stage = "error";
     job.error = error instanceof Error ? error.message : String(error);
     job.finishedAt = Date.now();
     await persistCollectionJob(job);
-  }).catch(error => console.error("Unable to persist collection job", error));
-
-  return job;
+  }
 }
 
 // Every stage below is a real step, not a simulated delay: "설치 확인" runs
@@ -98,7 +123,7 @@ async function markCancelled(job: CollectionJob): Promise<void> {
   await persistCollectionJob(job);
 }
 
-async function runJob(job: CollectionJob) {
+async function runJob(job: CollectionJob, options: RunOptions) {
   await persistCollectionJob(job);
   job.stage = "install";
   appendLog(job, "Playwright 브라우저 설치 확인 중...");
@@ -140,6 +165,15 @@ async function runJob(job: CollectionJob) {
   await persistCollectionJob(job);
   appendLog(job, "수집 결과 저장(가공) 중...");
   const store = await getPromptStore();
+  if (options.jobFilesOnly) {
+    const imported = await syncCollectedFiles(store, { jobId: job.id, modifiedSince: job.startedAt });
+    appendLog(job, `수집 결과 ${imported}건을 저장했습니다.`);
+    if (collectionFailed) throw new Error("일부 수집이 실패했습니다. 수집 로그를 확인해주세요.");
+    job.stage = "done";
+    job.finishedAt = Date.now();
+    await persistCollectionJob(job);
+    return;
+  }
   await syncCollectedFiles(store);
   const saveCode = await runCommand(npm, ["run", "db:migrate"], (line) => appendLog(job, line), job.id);
   if (cancelledJobs.has(job.id)) return markCancelled(job);

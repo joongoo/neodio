@@ -1,4 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { Pool } from "pg";
 import { PromptStore } from "./store";
@@ -137,23 +138,34 @@ function createPool(): Pool {
 export function getPromptStore(): Promise<PromptStore> {
   if (!initializing) initializing = (async () => {
     const store = new PromptStore(createPool());
-    try { await store.init(); await importLegacy(store); await importLegacyBrands(store); await nameSeedOrganizations(store); await syncCollectedFiles(store); return store; }
+    try {
+      await store.init(); await importLegacy(store); await importLegacyBrands(store); await nameSeedOrganizations(store);
+      // 수집 워커는 운영 DB에 붙어 돈다 — 이 PC의 .tmp에 쌓인 예전 수집 파일을 통째로
+      // 운영에 넣지 않도록, 자기 작업의 파일만 따로 가져온다(syncCollectedFiles의 jobId).
+      if (process.env.NEODIO_SKIP_FILE_SYNC !== "1") await syncCollectedFiles(store);
+      return store;
+    }
     catch (error) { await store.close(); throw error; }
   })().catch(error => { initializing = undefined; throw error; });
   return initializing;
 }
 
 // Collector JSON remains the ingestion boundary; unchanged files are not parsed again.
-export async function syncCollectedFiles(store: PromptStore) {
+// `only`을 주면 그 수집 작업이 만든 파일만(작업 시작 이후 수정된 파일 중
+// collectionJobId가 같은 것) 가져온다 — 수집 워커가 운영 DB에 결과를 넣을 때.
+export async function syncCollectedFiles(store: PromptStore, only?: { jobId: string; modifiedSince: number }): Promise<number> {
+  let imported = 0;
   for (const dir of RUN_DIRS) for (const filename of await filenames(dir)) {
     const filePath = path.join(/* turbopackIgnore: true */ dir, filename);
     const info = await stat(/* turbopackIgnore: true */ filePath);
+    if (only && info.mtimeMs < only.modifiedSince) continue;
     const signature = `${info.mtimeMs}:${info.size}`;
     const [previous] = await store.query<{ signature: string }>("SELECT signature FROM imported_files WHERE path=$1", [filePath]);
     if (previous?.signature === signature) continue;
     const parsed = await jsonFile<{ promptRun?: PromptRunSeed }>(filePath, {});
     if (!parsed.promptRun) continue;
     const run = parsed.promptRun;
+    if (only && run.rawMetadata.collectionJobId !== only.jobId) continue;
     // 어느 조직의 실행인지는 그 실행을 만든 수집 작업(collection_jobs)이 정한다 —
     // 화면에서 시작한 수집은 그때 선택된 조직으로 기록된다. 작업 없이 CLI로 만든
     // 예전 파일은 기본 조직으로 들어간다.
@@ -167,7 +179,9 @@ export async function syncCollectedFiles(store: PromptStore) {
       await store.importRun(orgId, { dir, filename, promptRun: run }, jobId);
       await store.query("INSERT INTO imported_files VALUES ($1,$2) ON CONFLICT(path) DO UPDATE SET signature=excluded.signature", [filePath, signature]);
     });
+    imported++;
   }
+  return imported;
 }
 
 export async function persistCollectionJob(job: CollectionJob) {
@@ -176,24 +190,37 @@ export async function persistCollectionJob(job: CollectionJob) {
   await store.ensureOrg(orgId);
   await store.query(`INSERT INTO collection_jobs VALUES ($1,$2,'manual',NULL,$3,$4,$5,$6)
     ON CONFLICT(id) DO UPDATE SET status=excluded.status,finished_at=excluded.finished_at,data_json=excluded.data_json`,
-    [job.id, orgId, job.stage, new Date(job.startedAt).toISOString(), job.finishedAt ? new Date(job.finishedAt).toISOString() : null, JSON.stringify({ ...job, ownerPid: process.pid })]);
+    [job.id, orgId, job.stage, new Date(job.startedAt).toISOString(), job.finishedAt ? new Date(job.finishedAt).toISOString() : null,
+      JSON.stringify({ ...job, host: job.host ?? os.hostname(), ownerPid: process.pid })]);
 }
+
+/** 워커가 이 시간 넘게 신호를 안 보내면 그 작업은 끊긴 것으로 본다(워커는 수 초마다 보낸다). */
+export const WORKER_STALE_MS = 3 * 60_000;
+
+const FINISHED_STAGES = new Set(["done", "error", "cancelled"]);
 
 export async function getPersistedCollectionJob(jobId: string): Promise<CollectionJob | undefined> {
   const store = await getPromptStore();
-  const [row] = await store.query<{ data_json: CollectionJob & { ownerPid?: number } }>(
-    "SELECT data_json FROM collection_jobs WHERE id=$1", [jobId]);
+  const [row] = await store.query<{ data_json: CollectionJob & { ownerPid?: number }; heartbeat_at: string | null }>(
+    "SELECT data_json,heartbeat_at FROM collection_jobs WHERE id=$1", [jobId]);
   if (!row) return undefined;
   const job = row.data_json;
-  if (job.stage !== "done" && job.stage !== "error") {
-    if (job.ownerPid) {
+  if (FINISHED_STAGES.has(job.stage)) return job;
+  if (job.runner === "worker") {
+    // 수집 PC의 워커가 도는 작업 — 여기(웹 서버)에선 프로세스를 볼 수 없으니 워커의 신호로 판단한다.
+    if (job.stage === "queued") return job;
+    if (row.heartbeat_at && Date.now() - Date.parse(row.heartbeat_at) < WORKER_STALE_MS) return job;
+    job.error = "수집 PC와 연결이 끊겨 수집이 중단됐습니다.";
+  } else {
+    // 대시보드 프로세스가 직접 돌린 작업 — 같은 PC에서만 프로세스 생존을 확인할 수 있다.
+    if (job.ownerPid && (!job.host || job.host === os.hostname())) {
       try { process.kill(job.ownerPid, 0); return job; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
     }
-    job.stage = "error";
     job.error = "Collection worker stopped before completion.";
-    job.finishedAt = Date.now();
-    await persistCollectionJob(job);
   }
+  job.stage = "error";
+  job.finishedAt = Date.now();
+  await persistCollectionJob(job);
   return job;
 }

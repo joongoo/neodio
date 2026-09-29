@@ -15,6 +15,8 @@ interface StatusResponse {
   log: string[];
   error: string | null;
   done: boolean;
+  runner?: "local" | "worker";
+  workerOnline?: boolean | null;
 }
 
 export function CollectionRunForm() {
@@ -73,7 +75,7 @@ export function CollectionRunForm() {
       setSubmitError(data.error ?? "수집을 시작하지 못했습니다.");
       return;
     }
-    setStatus({ stage: "install", log: [], error: null, done: false });
+    setStatus(data.queued ? { stage: "queued", log: [], error: null, done: false, runner: "worker" } : { stage: "install", log: [], error: null, done: false });
     setJobId(data.jobId);
   }
 
@@ -149,6 +151,8 @@ export function CollectionRunForm() {
           onClose={closeModal}
           onCancel={cancel}
           cancelling={cancelling}
+          runner={status.runner}
+          workerOnline={status.workerOnline}
         />
       )}
     </div>

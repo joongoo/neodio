@@ -28,12 +28,15 @@ export function PromptLibraryClient({
   health,
   topicOptionsByCategory,
   uncategorizedTopicOptions,
+  remoteCollection,
 }: {
   initialRows: PromptLibraryRow[];
   health: PromptLibraryHealth | null;
   /** 카테고리별 기존 토픽 목록 — 추적/편집 모달의 토픽 드롭다운에 쓴다. */
   topicOptionsByCategory: Record<string, string[]>;
   uncategorizedTopicOptions: string[];
+  /** 선택 수집을 수집 PC 대기열로 넘기는지(운영) — false면 이 서버가 바로 실행(로컬). */
+  remoteCollection: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
@@ -424,6 +427,7 @@ export function PromptLibraryClient({
         onClose={() => setCollectOpen(false)}
         keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
         onDone={() => setSelected(new Set())}
+        remote={remoteCollection}
       />
       <ConfigureColumnsModal
         open={columnsOpen}
