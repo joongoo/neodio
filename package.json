@@ -22,8 +22,6 @@
     "collect:google-aio": "node scripts/collect-google-aio.mjs",
     "collect:scheduled": "tsx scripts/collect-scheduled.ts",
     "collect:aio": "tsx scripts/collect-aio.ts",
-    "collect:worker": "tsx --env-file=.env.local scripts/collection-worker.ts",
-    "collect:worker:prod": "tsx --env-file=.env.neon.local scripts/collection-worker.ts",
     "open:google-ai-chrome": "node scripts/open-google-ai-chrome.mjs",
     "parse:naver-ai-html": "python3 scripts/parse_naver_ai_html.py",
     "process:raw": "tsx scripts/process-raw.ts",

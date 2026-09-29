@@ -69,29 +69,7 @@ organizations
   Mention order does not imply a recommendation rank, which is currently null.
 - `citations`: deduplicated URL per analysis, domain, title, source order and brand.
 - `collection_jobs`: persistent progress and outcome. Interrupted jobs are reported
-  as failed when the owning process no longer exists (local jobs, same host) or the
-  worker stops sending heartbeats (worker jobs); jobs do not resume automatically.
-- `collection_workers`: last heartbeat of each collection worker, shown as
-  "수집 PC 대기 중" when none is online.
-
-## Collection queue (production collection)
-
-Vercel has no real Chrome, so collection clicked in production (collection-runs
-"수집", prompt library "선택 수집") is only recorded as a `queued` job
-(`src/lib/backend/collectionQueue.ts`). A worker on a PC with Chrome runs it:
-
-    npm run collect:worker:prod   # production DB (.env.neon.local)
-    npm run collect:worker        # local DB — pair with NEODIO_COLLECTION_MODE=queue npm run dev
-
-The worker claims the oldest queued job (`FOR UPDATE SKIP LOCKED`, one worker per
-job), runs the same collector scripts as local collection, then imports **only the
-files written by that job** (`syncCollectedFiles(store, { jobId, modifiedSince })`).
-It starts with `NEODIO_SKIP_FILE_SYNC=1` so older `.tmp` files on that PC never
-reach the production DB. Analysis is not run by the worker: pages analyze runs on
-read with the organization's brand configuration and cache the result.
-Cancelling a queued job finishes it at once; cancelling a running job sets
-`cancel_requested`, which the worker checks every few seconds. Ctrl+C stops the
-worker after cancelling its current job.
+  as failed when the owning process no longer exists; jobs do not resume automatically.
 
 ## Sentiment and metrics
 
