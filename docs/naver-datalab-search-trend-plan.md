@@ -1,7 +1,9 @@
 # 네이버 데이터랩 통합 검색어 트렌드 API 연동 기획
 
-> 상태: **기획 단계** — 네이버 개발자센터 애플리케이션에 "데이터랩(검색어트렌드)" API 권한이 아직 없음.
-> 권한 발급 후 이 문서의 "구현 순서"를 따라 실제 연동 착수.
+> 상태: **구현됨(검색어 트렌드)** — NAVER API HUB(`naverapihub.apigw.ntruss.com/search-trend/v1/search`, 헤더 `X-NCP-APIGW-API-KEY-ID`/`X-NCP-APIGW-API-KEY`) 기준.
+> 아래 §1·§4의 옛 오픈 API 주소·헤더(`openapi.naver.com`, `X-Naver-Client-*`)는 더 이상 쓰지 않는다. 환경변수 이름은 그대로 `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET`.
+> 코드: `src/lib/backend/naverDatalab.ts`(클라이언트·30분 캐시), `src/app/api/naver-datalab/route.ts`(프록시), `src/lib/searchTrend.ts`(지표 계산 — 프롬프트·가시성에서 재사용), `src/components/search-trend/`(화면 3탭: 추이 개요 / 기기·성별·연령 / AI 답변 교차).
+> 재사용: `computeSignals`(모멘텀·점유율·피크), `toPromptContext`(프롬프트에 붙이는 한 줄 요약), `bestLagCorrelation`(검색↔AI 언급 선후 관계), 서버 쪽 `getRealBrandMentionWeeks`(주별 브랜드 언급).
 
 ## 1. API 개요 (요약)
 
