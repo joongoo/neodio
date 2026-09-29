@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizeUrl } from "@/lib/normalizeUrl";
 import { useState } from "react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -60,8 +61,8 @@ export function AddBrandWizardModal({
   async function submit() {
     await onAdd({
       name: state.name.trim(),
-      url: state.url.trim(),
-      sitemapUrl: state.sitemapUrl.trim(),
+      url: normalizeUrl(state.url),
+      sitemapUrl: normalizeUrl(state.sitemapUrl),
       description: state.description.trim(),
       industry: state.industry.trim(),
       markets: state.markets,

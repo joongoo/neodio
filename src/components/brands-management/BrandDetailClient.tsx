@@ -1,5 +1,6 @@
 "use client";
 
+import { hostnameOfUrl, normalizeUrl } from "@/lib/normalizeUrl";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -108,10 +109,15 @@ export function BrandDetailClient({
   }, [crawlJobId]);
 
   async function startSitemapCrawl() {
+    const domain = hostnameOfUrl(brand.url);
+    if (!domain) {
+      alert("브랜드 URL이 올바르지 않습니다. 사이트 주소를 확인해주세요.");
+      return;
+    }
     const res = await fetch("/api/sitemap-crawl/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domain: new URL(brand.url).hostname, sitemapUrl: brand.sitemapUrl }),
+      body: JSON.stringify({ domain, sitemapUrl: normalizeUrl(brand.sitemapUrl) }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -908,13 +914,7 @@ function OtherBrandEditModal({
 // {브랜드명: [별칭...]} JSON을 붙여넣으면 본 브랜드/기타 브랜드 각각의
 // aliases에 병합한다. LlmBridgeModal과 같은 패턴이지만 결과를 서버 저장소가
 // 아니라 이 브랜드의 aliases/otherBrands에 직접 합치므로 전용 컴포넌트로 둔다.
-function hostnameOf(url: string) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return undefined;
-  }
-}
+const hostnameOf = hostnameOfUrl;
 
 function OptimizeAliasesModal({
   open,
