@@ -35,7 +35,7 @@ const ALL_PLATFORMS: CollectorPlatform[] = ["mac-arm64", "mac-x64", "win-x64"];
 const POLL_MS = 2000;
 const IMPORT_CHUNK = 20;
 
-type Problem = "unreachable" | "outdated" | "no_chrome";
+export type Problem = "unreachable" | "outdated" | "no_chrome";
 type View = { kind: "setup" } | { kind: "problem"; problem: Problem; status: CollectorAgentStatus | null } | { kind: "job"; jobId: string };
 
 // 운영의 "선택 수집" — 수집은 사용자 PC에 설치한 수집기가 Chrome으로 하고, 이 창이
@@ -283,7 +283,7 @@ export function AgentCollectionModal({
   );
 }
 
-function CollectorProblem({
+export function CollectorProblem({
   problem,
   status,
   downloadPlatforms,
@@ -307,7 +307,7 @@ function CollectorProblem({
     return (
       <div className="mt-2 flex flex-col gap-4">
         <p className="text-sm text-neutral-600">
-          수집기는 실행 중이지만 이 PC에서 Google Chrome을 찾지 못했습니다. 네이버·구글 수집은 실제 Chrome 창으로 진행되므로 Chrome을 설치한 뒤 다시 확인하세요.
+          수집기는 실행 중이지만 이 PC에서 Google Chrome을 찾지 못했습니다. 수집과 사이트 크롤은 이 PC의 Chrome으로 진행되므로 Chrome을 설치한 뒤 다시 확인하세요.
         </p>
         <ProblemActions busy={busy} onRetry={onRetry} onBack={onBack} />
       </div>
@@ -324,7 +324,7 @@ function CollectorProblem({
       <p className="text-sm text-neutral-600">
         {problem === "outdated"
           ? `이 PC의 수집기(${status?.version})가 오래됐습니다. 새 버전을 받아 다시 설치하세요 — 수집 결과와 설정은 유지됩니다.`
-          : "이 PC에서 수집기를 찾지 못했습니다. 수집기를 설치하면 이 창에서 바로 수집을 시킬 수 있습니다. 이미 설치했다면 PC를 다시 켰거나 수집기가 꺼진 상태일 수 있습니다 — 설치 파일을 한 번 더 실행하면 다시 켜집니다."}
+          : "이 PC에서 수집기를 찾지 못했습니다. 수집기를 설치하면 이 화면에서 바로 수집과 사이트 크롤을 시킬 수 있습니다. 이미 설치했다면 PC를 다시 켰거나 수집기가 꺼진 상태일 수 있습니다 — 설치 파일을 한 번 더 실행하면 다시 켜집니다."}
       </p>
 
       <div className="flex flex-wrap gap-2">

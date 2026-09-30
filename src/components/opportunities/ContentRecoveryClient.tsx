@@ -6,6 +6,7 @@ import { ArrowLeft, FileCheck2, Loader2, RefreshCw, Settings, Sparkles } from "l
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { LlmBridgeModal } from "@/components/ui/LlmBridgeModal";
+import { getSitemapCrawlStatus, startSitemapCrawl } from "@/lib/sitemapCrawlClient";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { GoogleIndexBadge } from "@/components/ui/GoogleIndexBadge";
 import { PageSpeedBadge } from "@/components/ui/PageSpeedBadge";
@@ -52,22 +53,17 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
   // "현재 제안"에 그대로 남는다 — 사람이 직접 완료 처리하는 버튼이 아니라
   // 실측으로 판정한다.
   async function recheckUrl(url: string) {
-    const res = await fetch("/api/sitemap-crawl/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domain, urls: [url] }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      window.alert(body.error ?? "재크롤을 시작하지 못했습니다.");
+    const started = await startSitemapCrawl({ domain, urls: [url] });
+    if (!started.ok) {
+      if (!started.handled) window.alert(started.error);
       return;
     }
+    const body = { jobId: started.jobId };
     setRecheckJobs((prev) => ({ ...prev, [url]: { jobId: body.jobId, stage: "install", done: false, error: null } }));
 
     const poll = async () => {
-      const statusRes = await fetch(`/api/sitemap-crawl/status?jobId=${body.jobId}`);
-      if (!statusRes.ok) return;
-      const statusBody = await statusRes.json();
+      const statusBody = await getSitemapCrawlStatus(body.jobId);
+      if (!statusBody) return;
       setRecheckJobs((prev) => ({
         ...prev,
         [url]: { jobId: body.jobId, stage: statusBody.stage, done: statusBody.done, error: statusBody.error },

@@ -21,10 +21,13 @@ import {
   COLLECTOR_AGENT_PORT,
   COLLECTOR_VERSION,
   type CollectorAgentStatus,
+  type CollectorCrawlResult,
+  type CollectorCrawlSpec,
   type CollectorEngine,
   type CollectorJob,
   type CollectorRunFile,
 } from "../src/lib/collectorAgent";
+import { parseCrawlSpec } from "../src/lib/collectorCrawlSpec";
 import { resolveChromePath } from "../scripts/lib/incognito-chrome.mjs";
 
 // 빌드할 때(esbuild define) 운영 웹 주소가 들어간다 — 이 주소의 화면만 수집기를 부를 수 있다.
@@ -41,8 +44,14 @@ const SCRIPTS: Record<CollectorEngine, string> = {
   google: path.join(SCRIPT_DIR, "collect-google-ai.mjs"),
 };
 
-const HOME_DIR =
-  process.platform === "win32"
+const CRAWL_SCRIPT = path.join(SCRIPT_DIR, "crawl-sitemap.mjs");
+
+// 시험용 — 설치된 수집기와 겹치지 않게 포트와 작업 폴더를 바꿔 개발용 수집기를 따로 띄울 수 있다.
+const AGENT_PORT = Number(process.env.NEODIO_COLLECTOR_PORT) || COLLECTOR_AGENT_PORT;
+
+const HOME_DIR = process.env.NEODIO_COLLECTOR_HOME
+  ? path.resolve(process.env.NEODIO_COLLECTOR_HOME)
+  : process.platform === "win32"
     ? path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"), "NeodioCollector")
     : path.join(os.homedir(), ".neodio-collector");
 const JOBS_DIR = path.join(HOME_DIR, "jobs");
@@ -176,6 +185,28 @@ function createJob(keywords: string[], engines: CollectorEngine[], label: string
   return job;
 }
 
+function createCrawlJob(spec: CollectorCrawlSpec, label: string): CollectorJob {
+  const target = spec.sitemapUrl ?? `${spec.urls.length}개 URL 재크롤`;
+  const job: CollectorJob = {
+    id: `cjob-${Date.now()}-${randomUUID().slice(0, 8)}`,
+    kind: "sitemap-crawl",
+    crawl: spec,
+    label,
+    engines: [],
+    status: "queued",
+    items: [{ keyword: target, status: "pending", engine: null, results: 0, error: null }],
+    createdAt: new Date().toISOString(),
+    finishedAt: null,
+    appliedAt: null,
+    log: [],
+  };
+  jobs.set(job.id, job);
+  saveJob(job);
+  queue.push(job.id);
+  void processQueue();
+  return job;
+}
+
 function jsonFiles(dir: string): string[] {
   try {
     return readdirSync(dir).filter((n) => n.endsWith(".json"));
@@ -215,9 +246,54 @@ function runScript(job: CollectorJob, engine: CollectorEngine, keyword: string, 
   });
 }
 
+/** 크롤 스크립트 실행 — 설치된 Chrome으로 페이지를 렌더링해 콘텐츠 가시성·FAQ·목차 등을 잰다. */
+function runCrawlScript(job: CollectorJob, spec: CollectorCrawlSpec, outDir: string): Promise<number> {
+  const args = [CRAWL_SCRIPT, "--domain", spec.domain, "--limit", String(spec.limit), "--out", outDir, "--browser-channel", "chrome"];
+  if (spec.urls.length > 0) args.push("--urls", spec.urls.join(","));
+  else if (spec.sitemapUrl) args.push("--sitemap", spec.sitemapUrl);
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { cwd: WORK_DIR, env: { ...process.env }, windowsHide: true });
+    if (running) running.child = child;
+    child.stdout?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    child.stderr?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    child.on("error", (error) => {
+      appendJobLog(job, `실행 실패: ${error.message}`);
+      resolve(1);
+    });
+    child.on("close", (code) => {
+      if (running) running.child = null;
+      resolve(code ?? 1);
+    });
+  });
+}
+
+async function runCrawlJob(job: CollectorJob, spec: CollectorCrawlSpec) {
+  const item = job.items[0];
+  item.status = "running";
+  saveJob(job);
+  log(`▶ 사이트맵 크롤 시작 ${job.id} — ${spec.sitemapUrl ?? `${spec.urls.length}개 URL`}`);
+  mkdirSync(WORK_DIR, { recursive: true });
+  const outDir = path.join(RESULTS_DIR, job.id, "sitemap-crawl");
+  mkdirSync(outDir, { recursive: true });
+  const code = await runCrawlScript(job, spec, outDir);
+  const results = jobCrawlResults(job);
+  item.results = results.reduce((sum, crawl) => sum + crawl.urls.length, 0);
+  if (running?.cancelled) item.status = "cancelled";
+  else if (code !== 0 || results.length === 0) {
+    item.status = "error";
+    item.error = "크롤에 실패했습니다. Chrome이 설치돼 있고 사이트에 접속되는지 확인하세요.";
+  } else item.status = "done";
+  const cancelled = !!running?.cancelled;
+  job.status = cancelled ? "cancelled" : "done";
+  job.finishedAt = new Date().toISOString();
+  saveJob(job);
+  log(`■ 사이트맵 크롤 ${cancelled ? "중단" : "완료"} ${job.id}`);
+}
+
 async function runJob(job: CollectorJob) {
   job.status = "running";
   saveJob(job);
+  if (job.kind === "sitemap-crawl" && job.crawl) return runCrawlJob(job, job.crawl);
   log(`▶ 수집 시작 ${job.id} — ${job.items.length}개, ${job.engines.join(", ")}`);
   mkdirSync(WORK_DIR, { recursive: true });
 
@@ -307,6 +383,21 @@ function jobResults(job: CollectorJob): CollectorRunFile[] {
   return files;
 }
 
+/** 크롤 작업이 만든 결과 — 크롤 스크립트가 쓴 JSON(도메인·크롤 시각·URL별 지표). */
+function jobCrawlResults(job: CollectorJob): CollectorCrawlResult[] {
+  const dir = path.join(RESULTS_DIR, job.id, "sitemap-crawl");
+  const crawls: CollectorCrawlResult[] = [];
+  for (const filename of jsonFiles(dir).sort()) {
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(dir, filename), "utf8")) as CollectorCrawlResult;
+      if (Array.isArray(parsed.urls) && parsed.crawledAt) crawls.push(parsed);
+    } catch {
+      // 쓰다 만 파일은 건너뛴다
+    }
+  }
+  return crawls;
+}
+
 function status(): CollectorAgentStatus {
   return { app: "neodio-collector", version: COLLECTOR_VERSION, platform: platformId(), chrome: !!resolveChromePath(), runningJobId: running?.jobId ?? null };
 }
@@ -345,7 +436,7 @@ let shutdown: (() => void) | null = null;
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   // 다른 사이트가 이 주소로 우회해 들어오는 것(DNS rebinding)을 막는다.
   const host = (req.headers.host ?? "").toLowerCase();
-  if (host !== `127.0.0.1:${COLLECTOR_AGENT_PORT}` && host !== `localhost:${COLLECTOR_AGENT_PORT}`) return send(res, 403, { error: "forbidden host" }, null);
+  if (host !== `127.0.0.1:${AGENT_PORT}` && host !== `localhost:${AGENT_PORT}`) return send(res, 403, { error: "forbidden host" }, null);
 
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : null;
   const originAllowed = !origin || allowedOrigins().has(origin);
@@ -387,7 +478,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   if (parts.length === 1 && req.method === "POST") {
     // 브라우저가 보낸 간단 요청(폼 등)으로는 수집을 시킬 수 없게 JSON만 받는다.
     if (!String(req.headers["content-type"] ?? "").includes("application/json")) return send(res, 415, { error: "JSON만 받습니다." }, origin);
-    const body = (await readBody(req)) as { keywords?: unknown; engines?: unknown; label?: unknown } | null;
+    const body = (await readBody(req)) as { keywords?: unknown; engines?: unknown; label?: unknown; kind?: unknown; crawl?: unknown } | null;
+    if (body?.kind === "sitemap-crawl") {
+      const spec = parseCrawlSpec(body.crawl);
+      if ("error" in spec) return send(res, 400, { error: spec.error }, origin);
+      return send(res, 200, { job: createCrawlJob(spec, typeof body?.label === "string" ? body.label.slice(0, 100) : "") }, origin);
+    }
     const keywords = (Array.isArray(body?.keywords) ? body.keywords : [])
       .filter((k): k is string => typeof k === "string")
       .map((k) => k.trim())
@@ -404,6 +500,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (parts.length === 2 && req.method === "GET") return send(res, 200, { job }, origin);
   if (parts.length === 3 && parts[2] === "results" && req.method === "GET") return send(res, 200, { runs: jobResults(job) }, origin);
+  if (parts.length === 3 && parts[2] === "crawl" && req.method === "GET") return send(res, 200, { crawls: jobCrawlResults(job) }, origin);
   if (parts.length === 3 && parts[2] === "cancel" && req.method === "POST") {
     return cancelJob(job) ? send(res, 200, { job }, origin) : send(res, 409, { error: "이미 끝난 작업입니다." }, origin);
   }
@@ -424,7 +521,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
 async function fetchStatus(): Promise<CollectorAgentStatus | null> {
   try {
-    const res = await fetch(`http://127.0.0.1:${COLLECTOR_AGENT_PORT}/status`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`http://127.0.0.1:${AGENT_PORT}/status`, { signal: AbortSignal.timeout(2000) });
     return res.ok ? ((await res.json()) as CollectorAgentStatus) : null;
   } catch {
     return null;
@@ -456,8 +553,8 @@ async function run() {
     log(`수집기를 시작하지 못했습니다: ${error.message}`);
     process.exit(1);
   });
-  server.listen(COLLECTOR_AGENT_PORT, "127.0.0.1", () => {
-    log(`수집기 ${COLLECTOR_VERSION} 실행 중 — http://127.0.0.1:${COLLECTOR_AGENT_PORT} (${platformId()}, Chrome ${resolveChromePath() ? "있음" : "없음"})`);
+  server.listen(AGENT_PORT, "127.0.0.1", () => {
+    log(`수집기 ${COLLECTOR_VERSION} 실행 중 — http://127.0.0.1:${AGENT_PORT} (${platformId()}, Chrome ${resolveChromePath() ? "있음" : "없음"})`);
     log(`허용된 화면: ${[...allowedOrigins()].join(", ")}`);
   });
 }
@@ -466,7 +563,7 @@ async function run() {
 
 async function stopRunningAgent() {
   try {
-    await fetch(`http://127.0.0.1:${COLLECTOR_AGENT_PORT}/shutdown`, { method: "POST", signal: AbortSignal.timeout(3000) });
+    await fetch(`http://127.0.0.1:${AGENT_PORT}/shutdown`, { method: "POST", signal: AbortSignal.timeout(3000) });
   } catch {
     // 실행 중이 아니면 그만
   }

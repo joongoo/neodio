@@ -208,7 +208,9 @@ async function main() {
   }
 
   console.log("STAGE:crawl_pages");
-  const browser = await chromium.launch({ headless: true });
+  // 설치형 수집기는 Playwright 브라우저를 따로 넣지 않고 설치된 Chrome을 쓴다(--browser-channel chrome).
+  const channel = argValue("browser-channel");
+  const browser = await chromium.launch({ headless: true, ...(channel ? { channel } : {}) });
   const context = await browser.newContext({ userAgent: "Mozilla/5.0 NeodioSitemapCrawler/1.0" });
   const page = await context.newPage();
 
@@ -217,6 +219,7 @@ async function main() {
     const result = await crawlUrl(page, url, timeoutMs);
     urls.push(result);
     console.log(`${result.status === "success" ? "OK" : "FAIL"} ${result.contentVisibility}% ${url}`);
+    console.log(`진행 ${urls.length}/${pageUrls.length}`);
   }
 
   await browser.close();

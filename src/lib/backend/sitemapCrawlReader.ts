@@ -1,5 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { getPromptStore } from "./database";
+import { getCurrentTenant } from "./tenant";
 import {
   ContentAuditOpportunity,
   ContentRecoveryOpportunity,
@@ -13,44 +15,44 @@ import {
 // collectionRuns.ts / collectionRunsTypes.ts split for why.
 const CRAWL_DIR = ".tmp/sitemap-crawl";
 
-export async function getLatestSitemapCrawl(domain: string): Promise<SitemapCrawlResult | null> {
+// 크롤 결과의 두 저장 위치를 함께 읽는다 — 운영(서버리스)은 DB에만 있고(설치형 수집기가 크롤해
+// /api/sitemap-crawl/import로 올린다), 로컬 개발은 `npm run crawl:sitemap`/로컬 크롤 작업이 쓴 파일도 있다.
+async function readCrawlFiles(domain: string): Promise<SitemapCrawlResult[]> {
   const dir = path.join(process.cwd(), CRAWL_DIR);
   const filenames = await readdir(dir).catch(() => []);
-  const jsonFiles = filenames.filter((f) => f.endsWith(".json"));
-
-  let latest: SitemapCrawlResult | null = null;
-  for (const filename of jsonFiles) {
-    try {
-      const raw = await readFile(path.join(dir, filename), "utf8");
-      const parsed = JSON.parse(raw) as SitemapCrawlResult;
-      if (parsed.domain !== domain) continue;
-      if (!latest || parsed.crawledAt > latest.crawledAt) latest = parsed;
-    } catch {
-      // skip an unreadable/partial file rather than failing the whole page
-    }
-  }
-  return latest;
-}
-
-// 배포 없이 "다시 크롤링"만 반복해서 전/후를 비교하려면 크롤 기록 전체가
-// 필요하다 — 매번 새 파일로 저장되므로(scripts/crawl-sitemap.mjs) 그냥 전부
-// 모아서 시간순 정렬하면 된다. 새 저장소를 따로 만들 필요가 없다.
-export async function getSitemapCrawlHistory(domain: string): Promise<SitemapCrawlResult[]> {
-  const dir = path.join(process.cwd(), CRAWL_DIR);
-  const filenames = await readdir(dir).catch(() => []);
-  const jsonFiles = filenames.filter((f) => f.endsWith(".json"));
-
   const results: SitemapCrawlResult[] = [];
-  for (const filename of jsonFiles) {
+  for (const filename of filenames.filter((f) => f.endsWith(".json"))) {
     try {
-      const raw = await readFile(path.join(dir, filename), "utf8");
-      const parsed = JSON.parse(raw) as SitemapCrawlResult;
+      const parsed = JSON.parse(await readFile(path.join(dir, filename), "utf8")) as SitemapCrawlResult;
       if (parsed.domain === domain) results.push(parsed);
     } catch {
       // skip an unreadable/partial file rather than failing the whole page
     }
   }
-  return results.sort((a, b) => a.crawledAt.localeCompare(b.crawledAt));
+  return results;
+}
+
+async function readCrawlRows(domain: string): Promise<SitemapCrawlResult[]> {
+  try {
+    const tenant = await getCurrentTenant();
+    return await (await getPromptStore()).sitemapCrawls(tenant.orgId, domain);
+  } catch {
+    return [];
+  }
+}
+
+// 배포 없이 "다시 크롤링"만 반복해서 전/후를 비교하려면 크롤 기록 전체가 필요하다 — 매번 새 기록으로
+// 저장되므로 전부 모아서 시간순 정렬하면 된다(같은 크롤 시각이 양쪽에 있으면 DB 것을 쓴다).
+export async function getSitemapCrawlHistory(domain: string): Promise<SitemapCrawlResult[]> {
+  const [files, rows] = await Promise.all([readCrawlFiles(domain), readCrawlRows(domain)]);
+  const byTime = new Map<string, SitemapCrawlResult>();
+  for (const result of [...files, ...rows]) byTime.set(result.crawledAt, result);
+  return [...byTime.values()].sort((a, b) => a.crawledAt.localeCompare(b.crawledAt));
+}
+
+export async function getLatestSitemapCrawl(domain: string): Promise<SitemapCrawlResult | null> {
+  const history = await getSitemapCrawlHistory(domain);
+  return history[history.length - 1] ?? null;
 }
 
 // "콘텐츠 가시성 회복" 기회를 실 크롤 기록으로 채운다. 크롤이 1회뿐이면

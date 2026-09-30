@@ -26,6 +26,7 @@ import { ChannelCitationSummary, SocialAccountsSection } from "@/components/bran
 import { BrandYoutubeChannel, ManagedBrand, TrackedOtherBrand } from "@/lib/db";
 import { SitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobTypes";
 import { useTenantBase } from "@/lib/useTenantBase";
+import { getSitemapCrawlStatus, startSitemapCrawl } from "@/lib/sitemapCrawlClient";
 
 const MARKET_OPTIONS = ["한국", "미국", "영국", "독일", "전세계"];
 
@@ -92,9 +93,8 @@ export function BrandDetailClient({
     if (!crawlJobId) return;
 
     async function poll() {
-      const res = await fetch(`/api/sitemap-crawl/status?jobId=${crawlJobId}`);
-      if (!res.ok) return;
-      const data: SitemapCrawlStatus = await res.json();
+      const data: SitemapCrawlStatus | null = crawlJobId ? await getSitemapCrawlStatus(crawlJobId) : null;
+      if (!data) return;
       setCrawlStatus(data);
       if (data.stage === "done" || data.stage === "error") {
         if (pollRef.current) clearInterval(pollRef.current);
@@ -108,24 +108,19 @@ export function BrandDetailClient({
     };
   }, [crawlJobId]);
 
-  async function startSitemapCrawl() {
+  async function startBrandSitemapCrawl() {
     const domain = hostnameOfUrl(brand.url);
     if (!domain) {
       alert("브랜드 URL이 올바르지 않습니다. 사이트 주소를 확인해주세요.");
       return;
     }
-    const res = await fetch("/api/sitemap-crawl/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domain, sitemapUrl: normalizeUrl(brand.sitemapUrl) }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      window.alert(data.error ?? "사이트맵 크롤을 시작하지 못했습니다.");
+    const started = await startSitemapCrawl({ domain, sitemapUrl: normalizeUrl(brand.sitemapUrl) });
+    if (!started.ok) {
+      if (!started.handled) window.alert(started.error || "사이트맵 크롤을 시작하지 못했습니다.");
       return;
     }
     setCrawlStatus({ stage: "install", log: [], error: null, result: null });
-    setCrawlJobId(data.jobId);
+    setCrawlJobId(started.jobId);
   }
 
   function updateDraft(patch: Partial<ManagedBrand>) {
@@ -254,7 +249,7 @@ export function BrandDetailClient({
               variant="secondary"
               icon={<Radar size={14} />}
               disabled={!brand.sitemapUrl.trim() || crawlJobId !== null}
-              onClick={startSitemapCrawl}
+              onClick={startBrandSitemapCrawl}
               className="shrink-0 whitespace-nowrap"
             >
               사이트맵 크롤

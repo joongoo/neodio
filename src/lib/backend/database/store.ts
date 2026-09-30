@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import type { BrandSeed, ManagedBrand, PromptLibraryRow, PromptRunSeed, PromptTopicGroup } from "../../db/types";
+import type { BrandSeed, ManagedBrand, PromptLibraryRow, PromptRunSeed, PromptTopicGroup, SitemapCrawlResult } from "../../db/types";
 import type { CollectedRunFile } from "../collectionRunsTypes";
 import { extractMentionsFromRun } from "../processing/mentions";
 import { extractCitationsFromRun } from "../processing/citations";
@@ -137,7 +137,7 @@ export class PromptStore {
     return this.transaction(async () => {
       const [{ n }] = await this.query<{ n: number }>("SELECT count(*)::int AS n FROM brands WHERE organization_id=$1", [orgId]);
       if (n > 0) return false;
-      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids"];
+      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids", "sitemap_crawls"];
       for (const table of scoped) await this.run(`DELETE FROM ${table} WHERE organization_id=$1`, [orgId]);
       await this.run("DELETE FROM tracking_events WHERE tracking_id IN (SELECT id FROM prompt_tracking WHERE organization_id=$1)", [orgId]);
       await this.run("DELETE FROM prompt_tracking WHERE organization_id=$1", [orgId]);
@@ -536,6 +536,26 @@ export class PromptStore {
     return new Map(
       rows.map((row) => [row.normalized_name, { status: row.status, evidenceDomain: row.evidence_domain ?? undefined }])
     );
+  }
+
+  /** 사이트맵 크롤 한 번의 결과 — 같은 (조직, 도메인, 크롤 시각)은 덮어쓴다(같은 결과를 다시 올려도 중복되지 않는다). */
+  async saveSitemapCrawl(orgId: string, result: SitemapCrawlResult, sourceJobId: string | null = null): Promise<void> {
+    await this.ensureOrg(orgId);
+    await this.run(
+      `INSERT INTO sitemap_crawls VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT(organization_id,domain,crawled_at)
+      DO UPDATE SET sitemap_url=excluded.sitemap_url,source_job_id=excluded.source_job_id,data_json=excluded.data_json`,
+      [id("crawl"), orgId, result.domain, result.sitemapUrl, result.crawledAt, sourceJobId, JSON.stringify(result), now()]
+    );
+  }
+
+  /** 이 조직의 한 도메인 크롤 기록 — 크롤 시각 오름차순. */
+  async sitemapCrawls(orgId: string, domain: string): Promise<SitemapCrawlResult[]> {
+    const rows = await this.query<{ data_json: SitemapCrawlResult }>(
+      "SELECT data_json FROM sitemap_crawls WHERE organization_id=$1 AND lower(domain)=lower($2) ORDER BY crawled_at ASC",
+      [orgId, domain]
+    );
+    return rows.map((row) => row.data_json);
   }
 
   async setDetectedBrandDecision(

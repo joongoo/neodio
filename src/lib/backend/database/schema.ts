@@ -167,6 +167,14 @@ CREATE TABLE IF NOT EXISTS aio_video_work_logs (
   id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
   video_id TEXT NOT NULL, work_date TEXT NOT NULL, work_type TEXT NOT NULL, note TEXT, created_at TEXT NOT NULL
 );
+-- 사이트맵 크롤 결과(콘텐츠 가시성·FAQ·목차·복잡도 등) — 예전엔 .tmp/sitemap-crawl 파일이라 서버리스에서 못 읽었다.
+CREATE TABLE IF NOT EXISTS sitemap_crawls (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
+  domain TEXT NOT NULL, sitemap_url TEXT NOT NULL, crawled_at TEXT NOT NULL,
+  source_job_id TEXT, data_json JSONB NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE(organization_id,domain,crawled_at)
+);
+CREATE INDEX IF NOT EXISTS sitemap_crawls_lookup ON sitemap_crawls(organization_id,domain,crawled_at);
 CREATE TABLE IF NOT EXISTS imported_files (path TEXT PRIMARY KEY, signature TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS data_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS prompts_topic ON prompts(organization_id,topic_id);

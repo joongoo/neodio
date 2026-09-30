@@ -189,3 +189,26 @@ test("organizations: create, rename, list with brand counts, delete only when em
   assert.equal(n, 0, "the organization's prompts are removed with it");
   assert.deepEqual((await store.library("neodigm", "brand-neodigm")).map((r) => r.prompt), ["Neodigm only"]);
 });
+
+test("sitemap crawls are stored per organization and domain, re-saving the same crawl does not duplicate, and org deletion clears them", async () => {
+  const store = await database();
+  const urlResult = (url: string, contentVisibility: number) => ({
+    url, status: "success" as const, rawTextLength: 10, renderedTextLength: 20, contentVisibility, complexityScore: 50,
+    hasFaq: false, hasToc: false, imageAltCoverage: 100, hasStructuredData: false, error: null,
+  });
+  const first = { domain: "Acme.test", sitemapUrl: "https://acme.test/sitemap.xml", crawledAt: "2026-09-01T00:00:00.000Z", urls: [urlResult("https://acme.test/a", 40)] };
+  const second = { ...first, crawledAt: "2026-09-08T00:00:00.000Z", urls: [urlResult("https://acme.test/a", 70)] };
+  await store.saveSitemapCrawl("org-a", second, "job-2");
+  await store.saveSitemapCrawl("org-a", first, "job-1");
+  await store.saveSitemapCrawl("org-a", { ...first, urls: [urlResult("https://acme.test/a", 41)] }, "job-1");
+  await store.saveSitemapCrawl("org-b", first);
+
+  const history = await store.sitemapCrawls("org-a", "acme.test");
+  assert.deepEqual(history.map((c) => [c.crawledAt, c.urls[0].contentVisibility]), [["2026-09-01T00:00:00.000Z", 41], ["2026-09-08T00:00:00.000Z", 70]], "oldest first, same crawl overwritten");
+  assert.equal((await store.sitemapCrawls("org-b", "acme.test")).length, 1, "organizations are isolated");
+  assert.equal((await store.sitemapCrawls("org-a", "other.test")).length, 0);
+
+  assert.equal(await store.deleteOrganization("org-a"), true);
+  assert.equal((await store.sitemapCrawls("org-a", "acme.test")).length, 0);
+  assert.equal((await store.sitemapCrawls("org-b", "acme.test")).length, 1);
+});

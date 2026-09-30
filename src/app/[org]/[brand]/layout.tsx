@@ -1,6 +1,12 @@
 import { AppShell } from "@/components/layout/AppShell";
+import { CollectorSetupHost } from "@/components/collector/CollectorSetupHost";
 
 // /{조직}/{브랜드}/… — 조직·브랜드가 바뀌면 이 레이아웃이 다시 그려져 헤더도 따라 바뀐다.
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      {children}
+      <CollectorSetupHost />
+    </AppShell>
+  );
 }

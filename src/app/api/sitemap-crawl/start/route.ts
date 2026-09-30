@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startSitemapCrawlJob, startUrlRecrawlJob } from "@/lib/backend/sitemapCrawlJobRunner";
+import { collectionUsesLocalAgent } from "@/lib/backend/collectionMode";
 
-// 실제 크롤(Playwright 브라우저 설치 + npm run crawl:sitemap 자식 프로세스)은
-// 로컬 프로세스 전제로 짜여있어서 Vercel 서버리스에서 못 돈다 (읽기전용
-// 파일시스템이라 브라우저 설치 불가, 실행시간 제한, 프로세스 스폰 제약).
-// 조용히 타임아웃/500으로 죽는 대신 여기서 바로 명확한 이유를 준다.
-function refuseOnServerless() {
-  if (!process.env.VERCEL) return null;
+// 이 서버가 직접 크롤하는 건 로컬 개발뿐이다(Playwright 브라우저 + `npm run crawl:sitemap` 자식 프로세스).
+// 운영(Vercel 서버리스)은 브라우저를 설치할 수도, 오래 실행할 수도 없어서 사용자 PC의 설치형 수집기가
+// 크롤하고 화면(브라우저)이 결과를 /api/sitemap-crawl/import로 올린다(src/lib/sitemapCrawlClient.ts).
+// 그 경우 여기서는 code: "agent"로 알려 화면이 수집기 흐름으로 넘어가게 한다.
+function refuseWhenAgentMode() {
+  if (!collectionUsesLocalAgent()) return null;
   return NextResponse.json(
-    { error: "사이트맵 크롤은 로컬 개발 환경에서만 실행할 수 있어요. 로컬에서 `npm run crawl:sitemap`을 실행해주세요." },
+    { error: "이 환경에서는 설치형 수집기로 크롤합니다.", code: "agent" },
     { status: 501 }
   );
 }
 
 export async function POST(request: NextRequest) {
-  const refused = refuseOnServerless();
+  const refused = refuseWhenAgentMode();
   if (refused) return refused;
   const body = await request.json().catch(() => null);
   const domain = typeof body?.domain === "string" ? body.domain.trim() : "";

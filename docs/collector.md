@@ -16,16 +16,35 @@
 - 로컬 대시보드(`npm run dev`)는 지금처럼 서버가 바로 수집한다. `NEODIO_COLLECTION_MODE=agent`를 주면
   로컬에서도 운영과 같은 수집기 흐름을 쓴다.
 
+## 사이트맵 크롤 (0.2.0부터)
+
+콘텐츠 가시성·FAQ·목차·복잡도 같은 "기회" 지표는 페이지를 브라우저로 렌더링해야 잴 수 있어서, 운영에서는 이것도 수집기가 한다.
+`kind: "sitemap-crawl"` 작업을 받아 설치된 Chrome으로 [scripts/crawl-sitemap.mjs](../scripts/crawl-sitemap.mjs)를 돌리고
+(`--browser-channel chrome`), 끝난 결과를 화면이 받아 `POST /api/sitemap-crawl/import`로 올린다. 서버에는 `sitemap_crawls`
+테이블에 조직·도메인·크롤 시각별로 저장하고(같은 크롤을 다시 올려도 덮어쓴다), 기회 화면들은 이 DB를 읽는다.
+
+- 화면 쪽 창구는 [sitemapCrawlClient.ts](../src/lib/sitemapCrawlClient.ts) — 로컬 개발은 서버가 직접 크롤하고(`/api/sitemap-crawl/start`),
+  서버가 `code: "agent"`로 알려 주는 환경(운영, 또는 `NEODIO_COLLECTION_MODE=agent`)은 수집기로 넘어간다. 화면 코드는 두 경우를 같게 다룬다.
+- 수집기가 없거나 0.2.0보다 오래됐거나 Chrome이 없으면 설치 안내 창([CollectorSetupHost](../src/components/collector/CollectorSetupHost.tsx))이 뜬다.
+- 크롤 대상은 화면이 알려준 브랜드 도메인(과 하위 도메인)만 받는다([collectorCrawlSpec.ts](../src/lib/collectorCrawlSpec.ts)).
+  서버는 올라온 결과의 모양·범위를 다시 검증해 저장한다([sitemapCrawlImport.ts](../src/lib/sitemapCrawlImport.ts)).
+- 로컬 크롤이 남기는 `.tmp/sitemap-crawl/*.json` 파일도 계속 읽는다(같은 크롤 시각이면 DB가 우선). 운영은 DB만 있다.
+- **0.1.x 수집기는 이 작업을 모른다.** 새 zip(`COLLECTOR_VERSION` 0.2.0)을 빌드해 Blob에 올리고, 수집 PC에서 설치 파일을 다시 실행해야 한다.
+
+시험용 환경변수: `NEODIO_COLLECTOR_PORT`, `NEODIO_COLLECTOR_HOME`으로 설치된 수집기와 겹치지 않는 개발용 수집기를 따로 띄울 수 있다
+(`npx tsx collector/agent.ts run`).
+
 ## 구성
 
 | 위치 | 역할 |
 |---|---|
-| [collector/agent.ts](../collector/agent.ts) | 수집기 — `run`(127.0.0.1 서버), `install`(설치 + 로그인 시 자동 시작), `uninstall`, `status` |
+| [collector/agent.ts](../collector/agent.ts) | 수집기 — `run`(127.0.0.1 서버; AI 수집·사이트맵 크롤 작업), `install`(설치 + 로그인 시 자동 시작), `uninstall`, `status` |
 | [collector/build.mjs](../collector/build.mjs) | 운영체제별 설치 파일(zip) 만들기 |
 | [src/lib/collectorAgent.ts](../src/lib/collectorAgent.ts) | 웹 ↔ 수집기 약속(포트, 버전, 작업 형식) |
 | [src/lib/collectorClient.ts](../src/lib/collectorClient.ts) | 브라우저에서 수집기 호출 |
 | [AgentCollectionModal](../src/components/prompt-library/AgentCollectionModal.tsx) | 선택 수집 화면(확인 → 설치 안내 → 진행 → 반영) |
 | `/api/collection-runs/import` | 반영 — 지금 조직으로 저장, 같은 실행은 덮어쓰기 |
+| `/api/sitemap-crawl/import` | 사이트맵 크롤 반영 — 지금 조직의 `sitemap_crawls`에 저장, 같은 크롤은 덮어쓰기 |
 | `/api/collector-download?platform=` | 비공개 Blob의 설치 파일로 가는 임시 링크(10분) — 로그인한 화면에서만 |
 
 수집기는 저장소의 수집 스크립트(`scripts/collect-naver-ai.mjs`, `collect-google-ai.mjs`)를 그대로 번들해 실행한다.
