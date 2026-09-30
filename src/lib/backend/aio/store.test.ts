@@ -463,7 +463,7 @@ test("라이브러리에서 고른 프롬프트: 표면 일괄 변경이 AIO 수
   const one = await s.track("neodigm", { text: "일괄 표면 프롬프트 하나" }, { brandId, origin: "manual" });
   const two = await s.track("neodigm", { text: "일괄 표면 프롬프트 둘" }, { brandId, origin: "manual" });
   assert.deepEqual(one.surfaces, ["google-ai-mode", "naver-ai"]);
-  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId, two.promptId]), [], "AIO 표면이 없으면 수집 대상이 아니다");
+  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId!, two.promptId!]), [], "AIO 표면이 없으면 수집 대상이 아니다");
 
   const post = (body: unknown) => bulkSurfacesRoute.POST(request("/x", "POST", body));
   assert.equal((await post({ ids: [], surfaces: ["google-aio"] })).status, 400);
@@ -473,11 +473,11 @@ test("라이브러리에서 고른 프롬프트: 표면 일괄 변경이 AIO 수
   const surfaces = async (id: string) => (await s.library("neodigm", brandId)).find((r) => r.id === id)?.surfaces;
   assert.deepEqual(await surfaces(one.id), ["google-aio", "naver-ai"]);
   assert.deepEqual(await surfaces(two.id), ["google-ai-mode", "naver-ai"], "선택하지 않은 프롬프트는 그대로");
-  const ids = await store.aioKeywordIdsForPrompts(brandId, [one.promptId, two.promptId]);
+  const ids = await store.aioKeywordIdsForPrompts(brandId, [one.promptId!, two.promptId!]);
   assert.equal(ids.length, 1, "AIO가 켜진 프롬프트만 수집 대상으로 나온다");
 
   await post({ ids: [one.id], surfaces: ["naver-ai"] });
-  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId]), [], "AIO를 끄면 수집 대상에서 빠진다");
+  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId!]), [], "AIO를 끄면 수집 대상에서 빠진다");
 });
 
 test("deleting a brand removes its AIO data", async () => {
