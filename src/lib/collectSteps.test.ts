@@ -7,7 +7,7 @@ const rows = [
   { prompt: "B", promptId: "pb", surfaces: ["naver-ai"] as const },
   { prompt: "C", promptId: "pc", surfaces: ["google-aio", "google-ai-mode"] as const },
   { prompt: "D", promptId: "pd", surfaces: ["google-aio"] as const },
-  { prompt: "E" }, // 표면 정보가 없는 행 → 기존 기본값(네이버·구글 AI 모드)
+  { prompt: "E" }, // 플랫폼 정보가 없는 행 → 기존 기본값(네이버·구글 AI 모드)
 ].map((r) => ({ ...r, surfaces: r.surfaces ? [...r.surfaces] : undefined }));
 
 test("counts selected prompts per saved surface", () => {

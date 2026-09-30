@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";
   const keywordId = typeof body?.keywordId === "string" ? body.keywordId : null;
-  // 프롬프트 라이브러리에서 고른 프롬프트들 — AIO 표면이 켜진 것만 수집 대상이 된다.
+  // 프롬프트 라이브러리에서 고른 프롬프트들 — AIO 플랫폼이 켜진 것만 수집 대상이 된다.
   const promptIds: string[] = Array.isArray(body?.promptIds) ? body.promptIds.filter((id: unknown): id is string => typeof id === "string").slice(0, 200) : [];
   if (!brandId || !(await getManagedBrand(tenant.orgId, brandId))) {
     return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 404 });
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   if (!keyword && promptIds.length > 0) {
     selectedIds = await aioKeywordIdsForPrompts(brandId, promptIds);
     if (selectedIds.length === 0) {
-      return NextResponse.json({ error: "선택한 프롬프트 중 Google AI Overview 표면이 켜진 프롬프트가 없습니다." }, { status: 400 });
+      return NextResponse.json({ error: "선택한 프롬프트 중 구글AIO가 켜진 프롬프트가 없습니다." }, { status: 400 });
     }
   }
   // 하나 또는 골라서 수집하는 건 오늘 이미 수집했어도 다시 보려는 것이다.

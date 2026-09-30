@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { CollectionStage } from "@/lib/backend/collectionJobTypes";
 
 const ENGINE_OPTIONS: { id: "naver" | "google"; label: string }[] = [
-  { id: "naver", label: "네이버 AI검색" },
-  { id: "google", label: "구글 AI 모드" },
+  { id: "naver", label: "네이버AI" },
+  { id: "google", label: "구글AI" },
 ];
 
 const STAGE_LABEL: Record<CollectionStage, string> = {

@@ -46,7 +46,7 @@ test("AIO keywords become tracked prompts with the AIO surface; existing prompts
   const store = await database();
   const org = await store.createOrganization("Acme", "acme");
   const brand = await store.createBrand(org.id, brandInput);
-  // 이미 라이브러리에 있는 프롬프트(카테고리·토픽 있음) + 아직 표면이 없는 기존 추적
+  // 이미 라이브러리에 있는 프롬프트(카테고리·토픽 있음) + 아직 플랫폼이 없는 기존 추적
   const existing = await store.track(org.id, { text: "마케팅 자동화 툴 비교", category: "마케팅 자동화", topic: "툴 비교" }, { brandId: brand.id, origin: "manual" });
   await addKeyword(store, brand.id, "kw-1", "마케팅 자동화 툴 비교", "comparison");
   await addKeyword(store, brand.id, "kw-22", "마케토 도입 비용", "category");
@@ -94,7 +94,7 @@ test("re-running the migration is a no-op, and untouched tracking gets the defau
   const org = await store.createOrganization("Acme", "acme");
   const brand = await store.createBrand(org.id, brandInput);
   const plain = await store.track(org.id, { text: "기존 질문" }, { brandId: brand.id, origin: "manual" });
-  // 표면 기능이 생기기 전에 만든 추적(표면 행이 없다)을 흉내 낸다.
+  // 플랫폼 기능이 생기기 전에 만든 추적(플랫폼 행이 없다)을 흉내 낸다.
   await store.query("DELETE FROM prompt_tracking_surfaces WHERE tracking_id=$1", [plain.id]);
   await addKeyword(store, brand.id, "kw-1", "마케토 비용", "category");
 
@@ -175,7 +175,7 @@ test("archiving an AIO keyword turns the surface off and archives the prompt onl
   const brand = await store.createBrand(org.id, brandInput);
   await addKeyword(store, brand.id, "kw-1", "검색어만", "category");
   await addKeyword(store, brand.id, "kw-22", "함께 수집", "category");
-  const shared = await store.track(org.id, { text: "함께 수집" }, { brandId: brand.id, origin: "manual" }); // 네이버·AI 모드 표면을 이미 가진 프롬프트
+  const shared = await store.track(org.id, { text: "함께 수집" }, { brandId: brand.id, origin: "manual" }); // 네이버·AI 모드 플랫폼을 이미 가진 프롬프트
   await migrateAioKeywordsToPrompts(store, { dryRun: false });
   assert.deepEqual((await store.trackingSurfaces(org.id, [shared.id])).get(shared.id), ["google-aio", "google-ai-mode", "naver-ai"]);
 

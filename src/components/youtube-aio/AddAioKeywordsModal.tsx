@@ -6,7 +6,7 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
 // AIO 추적 프롬프트 추가 — 한 줄에 하나씩 여러 개. 여기서 추가한 프롬프트는 프롬프트 라이브러리에도 등록되고
-// Google AI Overview 표면으로 수집된다(docs/prompt-surfaces-plan.md). 그룹은 더 이상 고르지 않는다.
+// Google AI Overview 플랫폼으로 수집된다(docs/prompt-surfaces-plan.md). 그룹은 더 이상 고르지 않는다.
 export function AddAioKeywordsModal({ open, onClose, brandId }: { open: boolean; onClose: () => void; brandId: string }) {
   const router = useRouter();
   const [keywords, setKeywords] = useState("");

@@ -34,7 +34,7 @@ export function AioCollectButton({
   /** 있으면 이 프롬프트만 수집 */
   keywordId?: string;
   keywordLabel?: string;
-  /** 있으면 프롬프트 라이브러리에서 고른 이 프롬프트들(AIO 표면이 켜진 것)만 수집 */
+  /** 있으면 프롬프트 라이브러리에서 고른 이 프롬프트들(AIO 플랫폼이 켜진 것)만 수집 */
   promptIds?: string[];
   buttonLabel?: string;
   /** 예상 검색 횟수(프롬프트 × 디바이스) — 확인 단계의 소요 시간 안내용 */

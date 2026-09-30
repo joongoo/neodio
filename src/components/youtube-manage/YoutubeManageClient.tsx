@@ -146,7 +146,7 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
       label: (
         <span className="flex items-center justify-end gap-1">
           AIO 인용 프롬프트
-          <Tooltip text={`최근 ${RECENT_DAYS}일 안에 Google AI Overview가 이 영상을 인용한 프롬프트 수(${DEVICE_LABEL[device]} 기준). 그 기간에 수집이 없었으면 –로 표시합니다.`} />
+          <Tooltip text={`최근 ${RECENT_DAYS}일 안에 구글AIO가 이 영상을 인용한 프롬프트 수(${DEVICE_LABEL[device]} 기준). 그 기간에 수집이 없었으면 –로 표시합니다.`} />
         </span>
       ),
       render: (v) =>
@@ -263,7 +263,7 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
           candidates={candidates}
           existingPrompts={existingPrompts}
           onRegistered={(count) => {
-            setNotice({ kind: "ok", text: `예상 프롬프트 ${count}개를 프롬프트 라이브러리에 등록했습니다. 선택한 표면에서 수집이 시작됩니다.` });
+            setNotice({ kind: "ok", text: `예상 프롬프트 ${count}개를 프롬프트 라이브러리에 등록했습니다. 선택한 플랫폼에서 수집이 시작됩니다.` });
             router.refresh();
           }}
         />

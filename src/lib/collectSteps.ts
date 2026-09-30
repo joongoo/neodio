@@ -1,7 +1,7 @@
 import { AI_ANSWER_SURFACES, PROMPT_SURFACES, type PromptSurface } from "@/lib/promptSurfaces";
 
-// 프롬프트 라이브러리의 "선택 수집" — 고른 프롬프트를 저장된 수집 표면대로 나눠 수집 단계로 만든다.
-// 표면마다 수집 방식이 달라서(네이버·Google AI 모드는 답변 수집, AIO는 검색 결과 수집) 단계가 나뉘고,
+// 프롬프트 라이브러리의 "선택 수집" — 고른 프롬프트를 저장된 플랫폼대로 나눠 수집 단계로 만든다.
+// 플랫폼마다 수집 방식이 달라서(네이버·Google AI 모드는 답변 수집, AIO는 검색 결과 수집) 단계가 나뉘고,
 // 답변 수집은 프롬프트별로 켜진 엔진 조합이 같은 것끼리 묶어 한 번에 돌린다 — 네이버만 켠 프롬프트가 구글로도 수집되지 않게.
 
 export type CollectEngine = "naver" | "google";
@@ -13,18 +13,18 @@ export type CollectStep =
 export interface CollectRow {
   prompt: string;
   promptId?: string;
-  /** 저장된 수집 표면 — 없으면(표면 정보가 없는 행) 기존 라이브러리 기본값으로 본다. */
+  /** 저장된 플랫폼 — 없으면(플랫폼 정보가 없는 행) 기존 라이브러리 기본값으로 본다. */
   surfaces?: PromptSurface[];
 }
 
 export const surfacesOf = (row: CollectRow): PromptSurface[] => (row.surfaces && row.surfaces.length > 0 ? row.surfaces : [...AI_ANSWER_SURFACES]);
 
-/** 표면마다 고른 프롬프트가 몇 개인지 — 수집 창의 표면별 개수. */
+/** 플랫폼마다 고른 프롬프트가 몇 개인지 — 수집 창의 플랫폼별 개수. */
 export function countBySurface(rows: CollectRow[]): Record<PromptSurface, number> {
   return Object.fromEntries(PROMPT_SURFACES.map((surface) => [surface, rows.filter((row) => surfacesOf(row).includes(surface)).length])) as Record<PromptSurface, number>;
 }
 
-/** 체크한 표면만 수집하는 단계 목록. 답변 수집 단계가 앞, AIO 단계가 뒤. */
+/** 체크한 플랫폼만 수집하는 단계 목록. 답변 수집 단계가 앞, AIO 단계가 뒤. */
 export function buildCollectSteps(rows: CollectRow[], enabled: ReadonlySet<PromptSurface>): CollectStep[] {
   const groups = new Map<string, { engines: CollectEngine[]; keywords: string[] }>();
   for (const row of rows) {

@@ -3,14 +3,14 @@
 import { PROMPT_SURFACES, SURFACE_LABEL, type PromptSurface } from "@/lib/promptSurfaces";
 
 const SURFACE_HINT: Record<PromptSurface, string> = {
-  "google-aio": "Google 검색 결과의 AI 개요. 검색 1건이 느리고 하루 수집 상한이 있어 검색어형에 알맞습니다.",
-  "google-ai-mode": "Google AI 모드의 대화형 답변.",
-  "naver-ai": "네이버 검색의 AI 브리핑 답변.",
+  "google-aio": "구글 검색 결과 맨 위의 AI 개요(AI Overview). 검색 1건이 느리고 하루 수집 상한이 있어 검색어형에 알맞습니다.",
+  "google-ai-mode": "구글 AI 모드의 대화형 답변.",
+  "naver-ai": "네이버 AI 검색(AI 탭)의 대화형 답변.",
 };
 
-const CHIP_SHORT: Record<PromptSurface, string> = { "google-aio": "AIO", "google-ai-mode": "AI 모드", "naver-ai": "네이버" };
+const CHIP_SHORT: Record<PromptSurface, string> = { "google-aio": "구글AIO", "google-ai-mode": "구글AI", "naver-ai": "네이버AI" };
 
-// 프롬프트를 어느 표면에서 수집할지 고르는 체크박스 — 프롬프트 추가·편집 창이 같이 쓴다.
+// 프롬프트를 어느 플랫폼에서 수집할지 고르는 체크박스 — 프롬프트 추가·편집 창이 같이 쓴다.
 export function SurfacePicker({
   value,
   onChange,
@@ -18,7 +18,7 @@ export function SurfacePicker({
 }: {
   value: PromptSurface[];
   onChange: (next: PromptSurface[]) => void;
-  /** 문장을 보고 제안한 표면 — 있으면 "추천" 표시를 붙인다. */
+  /** 문장을 보고 제안한 플랫폼 — 있으면 "추천" 표시를 붙인다. */
   suggested?: PromptSurface[];
 }) {
   function toggle(surface: PromptSurface) {
@@ -39,12 +39,12 @@ export function SurfacePicker({
           </span>
         </label>
       ))}
-      {value.length === 0 && <p className="text-xs text-red-600">수집할 표면을 하나 이상 선택하세요.</p>}
+      {value.length === 0 && <p className="text-xs text-red-600">수집할 플랫폼을 하나 이상 선택하세요.</p>}
     </div>
   );
 }
 
-/** 표에서 쓰는 표면 칩. 표면 정보가 없는 행(목업)은 "—". */
+/** 표에서 쓰는 플랫폼 칩. 플랫폼 정보가 없는 행(목업)은 "—". */
 export function SurfaceChips({ surfaces }: { surfaces?: PromptSurface[] }) {
   if (!surfaces || surfaces.length === 0) return <span className="text-neutral-400">—</span>;
   return (

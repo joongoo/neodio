@@ -328,7 +328,7 @@ test("AIO keywords are prompts with the AIO surface: adding creates the tracked 
   const [{ search_intent: intent }] = await s.query<{ search_intent: string | null }>("SELECT search_intent FROM prompts WHERE id=$1", [linked!]);
   assert.equal(intent, "업체 비교", "the group became the search intent");
 
-  // 라이브러리에 이미 AI 답변 표면으로 있던 프롬프트에 같은 검색어를 AIO로 추가하면 표면만 더해진다.
+  // 라이브러리에 이미 AI 답변 플랫폼으로 있던 프롬프트에 같은 검색어를 AIO로 추가하면 플랫폼만 더해진다.
   await s.track(orgId, { text: "함께 쓰는 질의" }, { brandId, origin: "manual" });
   await store.addAioKeywords(brandId, ["함께 쓰는 질의"], "category");
   assert.deepEqual(await surfacesOf("함께 쓰는 질의"), ["google-aio", "google-ai-mode", "naver-ai"]);
@@ -419,7 +419,7 @@ test("YouTube 관리: synced videos start unchecked, checking is per video, expe
   // 예상 프롬프트 등록
   const post = (prompts: unknown) => managePromptsRoute.POST(request("/x", "POST", { brandId, prompts }));
   assert.equal((await post([{ videoId: "unknown0000", text: "남의 영상", surfaces: ["google-aio"] }])).status, 400);
-  assert.equal((await post([{ videoId: "sync1111111", text: "표면 없음", surfaces: [] }])).status, 400);
+  assert.equal((await post([{ videoId: "sync1111111", text: "플랫폼 없음", surfaces: [] }])).status, 400);
   assert.equal((await post([])).status, 400);
   const ok = await post([
     { videoId: "sync1111111", text: "Slack 세일즈포스 연동 방법", surfaces: ["google-aio"] },
@@ -458,12 +458,12 @@ test("YouTube 관리: synced videos start unchecked, checking is per video, expe
   assert.deepEqual(byKeyword.map((k) => [k.keyword, k.lastPosition]), [["Slack 세일즈포스 연동 방법", 3]]);
 });
 
-test("라이브러리에서 고른 프롬프트: 표면 일괄 변경이 AIO 수집 대상과 맞물리고, AIO 수집은 켜진 것만 고른다", async () => {
+test("라이브러리에서 고른 프롬프트: 플랫폼 일괄 변경이 AIO 수집 대상과 맞물리고, AIO 수집은 켜진 것만 고른다", async () => {
   const s = await getPromptStore();
-  const one = await s.track("neodigm", { text: "일괄 표면 프롬프트 하나" }, { brandId, origin: "manual" });
-  const two = await s.track("neodigm", { text: "일괄 표면 프롬프트 둘" }, { brandId, origin: "manual" });
+  const one = await s.track("neodigm", { text: "일괄 플랫폼 프롬프트 하나" }, { brandId, origin: "manual" });
+  const two = await s.track("neodigm", { text: "일괄 플랫폼 프롬프트 둘" }, { brandId, origin: "manual" });
   assert.deepEqual(one.surfaces, ["google-ai-mode", "naver-ai"]);
-  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId!, two.promptId!]), [], "AIO 표면이 없으면 수집 대상이 아니다");
+  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId!, two.promptId!]), [], "AIO 플랫폼이 없으면 수집 대상이 아니다");
 
   const post = (body: unknown) => bulkSurfacesRoute.POST(request("/x", "POST", body));
   assert.equal((await post({ ids: [], surfaces: ["google-aio"] })).status, 400);

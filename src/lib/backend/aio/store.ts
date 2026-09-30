@@ -76,7 +76,7 @@ export async function addAioKeywords(brandId: string, keywords: string[], group?
          RETURNING id`,
         [`aiokw-${randomUUID()}`, brandId, keyword, normalized, group ?? "category", now, !!group]
       );
-      // 프롬프트 라이브러리와 한 곳으로 — 키워드는 곧 "Google AI Overview 표면이 켜진 프롬프트"다(docs/prompt-surfaces-plan.md).
+      // 프롬프트 라이브러리와 한 곳으로 — 키워드는 곧 "Google AI Overview 플랫폼이 켜진 프롬프트"다(docs/prompt-surfaces-plan.md).
       await s.linkAioKeyword(saved.id, { classify: !!group });
     }
   });
@@ -85,7 +85,7 @@ export async function addAioKeywords(brandId: string, keywords: string[], group?
 
 // 보관(삭제 아님) — 지난 수집 결과와 추이는 남겨 둔다.
 export async function archiveAioKeyword(brandId: string, keywordId: string): Promise<void> {
-  // 프롬프트의 AIO 표면도 함께 끈다(다른 표면이 없으면 프롬프트도 보관).
+  // 프롬프트의 AIO 플랫폼도 함께 끈다(다른 플랫폼이 없으면 프롬프트도 보관).
   await (await store()).unlinkAioKeyword(brandId, keywordId);
 }
 

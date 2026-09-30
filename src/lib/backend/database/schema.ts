@@ -193,7 +193,7 @@ ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS channel_title TEXT;
 ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS published_at TEXT;
 ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE brand_videos ADD COLUMN IF NOT EXISTS checked BOOLEAN NOT NULL DEFAULT true;
--- 프롬프트(질의)는 prompts 한 곳에서 등록하고, 어느 표면에서 수집할지는 추적(prompt_tracking)마다 정한다.
+-- 프롬프트(질의)는 prompts 한 곳에서 등록하고, 어느 플랫폼에서 수집할지는 추적(prompt_tracking)마다 정한다.
 CREATE TABLE IF NOT EXISTS prompt_tracking_surfaces (
   tracking_id TEXT NOT NULL REFERENCES prompt_tracking(id) ON DELETE CASCADE,
   surface TEXT NOT NULL CHECK(surface IN ('google-aio','google-ai-mode','naver-ai')),

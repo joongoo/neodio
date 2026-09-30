@@ -22,7 +22,7 @@ async function main() {
   console.log(`옮길 AIO 키워드 ${report.keywords}개 (이미 옮김 ${report.alreadyMigrated}개)`);
   console.log(`  새 프롬프트 ${report.createdPrompts}개 / 라이브러리에 같은 문장이 있어 재사용 ${report.reusedPrompts.length}개`);
   console.log(`  추적 새로 만듦 ${report.trackingCreated} · 다시 켬 ${report.trackingReactivated} · 보관으로 만듦 ${report.trackingArchived}`);
-  console.log(`  표면이 없던 기존 추적에 기본 표면(네이버 AI·Google AI 모드) 추가 ${report.defaultSurfacesAdded}개`);
+  console.log(`  플랫폼이 없던 기존 추적에 기본 플랫폼(네이버 AI·Google AI 모드) 추가 ${report.defaultSurfacesAdded}개`);
   for (const reused of report.reusedPrompts) console.log(`  재사용: "${reused.keyword}" (${reused.organizationId})`);
   if (!apply) console.log("\n미리보기입니다. 반영하려면 --apply를 붙여 다시 실행하세요.");
 }

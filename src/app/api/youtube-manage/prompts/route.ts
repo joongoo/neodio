@@ -10,7 +10,7 @@ import { MAX_PROMPT_LENGTH } from "@/lib/videoPromptSuggestion";
 const MAX_PROMPTS_PER_REQUEST = 60;
 const CATEGORY = "YouTube 영상";
 
-// 예상 프롬프트를 프롬프트 라이브러리에 등록한다 — 한 곳에서만 등록하고 수집 표면은 프롬프트별 체크박스(promptSurfaces).
+// 예상 프롬프트를 프롬프트 라이브러리에 등록한다 — 한 곳에서만 등록하고 플랫폼은 프롬프트별 체크박스(promptSurfaces).
 // 영상과의 연결은 prompt_sources(youtube-video, 영상 ID)로 남겨, 영상 상세에서 이 영상용 프롬프트를 다시 찾는다.
 export async function POST(request: NextRequest) {
   const tenant = await getCurrentTenant();
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     if (!text || !videoId) continue;
     if (text.length > MAX_PROMPT_LENGTH) return NextResponse.json({ error: `프롬프트는 ${MAX_PROMPT_LENGTH}자 이하여야 합니다.` }, { status: 400 });
     const surfaces = normalizeSurfaces(raw?.surfaces);
-    if (surfaces.length === 0) return NextResponse.json({ error: "수집할 표면을 하나 이상 선택하세요." }, { status: 400 });
+    if (surfaces.length === 0) return NextResponse.json({ error: "수집할 플랫폼을 하나 이상 선택하세요." }, { status: 400 });
     items.push({ videoId, text, surfaces });
   }
   if (items.length === 0) return NextResponse.json({ error: "등록할 프롬프트가 없습니다." }, { status: 400 });

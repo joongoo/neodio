@@ -20,9 +20,9 @@ export async function POST(request: NextRequest) {
   const category = typeof body?.category === "string" ? body.category.trim() : "";
   const topic = typeof body?.topic === "string" ? body.topic.trim() : undefined;
   const origin = typeof body?.origin === "string" && VALID_ORIGINS.has(body.origin) ? body.origin : undefined;
-  // 수집 표면 — 안 보내면 기본값(지금까지 수집하던 표면), 보냈다면 하나 이상이어야 한다.
+  // 플랫폼 — 안 보내면 기본값(지금까지 수집하던 플랫폼), 보냈다면 하나 이상이어야 한다.
   const surfaces = Array.isArray(body?.surfaces) ? normalizeSurfaces(body.surfaces) : undefined;
-  if (surfaces && surfaces.length === 0) return NextResponse.json({ error: "수집 표면을 하나 이상 선택하세요." }, { status: 400 });
+  if (surfaces && surfaces.length === 0) return NextResponse.json({ error: "플랫폼을 하나 이상 선택하세요." }, { status: 400 });
 
   if (!prompt || (!category && origin !== "csv_import")) {
     return NextResponse.json({ error: "프롬프트와 카테고리가 모두 필요합니다." }, { status: 400 });
@@ -80,10 +80,10 @@ export async function PATCH(request: NextRequest) {
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   const category = typeof body?.category === "string" ? body.category.trim() : "";
   const topic = typeof body?.topic === "string" ? body.topic.trim() : "—";
-  // 수집 표면 바꾸기 — 내용(프롬프트·카테고리)과 함께 보내도 되고 표면만 보내도 된다.
+  // 플랫폼 바꾸기 — 내용(프롬프트·카테고리)과 함께 보내도 되고 플랫폼만 보내도 된다.
   if (Array.isArray(body?.surfaces)) {
     const surfaces = normalizeSurfaces(body.surfaces);
-    if (surfaces.length === 0) return NextResponse.json({ error: "수집 표면을 하나 이상 선택하세요." }, { status: 400 });
+    if (surfaces.length === 0) return NextResponse.json({ error: "플랫폼을 하나 이상 선택하세요." }, { status: 400 });
     const changed = await (await getPromptStore()).setTrackingSurfaces(tenant.orgId, id, surfaces);
     if (!changed) return NextResponse.json({ error: "해당 프롬프트를 찾을 수 없습니다." }, { status: 404 });
     if (!prompt && !category) return NextResponse.json({ ok: true, surfaces });

@@ -642,7 +642,7 @@ export interface PromptLibraryRow {
   promptId?: string;
   searchIntent?: string | null;
   trackingStatus?: "active" | "paused" | "archived";
-  /** 이 프롬프트를 수집하는 표면(Google AI Overview / Google AI 모드 / 네이버 AI 브리핑). 목업 행에는 없다. */
+  /** 이 프롬프트를 수집하는 플랫폼(구글AIO / 구글AI / 네이버AI). 목업 행에는 없다. */
   surfaces?: PromptSurface[];
   addedAt?: string;
   addedBy?: string | null;

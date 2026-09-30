@@ -1,19 +1,19 @@
-// 수집 표면(surface) — 프롬프트(질의)는 한 곳에서만 등록하고, "어디에서 수집할지"는 표면 설정이다.
+// 플랫폼(surface) — 프롬프트(질의)는 한 곳에서만 등록하고, "어디에서 수집할지"는 플랫폼 설정이다.
 //   · google-aio      Google 검색의 AI Overview (디바이스별, 문단·영상 인용 구간 기록) — YouTube AIO 트래커
 //   · google-ai-mode  Google AI 모드(udm=50, 대화형 답변)
 //   · naver-ai        네이버 AI 브리핑
-// 결과 테이블은 표면 성격에 맞게 따로 두고(aio_observations / prompt_runs), 프롬프트 기준으로 합쳐 읽는다.
+// 결과 테이블은 플랫폼 성격에 맞게 따로 두고(aio_observations / prompt_runs), 프롬프트 기준으로 합쳐 읽는다.
 // 클라이언트와 서버가 같이 쓰므로 Node 모듈을 가져오지 않는다.
 export const PROMPT_SURFACES = ["google-aio", "google-ai-mode", "naver-ai"] as const;
 export type PromptSurface = (typeof PROMPT_SURFACES)[number];
 
 export const SURFACE_LABEL: Record<PromptSurface, string> = {
-  "google-aio": "Google AI Overview",
-  "google-ai-mode": "Google AI 모드",
-  "naver-ai": "네이버 AI 브리핑",
+  "google-aio": "구글AIO",
+  "google-ai-mode": "구글AI",
+  "naver-ai": "네이버AI",
 };
 
-/** 지금까지 프롬프트 라이브러리가 수집하던 표면 — 기존 추적 프롬프트의 기본값. */
+/** 지금까지 프롬프트 라이브러리가 수집하던 플랫폼 — 기존 추적 프롬프트의 기본값. */
 export const AI_ANSWER_SURFACES: PromptSurface[] = ["naver-ai", "google-ai-mode"];
 
 export function isPromptSurface(value: unknown): value is PromptSurface {
@@ -27,7 +27,7 @@ export function normalizeSurfaces(input: unknown): PromptSurface[] {
 }
 
 /**
- * 프롬프트 문장으로 기본 표면을 제안한다 — 짧은 검색어형은 AIO, 완전한 질문형은 AI 답변 표면.
+ * 프롬프트 문장으로 기본 플랫폼을 제안한다 — 짧은 검색어형은 AIO, 완전한 질문형은 AI 답변 플랫폼.
  * AIO는 검색 1건이 느리고 하루 상한(캡차)이 있어서 검색어형에만 기본으로 켠다. 사용자가 언제든 바꿀 수 있다.
  */
 export function suggestSurfaces(text: string): PromptSurface[] {
@@ -40,7 +40,7 @@ export function suggestSurfaces(text: string): PromptSurface[] {
 /** AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있다(현실적으로 150~250건). 화면이 이 값을 기준으로 경고한다. */
 export const AIO_DAILY_CAP = 200;
 
-/** 표면 설정으로 본 하루 AIO 수집량 — AIO가 켜진 프롬프트 수 × 디바이스 수. */
+/** 플랫폼 설정으로 본 하루 AIO 수집량 — AIO가 켜진 프롬프트 수 × 디바이스 수. */
 export function aioDailyLoad(surfaceLists: (readonly PromptSurface[] | undefined)[], deviceCount: number) {
   const prompts = surfaceLists.filter((surfaces) => surfaces?.includes("google-aio")).length;
   const searches = prompts * Math.max(1, deviceCount);

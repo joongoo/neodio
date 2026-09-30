@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { SurfacePicker } from "@/components/prompt-library/SurfacePicker";
 import type { PromptSurface } from "@/lib/promptSurfaces";
 
-// 고른 프롬프트 여러 개의 수집 표면을 한 번에 같은 값으로 바꾼다 — 개별 편집은 행의 연필 버튼.
+// 고른 프롬프트 여러 개의 플랫폼을 한 번에 같은 값으로 바꾼다 — 개별 편집은 행의 연필 버튼.
 export function BulkSurfaceModal({
   open,
   onClose,
@@ -18,7 +18,7 @@ export function BulkSurfaceModal({
   onClose: () => void;
   /** 바꿀 추적(라이브러리 행) id */
   ids: string[];
-  /** 선택한 프롬프트들의 공통 표면 — 처음 체크 상태 */
+  /** 선택한 프롬프트들의 공통 플랫폼 — 처음 체크 상태 */
   initial: PromptSurface[];
   onSaved: (ids: string[], surfaces: PromptSurface[]) => void;
 }) {
@@ -37,13 +37,13 @@ export function BulkSurfaceModal({
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(body?.error ?? "수집 표면을 바꾸지 못했습니다.");
+        setError(body?.error ?? "플랫폼을 바꾸지 못했습니다.");
         return;
       }
       onSaved(ids, surfaces);
       onClose();
     } catch {
-      setError("수집 표면을 바꾸지 못했습니다. 네트워크를 확인해 주세요.");
+      setError("플랫폼을 바꾸지 못했습니다. 네트워크를 확인해 주세요.");
     } finally {
       setSaving(false);
     }
@@ -52,11 +52,11 @@ export function BulkSurfaceModal({
   return (
     <Modal open={open} onClose={onClose}>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-neutral-900">수집 표면 변경</h2>
+        <h2 className="text-lg font-bold text-neutral-900">플랫폼 변경</h2>
         <ModalCloseButton onClose={onClose} />
       </div>
       <p className="mt-2 text-sm text-neutral-600">
-        선택한 프롬프트 <b>{ids.length}개</b>를 아래 표면에서 수집하도록 바꿉니다. 체크한 표면만 켜지고, 나머지는 꺼집니다.
+        선택한 프롬프트 <b>{ids.length}개</b>를 아래 플랫폼에서 수집하도록 바꿉니다. 체크한 플랫폼만 켜지고, 나머지는 꺼집니다.
       </p>
       <div className="mt-4">
         <SurfacePicker value={surfaces} onChange={setSurfaces} />
@@ -67,7 +67,7 @@ export function BulkSurfaceModal({
           취소
         </Button>
         <Button variant="primary" onClick={() => void save()} disabled={saving || surfaces.length === 0}>
-          {saving ? "저장 중..." : "표면 바꾸기"}
+          {saving ? "저장 중..." : "플랫폼 바꾸기"}
         </Button>
       </div>
     </Modal>

@@ -26,8 +26,8 @@ import {
 } from "@/lib/collectorClient";
 
 const ENGINE_OPTIONS: { id: CollectorEngine; label: string }[] = [
-  { id: "naver", label: "네이버 AI검색" },
-  { id: "google", label: "구글 AI 모드" },
+  { id: "naver", label: "네이버AI" },
+  { id: "google", label: "구글AI" },
 ];
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버", google: "구글" };
 const POLL_MS = 2000;
@@ -57,7 +57,7 @@ export function AgentCollectionModal({
   orgName: string;
   /** 설치 파일이 준비된 운영체제 */
   downloadPlatforms: CollectorPlatform[];
-  /** 있으면 엔진을 고르지 않고 이 엔진으로만 수집한다(프롬프트의 저장된 수집 표면대로 나눈 단계). */
+  /** 있으면 엔진을 고르지 않고 이 엔진으로만 수집한다(프롬프트의 저장된 플랫폼대로 나눈 단계). */
   fixedEngines?: CollectorEngine[];
 }) {
   const router = useRouter();

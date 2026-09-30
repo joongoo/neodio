@@ -108,7 +108,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
         <Card className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-base font-bold text-neutral-900">추적할 프롬프트를 추가하세요</p>
           <p className="max-w-md text-sm text-neutral-500">
-            프롬프트를 등록하면 Google에서 검색해 AI Overview에 어떤 YouTube 영상이 인용되는지 기록합니다. 프롬프트 라이브러리에서 Google AI Overview 표면을 켠 프롬프트도 여기에 나옵니다.
+            프롬프트를 등록하면 Google에서 검색해 AI Overview에 어떤 YouTube 영상이 인용되는지 기록합니다. 프롬프트 라이브러리에서 Google AI Overview 플랫폼을 켠 프롬프트도 여기에 나옵니다.
           </p>
           <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>
             프롬프트 추가

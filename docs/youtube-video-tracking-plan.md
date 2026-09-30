@@ -230,6 +230,6 @@ CREATE TABLE IF NOT EXISTS brand_videos (
 - 영상 가져오기: YouTube Data API `playlistItems`(채널 업로드 재생목록, 50개씩)로 최신 500개 — 호출당 1유닛. `YOUTUBE_API_KEY` 필요, 버튼으로만 갱신(자동 스케줄 없음).
 - 체크: `brand_videos.checked`. 가져온 영상은 체크 해제로 들어오고, 직접 등록(`addBrandVideo`)한 영상은 체크 상태. 재가져오기는 제목·게시일·설명만 갱신한다.
 - 예상 프롬프트: 제목+설명(500자)만 근거로 AI가 영상당 3~6개 제안(`videoPromptSuggestion.ts`, 자막은 쓰지 않음) → 사람이 고른 것만 등록.
-  표면은 프롬프트별로 고르고 기본값은 `suggestSurfaces`. 영상 ↔ 프롬프트 연결은 `prompt_sources(youtube-video, 영상 ID)`.
+  플랫폼은 프롬프트별로 고르고 기본값은 `suggestSurfaces`. 영상 ↔ 프롬프트 연결은 `prompt_sources(youtube-video, 영상 ID)`.
 - 인용 확인: 영상 상세에서 (1) 이 영상용 프롬프트별 AIO 결과, (2) 이 영상을 인용한 모든 프롬프트(`videoKeywordCitations`)를 함께 보여 준다. 수집이 없던 기간은 "–".
-- 남은 것: 다른 표면(AI 모드·네이버)의 영상 인용 표시, 메타데이터 재수집(삭제·비공개 영상 표시), 자막 기반 생성.
+- 남은 것: 다른 플랫폼(AI 모드·네이버)의 영상 인용 표시, 메타데이터 재수집(삭제·비공개 영상 표시), 자막 기반 생성.

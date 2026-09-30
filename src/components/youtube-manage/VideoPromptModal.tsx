@@ -13,7 +13,7 @@ import {
   type VideoForSuggestion,
 } from "@/lib/videoPromptSuggestion";
 
-const SURFACE_SHORT: Record<PromptSurface, string> = { "google-aio": "AIO", "google-ai-mode": "AI 모드", "naver-ai": "네이버" };
+const SURFACE_SHORT: Record<PromptSurface, string> = { "google-aio": "구글AIO", "google-ai-mode": "구글AI", "naver-ai": "네이버AI" };
 
 interface ReviewItem {
   key: string;
@@ -24,7 +24,7 @@ interface ReviewItem {
 }
 
 // 체크한 영상의 "예상 프롬프트" 만들기 — AI가 영상 제목·설명을 보고 이 영상이 답이 될 질문을 만들고(붙여넣기도 가능),
-// 사람이 고른 것만 프롬프트 라이브러리에 등록한다. 수집 표면은 프롬프트마다 고른다(기본은 문장 모양으로 추천).
+// 사람이 고른 것만 프롬프트 라이브러리에 등록한다. 플랫폼은 프롬프트마다 고른다(기본은 문장 모양으로 추천).
 export function VideoPromptModal({
   open,
   onClose,
@@ -173,7 +173,7 @@ export function VideoPromptModal({
       {step === "input" && (
         <>
           <p className="mt-2 text-xs text-neutral-500">
-            체크한 영상의 제목·설명을 AI가 보고, 이 영상이 답이 될 만한 질문을 만듭니다. 만든 프롬프트는 확인하고 고른 것만 프롬프트 라이브러리에 등록되고, 선택한 표면에서 수집됩니다.
+            체크한 영상의 제목·설명을 AI가 보고, 이 영상이 답이 될 만한 질문을 만듭니다. 만든 프롬프트는 확인하고 고른 것만 프롬프트 라이브러리에 등록되고, 선택한 플랫폼에서 수집됩니다.
           </p>
           {candidates.length === 0 ? (
             <p className="mt-4 rounded-md bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-500">먼저 목록에서 영상을 체크하세요.</p>
@@ -286,7 +286,7 @@ export function VideoPromptModal({
       {step === "review" && (
         <>
           <p className="mt-2 text-xs text-neutral-500">
-            등록할 프롬프트만 체크하세요. 문장은 고칠 수 있고, 수집 표면은 프롬프트마다 고릅니다.
+            등록할 프롬프트만 체크하세요. 문장은 고칠 수 있고, 플랫폼은 프롬프트마다 고릅니다.
             {droppedCount > 0 && <span className="ml-1 text-amber-700">(중복이거나 형식이 맞지 않는 {droppedCount}개는 제외했습니다)</span>}
           </p>
           <div className="mt-3 flex max-h-[52vh] flex-col gap-4 overflow-y-auto pr-1">
@@ -327,7 +327,7 @@ export function VideoPromptModal({
                               </button>
                             );
                           })}
-                          {item.include && item.surfaces.length === 0 && <span className="text-[11px] text-red-600">표면을 하나 이상 선택하세요</span>}
+                          {item.include && item.surfaces.length === 0 && <span className="text-[11px] text-red-600">플랫폼을 하나 이상 선택하세요</span>}
                         </div>
                       </div>
                     ))}

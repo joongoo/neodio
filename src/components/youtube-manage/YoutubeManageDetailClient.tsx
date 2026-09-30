@@ -16,7 +16,7 @@ import { VideoPromptModal } from "./VideoPromptModal";
 
 const shortDate = (date: string) => date.slice(5).replace("-", "/");
 
-// 영상 하나의 상세 — 이 영상용으로 만든 예상 프롬프트와, Google AI Overview가 이 영상을 어떤 프롬프트에서 인용했는지.
+// 영상 하나의 상세 — 이 영상용으로 만든 예상 프롬프트와, 구글AIO가 이 영상을 어떤 프롬프트에서 인용했는지.
 export function YoutubeManageDetailClient({ data }: { data: VideoManageDetailData }) {
   const { base, demo, brandId, brandName, industry, existingPrompts, device, devices, video, prompts, citedBy, measured } = data;
   const router = useRouter();
@@ -104,7 +104,7 @@ export function YoutubeManageDetailClient({ data }: { data: VideoManageDetailDat
               <thead>
                 <tr className="border-b border-neutral-200 text-neutral-500">
                   <th className="py-2 pr-3 font-semibold">프롬프트</th>
-                  <th className="w-40 py-2 pr-3 font-semibold">수집 표면</th>
+                  <th className="w-40 py-2 pr-3 font-semibold">플랫폼</th>
                   <th className="w-56 py-2 font-semibold">Google AIO 인용</th>
                 </tr>
               </thead>
@@ -139,13 +139,13 @@ export function YoutubeManageDetailClient({ data }: { data: VideoManageDetailDat
 
       <Card className="flex flex-col gap-3">
         <div>
-          <h2 className="text-base font-bold text-neutral-900">이 영상을 인용한 프롬프트 (Google AI Overview)</h2>
+          <h2 className="text-base font-bold text-neutral-900">이 영상을 인용한 프롬프트 (구글AIO)</h2>
           <p className="mt-0.5 text-xs text-neutral-500">이 영상용으로 만들지 않은 프롬프트에서 인용된 경우도 포함합니다. 수집한 기록 전체 기준입니다.</p>
         </div>
         {citedBy.length === 0 ? (
           <p className="rounded-md bg-neutral-50 px-3 py-8 text-center text-xs text-neutral-500">
             {measured
-              ? `이 영상이 Google AI Overview에 인용된 기록이 없습니다. (최근 ${RECENT_DAYS}일 수집은 진행 중)`
+              ? `이 영상이 구글AIO에 인용된 기록이 없습니다. (최근 ${RECENT_DAYS}일 수집은 진행 중)`
               : `최근 ${RECENT_DAYS}일 안에 ${DEVICE_LABEL[device]} Google AIO 수집이 없어 인용 여부를 알 수 없습니다.`}
           </p>
         ) : (

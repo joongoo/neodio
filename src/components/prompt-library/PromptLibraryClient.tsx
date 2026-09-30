@@ -71,7 +71,7 @@ export function PromptLibraryClient({
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [surfaceOpen, setSurfaceOpen] = useState(false);
   const [surfaceFilter, setSurfaceFilter] = useState<"전체" | PromptSurface>("전체");
-  // 선택 수집: 표면 고르기 창 → 표면별 수집 단계(queue)를 차례로.
+  // 선택 수집: 플랫폼 고르기 창 → 플랫폼별 수집 단계(queue)를 차례로.
   const [chooseOpen, setChooseOpen] = useState(false);
   const [queue, setQueue] = useState<CollectStep[]>([]);
   const stepDoneRef = useRef(false);
@@ -153,7 +153,7 @@ export function PromptLibraryClient({
     { key: "origin", label: "출처" },
     { key: "category", label: "카테고리" },
     { key: "topic", label: "토픽" },
-    { key: "surfaces", label: "수집 표면" },
+    { key: "surfaces", label: "플랫폼" },
     { key: "lastModifiedAt", label: "최종 수정일" },
     { key: "lastModifiedBy", label: "수정자" },
   ];
@@ -211,7 +211,7 @@ export function PromptLibraryClient({
     },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => <span className="text-neutral-600">{r.category}</span> },
     { key: "topic", label: "토픽", width: "w-[130px]", render: (r) => <span className="truncate text-neutral-600">{r.topic}</span> },
-    { key: "surfaces", label: "수집 표면", width: "w-[140px]", render: (r) => <SurfaceChips surfaces={r.surfaces} /> },
+    { key: "surfaces", label: "플랫폼", width: "w-[140px]", render: (r) => <SurfaceChips surfaces={r.surfaces} /> },
     { key: "lastModifiedAt", label: "최종 수정일", width: "w-[100px]", render: (r) => <span className="text-neutral-500">{r.lastModifiedAt ?? "—"}</span> },
     { key: "lastModifiedBy", label: "수정자", width: "w-[90px]", render: (r) => <span className="text-neutral-500">{r.lastModifiedBy ?? "—"}</span> },
     {
@@ -247,7 +247,7 @@ export function PromptLibraryClient({
     },
   ];
 
-  // 선택한 프롬프트 중 Google AI Overview 표면이 켜진 것 — AIO 수집 대상.
+  // 선택한 프롬프트 중 구글AIO가 켜진 것 — AIO 수집 대상.
   const selectedRows = rows.filter((r) => selected.has(r.id));
   const step = queue[0];
   // 단계 창을 닫을 때: 끝까지 수집해 반영했으면 다음 단계로, 중간에 닫았으면 남은 단계를 모두 접는다.
@@ -275,7 +275,7 @@ export function PromptLibraryClient({
         <div className="flex flex-wrap items-center gap-2">
           {aioLoad.prompts > 0 && (
             <span
-              title="Google AI Overview 표면이 켜진 프롬프트 × AIO 수집 디바이스 수 — AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있습니다."
+              title="구글AIO가 켜진 프롬프트 × AIO 수집 디바이스 수 — AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있습니다."
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${aioLoad.over ? "bg-amber-100 text-amber-800" : "bg-blue-50 text-blue-700"}`}
             >
               AIO 하루 {aioLoad.searches}회 예정 · 권장 상한 {aioLoad.cap}회{aioLoad.over ? " 초과" : ""}
@@ -367,7 +367,7 @@ export function PromptLibraryClient({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-neutral-500">수집 표면</span>
+          <span className="text-xs text-neutral-500">플랫폼</span>
           <Dropdown
             variant="solid"
             label=""
@@ -383,7 +383,7 @@ export function PromptLibraryClient({
           <Button
             variant="secondary"
             onClick={() => setSelected(new Set(filtered.map((r) => r.id)))}
-            title="검색·카테고리·토픽·수집 표면 조건에 맞는 프롬프트를 페이지와 상관없이 모두 선택합니다"
+            title="검색·카테고리·토픽·플랫폼 조건에 맞는 프롬프트를 페이지와 상관없이 모두 선택합니다"
           >
             조건에 맞는 {filtered.length}개 모두 선택
           </Button>
@@ -392,7 +392,7 @@ export function PromptLibraryClient({
         {selected.size > 0 && (
           <>
             <Button variant="secondary" onClick={() => setSurfaceOpen(true)}>
-              수집 표면 변경 ({selected.size})
+              플랫폼 변경 ({selected.size})
             </Button>
             <Button variant="primary" onClick={() => setChooseOpen(true)}>
               선택 수집 ({selected.size})

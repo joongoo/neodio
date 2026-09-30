@@ -108,7 +108,7 @@ export function AddPromptModal({
     (a, b) => a.localeCompare(b, "ko")
   );
   const [prompt, setPrompt] = useState("");
-  // 문장 형태로 제안한 표면을 따라가다가, 사용자가 직접 고르면 그 선택을 유지한다.
+  // 문장 형태로 제안한 플랫폼을 따라가다가, 사용자가 직접 고르면 그 선택을 유지한다.
   const [surfaces, setSurfaces] = useState<PromptSurface[]>([...AI_ANSWER_SURFACES]);
   const [surfacesTouched, setSurfacesTouched] = useState(false);
   const suggested = prompt.trim() ? suggestSurfaces(prompt) : [...AI_ANSWER_SURFACES];
@@ -180,7 +180,7 @@ export function AddPromptModal({
           )}
           {!isDuplicate && duplicateError && <p className="text-xs text-red-600">{duplicateError}</p>}
         </Field>
-        <Field label="수집 표면 *">
+        <Field label="플랫폼 *">
           <SurfacePicker
             value={surfaces}
             suggested={suggested}
@@ -261,7 +261,7 @@ function EditPromptForm({
   const [category, setCategory] = useState(row.category);
   const [topic, setTopic] = useState(row.topic === "—" ? "" : row.topic);
   const [prompt, setPrompt] = useState(row.prompt);
-  // 표면 정보가 없는 행(목업)은 편집 창에서 표면을 건드리지 않는다.
+  // 플랫폼 정보가 없는 행(목업)은 편집 창에서 플랫폼을 건드리지 않는다.
   const originalSurfaces = row.surfaces;
   const [surfaces, setSurfaces] = useState<PromptSurface[]>(row.surfaces ?? [...AI_ANSWER_SURFACES]);
   const surfacesChanged = !!originalSurfaces && (surfaces.length !== originalSurfaces.length || surfaces.some((s) => !originalSurfaces.includes(s)));
@@ -306,7 +306,7 @@ function EditPromptForm({
         {isDuplicate && <p className="text-xs text-red-600">이미 프롬프트 라이브러리에 동일한 프롬프트가 있습니다.</p>}
       </Field>
       {originalSurfaces && (
-        <Field label="수집 표면">
+        <Field label="플랫폼">
           <SurfacePicker value={surfaces} onChange={setSurfaces} />
         </Field>
       )}
