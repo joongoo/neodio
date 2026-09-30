@@ -36,3 +36,13 @@ export function suggestSurfaces(text: string): PromptSurface[] {
   const questionLike = /[?？]/.test(t) || /(요|까|죠|나요|가요|니까|세요)[\s.!]*$/.test(t) || words >= 6;
   return questionLike ? [...AI_ANSWER_SURFACES] : ["google-aio"];
 }
+
+/** AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있다(현실적으로 150~250건). 화면이 이 값을 기준으로 경고한다. */
+export const AIO_DAILY_CAP = 200;
+
+/** 표면 설정으로 본 하루 AIO 수집량 — AIO가 켜진 프롬프트 수 × 디바이스 수. */
+export function aioDailyLoad(surfaceLists: (readonly PromptSurface[] | undefined)[], deviceCount: number) {
+  const prompts = surfaceLists.filter((surfaces) => surfaces?.includes("google-aio")).length;
+  const searches = prompts * Math.max(1, deviceCount);
+  return { prompts, searches, cap: AIO_DAILY_CAP, over: searches > AIO_DAILY_CAP };
+}

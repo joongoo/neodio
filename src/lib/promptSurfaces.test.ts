@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPromptSurface, normalizeSurfaces, suggestSurfaces } from "./promptSurfaces";
+import { AIO_DAILY_CAP, aioDailyLoad, isPromptSurface, normalizeSurfaces, suggestSurfaces } from "./promptSurfaces";
 
 test("surfaces are validated, de-duplicated and kept in a fixed order", () => {
   assert.equal(isPromptSurface("google-aio"), true);
@@ -23,4 +23,12 @@ test("the suggestion is a fresh array each time", () => {
   const a = suggestSurfaces("이걸 알려줄 수 있나요?");
   a.push("google-aio");
   assert.deepEqual(suggestSurfaces("이걸 알려줄 수 있나요?"), ["naver-ai", "google-ai-mode"]);
+});
+
+test("the daily AIO load counts prompts with the AIO surface times devices and warns above the cap", () => {
+  const lists = [["google-aio"], ["naver-ai"], undefined, ["google-aio", "naver-ai"]] as const;
+  assert.deepEqual(aioDailyLoad(lists.map((l) => (l ? [...l] : undefined)), 2), { prompts: 2, searches: 4, cap: AIO_DAILY_CAP, over: false });
+  const many = Array.from({ length: 101 }, () => ["google-aio" as const]);
+  assert.equal(aioDailyLoad(many, 2).over, true);
+  assert.equal(aioDailyLoad(many, 0).searches, 101, "at least one device is assumed");
 });

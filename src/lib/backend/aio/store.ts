@@ -1,3 +1,4 @@
+import { normalizeKeyword } from "@/lib/aioKeywordMapping";
 import { randomUUID } from "node:crypto";
 import { getPromptStore } from "../database";
 import {
@@ -22,9 +23,7 @@ import {
 
 export const AIO_KEYWORD_GROUPS: AioKeywordGroup[] = ["brand", "category", "comparison", "howto"];
 
-export function normalizeKeyword(keyword: string): string {
-  return keyword.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");
-}
+export { normalizeKeyword };
 
 /** 수집 시각 → Asia/Seoul 기준 날짜(yyyy-mm-dd). 하루 1건 기준이 한국 날짜라서. */
 export function seoulDate(iso: string): string {
@@ -58,11 +57,14 @@ export async function addAioKeywords(brandId: string, keywords: string[], group:
   const now = new Date().toISOString();
   await s.transaction(async () => {
     for (const [normalized, keyword] of unique) {
-      await s.query(
+      const [saved] = await s.query<{ id: string }>(
         `INSERT INTO aio_keywords (id,brand_id,keyword,normalized_keyword,keyword_group,status,created_at) VALUES ($1,$2,$3,$4,$5,'active',$6)
-         ON CONFLICT (brand_id,normalized_keyword) DO UPDATE SET keyword_group=EXCLUDED.keyword_group,status='active'`,
+         ON CONFLICT (brand_id,normalized_keyword) DO UPDATE SET keyword_group=EXCLUDED.keyword_group,status='active'
+         RETURNING id`,
         [`aiokw-${randomUUID()}`, brandId, keyword, normalized, group, now]
       );
+      // 프롬프트 라이브러리와 한 곳으로 — 키워드는 곧 "Google AI Overview 표면이 켜진 프롬프트"다(docs/prompt-surfaces-plan.md).
+      await s.linkAioKeyword(saved.id);
     }
   });
   return unique.size;
@@ -70,7 +72,8 @@ export async function addAioKeywords(brandId: string, keywords: string[], group:
 
 // 보관(삭제 아님) — 지난 수집 결과와 추이는 남겨 둔다.
 export async function archiveAioKeyword(brandId: string, keywordId: string): Promise<void> {
-  await (await store()).query("UPDATE aio_keywords SET status='archived' WHERE brand_id=$1 AND id=$2", [brandId, keywordId]);
+  // 프롬프트의 AIO 표면도 함께 끈다(다른 표면이 없으면 프롬프트도 보관).
+  await (await store()).unlinkAioKeyword(brandId, keywordId);
 }
 
 // ---- 영상 메타 캐시 ----

@@ -12,6 +12,8 @@ import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
 import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow } from "@/components/prompt-library/PromptLibraryModals";
+import { SurfaceChips } from "@/components/prompt-library/SurfacePicker";
+import { aioDailyLoad } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
@@ -31,6 +33,7 @@ export function PromptLibraryClient({
   topicOptionsByCategory,
   uncategorizedTopicOptions,
   collectionAgent,
+  aioDeviceCount,
 }: {
   initialRows: PromptLibraryRow[];
   health: PromptLibraryHealth | null;
@@ -39,6 +42,8 @@ export function PromptLibraryClient({
   uncategorizedTopicOptions: string[];
   /** 선택 수집을 사용자 PC의 수집기에 맡길 때(운영) — null이면 이 서버가 바로 실행(로컬). */
   collectionAgent: { orgName: string; downloadPlatforms: CollectorPlatform[] } | null;
+  /** 브랜드의 AIO 수집 디바이스 수(모바일·데스크톱) — 하루 AIO 수집량 안내에 쓴다. */
+  aioDeviceCount: number;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
@@ -59,7 +64,7 @@ export function PromptLibraryClient({
   const [collectOpen, setCollectOpen] = useState(false);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    new Set(["origin", "category", "topic", "lastModifiedAt", "lastModifiedBy"])
+    new Set(["origin", "category", "topic", "surfaces", "lastModifiedAt", "lastModifiedBy"])
   );
 
   const categoryOptions = ["전체", ...new Set(rows.map((r) => r.category))];
@@ -135,6 +140,7 @@ export function PromptLibraryClient({
     { key: "origin", label: "출처" },
     { key: "category", label: "카테고리" },
     { key: "topic", label: "토픽" },
+    { key: "surfaces", label: "수집 표면" },
     { key: "lastModifiedAt", label: "최종 수정일" },
     { key: "lastModifiedBy", label: "수정자" },
   ];
@@ -192,6 +198,7 @@ export function PromptLibraryClient({
     },
     { key: "category", label: "카테고리", width: "w-[100px]", render: (r) => <span className="text-neutral-600">{r.category}</span> },
     { key: "topic", label: "토픽", width: "w-[130px]", render: (r) => <span className="truncate text-neutral-600">{r.topic}</span> },
+    { key: "surfaces", label: "수집 표면", width: "w-[140px]", render: (r) => <SurfaceChips surfaces={r.surfaces} /> },
     { key: "lastModifiedAt", label: "최종 수정일", width: "w-[100px]", render: (r) => <span className="text-neutral-500">{r.lastModifiedAt ?? "—"}</span> },
     { key: "lastModifiedBy", label: "수정자", width: "w-[90px]", render: (r) => <span className="text-neutral-500">{r.lastModifiedBy ?? "—"}</span> },
     {
@@ -227,6 +234,7 @@ export function PromptLibraryClient({
     },
   ];
 
+  const aioLoad = aioDailyLoad(rows.map((r) => r.surfaces), aioDeviceCount);
   const columns = allColumns.filter((c) => !optionalColumns.some((o) => o.key === c.key) || visibleCols.has(c.key));
 
   return (
@@ -237,7 +245,17 @@ export function PromptLibraryClient({
             market 필드 자체가 없음) — 실제로 필터링되지 않던 장식용
             드롭다운(US-en/KR-ko, 클릭해도 아무 동작 안 함) 대신 실제 서비스
             시장(KR)을 있는 그대로 보여준다. */}
-        <span className="rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600">마켓: KR</span>
+        <div className="flex flex-wrap items-center gap-2">
+          {aioLoad.prompts > 0 && (
+            <span
+              title="Google AI Overview 표면이 켜진 프롬프트 × AIO 수집 디바이스 수 — AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있습니다."
+              className={`rounded-md px-3 py-1.5 text-xs font-medium ${aioLoad.over ? "bg-amber-100 text-amber-800" : "bg-blue-50 text-blue-700"}`}
+            >
+              AIO 하루 {aioLoad.searches}회 예정 · 권장 상한 {aioLoad.cap}회{aioLoad.over ? " 초과" : ""}
+            </span>
+          )}
+          <span className="rounded-md bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600">마켓: KR</span>
+        </div>
       </div>
 
       <InfoBanner
@@ -368,7 +386,7 @@ export function PromptLibraryClient({
           const res = await fetch("/api/tracked-topics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: row.prompt, category: row.category, topic: row.topic, origin: "manual" }),
+            body: JSON.stringify({ prompt: row.prompt, category: row.category, topic: row.topic, origin: "manual", surfaces: row.surfaces }),
           });
           const data = await res.json();
           if (data.ok) setRows((prev) => [data.row as PromptLibraryRow, ...prev.filter(r => r.id !== data.row.id)]);

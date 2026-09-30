@@ -6,7 +6,8 @@ import type { CollectedRunFile } from "../collectionRunsTypes";
 import { extractMentionsFromRun } from "../processing/mentions";
 import { extractCitationsFromRun } from "../processing/citations";
 import { schema } from "./schema";
-import { normalizeSurfaces, type PromptSurface } from "../../promptSurfaces";
+import { AI_ANSWER_SURFACES, normalizeSurfaces, type PromptSurface } from "../../promptSurfaces";
+import { AIO_GROUP_TO_PROMPT, aioGroupFor, normalizeKeyword } from "../../aioKeywordMapping";
 
 export const normalize = (text: string) => text.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
 const now = () => new Date().toISOString();
@@ -237,6 +238,8 @@ export class PromptStore {
 
   async track(orgId: string, input: PromptInput, options: {
     brandId: string; origin: PromptLibraryRow["origin"]; legacyId?: string; addedAt?: string;
+    /** 수집 표면 — 새 추적의 기본값은 지금까지 라이브러리가 수집하던 표면(네이버 AI·Google AI 모드). 이미 있는 추적에 넘기면 그 값으로 바꾼다. */
+    surfaces?: PromptSurface[];
   }): Promise<PromptLibraryRow> {
     return this.transaction(async () => {
       const promptId = await this.upsertPrompt(orgId, input);
@@ -252,6 +255,9 @@ export class PromptStore {
       }
       if (!existing || existing.status !== "active") await this.run("INSERT INTO tracking_events VALUES ($1,$2,'active',$3,$4)", [id("event"), trackingId, input.actorId ?? null, at]);
       if (options.legacyId) await this.run("INSERT INTO legacy_library_ids VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [orgId, options.legacyId, trackingId]);
+      if (options.surfaces) await this.setTrackingSurfaces(orgId, trackingId, options.surfaces);
+      else if (!existing) await this.setTrackingSurfaces(orgId, trackingId, AI_ANSWER_SURFACES);
+      else await this.syncAioKeyword(trackingId); // 다시 켠 추적이면 AIO 수집 대상도 함께 되살린다
       const rows = await this.library(orgId, options.brandId);
       return rows.find(row => row.id === trackingId)!;
     });
@@ -261,13 +267,14 @@ export class PromptStore {
     const rows = await this.query(`SELECT tr.id,tr.prompt_id AS "promptId",p.text AS prompt,tr.origin,
       coalesce(c.name,'') AS category,coalesce(t.name,'—') AS topic,p.updated_at AS "lastModifiedAt",
       a.display_name AS "lastModifiedBy",tr.added_at AS "addedAt",aa.display_name AS "addedBy",
-      p.search_intent AS "searchIntent",tr.status AS "trackingStatus"
+      p.search_intent AS "searchIntent",tr.status AS "trackingStatus",
+      (SELECT coalesce(array_agg(s.surface),'{}') FROM prompt_tracking_surfaces s WHERE s.tracking_id=tr.id) AS surfaces
       FROM prompt_tracking tr JOIN prompts p ON p.id=tr.prompt_id
       LEFT JOIN topics t ON t.id=p.topic_id LEFT JOIN categories c ON c.id=coalesce(t.category_id,p.uncategorized_category_id)
       LEFT JOIN actors a ON a.id=p.updated_by LEFT JOIN actors aa ON aa.id=tr.added_by
       WHERE tr.organization_id=$1 AND tr.status='active' AND ($2::text IS NULL OR tr.brand_id=$2) ORDER BY tr.added_at DESC,tr.id`,
       [orgId, brandId ?? null]);
-    return rows.map(row => ({ ...row })) as unknown as PromptLibraryRow[];
+    return rows.map(row => ({ ...row, surfaces: normalizeSurfaces((row as { surfaces?: unknown }).surfaces) })) as unknown as PromptLibraryRow[];
   }
 
   /** 추적(트래킹 id)마다 켜진 수집 표면. 표면이 하나도 없는 추적은 맵에 키가 없다. */
@@ -282,16 +289,116 @@ export class PromptStore {
     return new Map([...bySurface].map(([trackingId, surfaces]) => [trackingId, normalizeSurfaces(surfaces)]));
   }
 
-  /** 추적의 표면을 통째로 바꾼다. 이 조직의 추적이 아니면 false. */
+  /** 추적의 표면을 통째로 바꾼다. 이 조직의 추적이 아니면 false. 옛 라이브러리 id도 받는다. */
   async setTrackingSurfaces(orgId: string, trackingId: string, surfaces: PromptSurface[]): Promise<boolean> {
     return this.transaction(async () => {
-      const row = await this.one<{ id: string }>("SELECT id FROM prompt_tracking WHERE organization_id=$1 AND id=$2", [orgId, trackingId]);
+      const row = await this.one<{ id: string }>(`SELECT id FROM prompt_tracking WHERE organization_id=$1 AND
+        (id=$2 OR id IN (SELECT tracking_id FROM legacy_library_ids WHERE organization_id=$1 AND legacy_id=$2))`, [orgId, trackingId]);
       if (!row) return false;
       const wanted = normalizeSurfaces(surfaces);
-      await this.run("DELETE FROM prompt_tracking_surfaces WHERE tracking_id=$1", [trackingId]);
+      await this.run("DELETE FROM prompt_tracking_surfaces WHERE tracking_id=$1", [row.id]);
       const at = now();
-      for (const surface of wanted) await this.run("INSERT INTO prompt_tracking_surfaces VALUES ($1,$2,$3)", [trackingId, surface, at]);
+      for (const surface of wanted) await this.run("INSERT INTO prompt_tracking_surfaces VALUES ($1,$2,$3)", [row.id, surface, at]);
+      await this.syncAioKeyword(row.id);
       return true;
+    });
+  }
+
+  /**
+   * 추적의 Google AI Overview 표면과 AIO 수집 대상(aio_keywords)을 맞춘다 — AIO 수집과 화면은 아직 aio_keywords를 읽는다(3단계에서 전환).
+   * 추적이 활성이고 AIO 표면이 켜져 있으면 키워드를 만들거나 되살리고, 아니면 보관한다. 브랜드 행이 없는 추적(시험 데이터)은 건드리지 않는다.
+   */
+  async syncAioKeyword(trackingId: string): Promise<void> {
+    const t = await this.one<{ organization_id: string; prompt_id: string; brand_id: string; status: string; text: string; search_intent: string | null; topic: string | null }>(
+      `SELECT tr.organization_id,tr.prompt_id,tr.brand_id,tr.status,p.text,p.search_intent,tp.name AS topic FROM prompt_tracking tr
+       JOIN prompts p ON p.id=tr.prompt_id LEFT JOIN topics tp ON tp.id=p.topic_id WHERE tr.id=$1`, [trackingId]);
+    if (!t) return;
+    const brand = await this.one<{ id: string }>("SELECT id FROM brands WHERE id=$1 AND organization_id=$2", [t.brand_id, t.organization_id]);
+    if (!brand) return;
+    const surfaces = (await this.trackingSurfaces(t.organization_id, [trackingId])).get(trackingId) ?? [];
+    const wanted = t.status === "active" && surfaces.includes("google-aio");
+    const normalized = normalizeKeyword(t.text);
+    const existing = await this.one<{ id: string; status: string; prompt_id: string | null }>(
+      "SELECT id,status,prompt_id FROM aio_keywords WHERE brand_id=$1 AND (prompt_id=$2 OR normalized_keyword=$3) ORDER BY (prompt_id=$2) DESC LIMIT 1", [t.brand_id, t.prompt_id, normalized]);
+    if (wanted) {
+      if (existing) await this.run("UPDATE aio_keywords SET status='active',prompt_id=$1 WHERE id=$2", [t.prompt_id, existing.id]);
+      else await this.run(
+        `INSERT INTO aio_keywords (id,brand_id,keyword,normalized_keyword,keyword_group,status,created_at,prompt_id) VALUES ($1,$2,$3,$4,$5,'active',$6,$7)`,
+        [id("aiokw"), t.brand_id, t.text, normalized, aioGroupFor(t.search_intent, t.topic), now(), t.prompt_id]);
+    } else if (existing && existing.status === "active" && existing.prompt_id === t.prompt_id) {
+      // 이 프롬프트에 이어진 키워드만 끈다 — 같은 문장의 AIO 키워드가 아직 이어지지 않았다면 그대로 둔다(아직 이 시스템이 관리하지 않는 것).
+      await this.run("UPDATE aio_keywords SET status='archived' WHERE id=$1", [existing.id]);
+    }
+  }
+
+  /**
+   * AIO 키워드 하나를 프롬프트로 잇는다: 프롬프트를 만들거나(같은 문장이 이미 있으면 재사용하고 분류는 유지) 이 브랜드의 추적을 만들고,
+   * 활성 키워드면 추적에 Google AI Overview 표면을 켠 뒤 aio_keywords.prompt_id를 채운다.
+   * 이미 이어진 키워드는 프롬프트를 다시 만들지 않는다 — 활성이면 보관해 뒀던 추적과 AIO 표면만 되살린다(키워드를 다시 추가한 경우).
+   * linked는 이번에 새로 이은 경우에만 true.
+   */
+  async linkAioKeyword(keywordId: string): Promise<{ linked: boolean; createdPrompt: boolean; trackingCreated: boolean; trackingReactivated: boolean; trackingArchived: boolean; keyword: string; organizationId: string } | null> {
+    return this.transaction(async () => {
+      const row = await this.one<{ id: string; brand_id: string; keyword: string; keyword_group: keyof typeof AIO_GROUP_TO_PROMPT; status: "active" | "archived"; organization_id: string; prompt_id: string | null }>(
+        `SELECT k.id,k.brand_id,k.keyword,k.keyword_group,k.status,k.prompt_id,b.organization_id FROM aio_keywords k JOIN brands b ON b.id=k.brand_id WHERE k.id=$1`, [keywordId]);
+      if (!row) return null;
+      const result = { linked: false, createdPrompt: false, trackingCreated: false, trackingReactivated: false, trackingArchived: false, keyword: row.keyword, organizationId: row.organization_id };
+      const orgId = row.organization_id;
+      if (row.prompt_id && row.status === "archived") return result;
+
+      let promptId = row.prompt_id;
+      if (!promptId) {
+        const existingPrompt = await this.one<{ id: string }>("SELECT id FROM prompts WHERE organization_id=$1 AND normalized_text=$2", [orgId, normalize(row.keyword)]);
+        const mapping = AIO_GROUP_TO_PROMPT[row.keyword_group] ?? {};
+        // 이미 있는 프롬프트의 분류(토픽·검색 의도)는 덮어쓰지 않는다.
+        promptId = await this.upsertPrompt(orgId, {
+          text: row.keyword, sourceType: "aio-keyword", sourceKey: row.id,
+          ...(existingPrompt ? {} : { topic: mapping.topic, searchIntent: mapping.searchIntent }),
+        });
+        result.createdPrompt = !existingPrompt;
+        // 표면을 켜기 전에 이어 둔다 — 동기화가 이 키워드를 그대로 쓰게.
+        await this.run("UPDATE aio_keywords SET prompt_id=$1 WHERE id=$2", [promptId, row.id]);
+        result.linked = true;
+      }
+
+      const before = await this.one<{ id: string; status: string }>(
+        "SELECT id,status FROM prompt_tracking WHERE organization_id=$1 AND prompt_id=$2 AND brand_id=$3", [orgId, promptId, row.brand_id]);
+      let trackingId = before?.id;
+      if (row.status === "active" || !before) {
+        // 새 추적은 AIO 표면만 갖는다. 보관된 키워드는 표면 없이 만들어 곧바로 보관한다(동기화가 되살리지 않게). 이미 있는 추적의 표면은 건드리지 않는다.
+        const tracked = await this.track(orgId, { text: row.keyword }, {
+          brandId: row.brand_id, origin: "manual",
+          ...(before ? {} : { surfaces: row.status === "active" ? (["google-aio"] as PromptSurface[]) : [] }),
+        });
+        trackingId = tracked.id;
+        result.trackingCreated = !before;
+        result.trackingReactivated = !!before && before.status !== "active";
+        if (row.status === "archived") {
+          await this.setTrackingStatus(orgId, tracked.id, "archived");
+          result.trackingArchived = true;
+        }
+      }
+      if (row.status === "active") {
+        const surfaces = (await this.trackingSurfaces(orgId, [trackingId!])).get(trackingId!) ?? [];
+        await this.setTrackingSurfaces(orgId, trackingId!, [...surfaces, "google-aio"]);
+      }
+      return result;
+    });
+  }
+
+  /** AIO 키워드를 보관할 때 — 추적에서 AIO 표면을 끄고, 다른 표면이 하나도 없으면 추적도 보관한다(라이브러리에 빈 프롬프트가 남지 않게). */
+  async unlinkAioKeyword(brandId: string, keywordId: string): Promise<void> {
+    await this.transaction(async () => {
+      const row = await this.one<{ prompt_id: string | null; organization_id: string }>(
+        "SELECT k.prompt_id,b.organization_id FROM aio_keywords k JOIN brands b ON b.id=k.brand_id WHERE k.id=$1 AND k.brand_id=$2", [keywordId, brandId]);
+      await this.run("UPDATE aio_keywords SET status='archived' WHERE brand_id=$1 AND id=$2", [brandId, keywordId]);
+      if (!row?.prompt_id) return;
+      const tracking = await this.one<{ id: string; status: string }>(
+        "SELECT id,status FROM prompt_tracking WHERE organization_id=$1 AND prompt_id=$2 AND brand_id=$3", [row.organization_id, row.prompt_id, brandId]);
+      if (!tracking || tracking.status === "archived") return;
+      const rest = ((await this.trackingSurfaces(row.organization_id, [tracking.id])).get(tracking.id) ?? []).filter((surface) => surface !== "google-aio");
+      await this.setTrackingSurfaces(row.organization_id, tracking.id, rest);
+      if (rest.length === 0) await this.setTrackingStatus(row.organization_id, tracking.id, "archived");
     });
   }
 
@@ -304,6 +411,7 @@ export class PromptStore {
       await this.run("UPDATE prompt_tracking SET status=$1,paused_at=$2,archived_at=$3,updated_at=$4 WHERE id=$5",
         [status, status === "paused" ? at : null, status === "archived" ? at : null, at, row.id]);
       await this.run("INSERT INTO tracking_events VALUES ($1,$2,$3,NULL,$4)", [id("event"), row.id, status, at]);
+      await this.syncAioKeyword(row.id);
       return true;
     });
   }

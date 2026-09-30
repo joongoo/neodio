@@ -4,6 +4,7 @@ import { listTrackedTopics, listSeedLibraryRows } from "@/lib/backend/trackedTop
 import { getDeletedLibraryRowIds } from "@/lib/backend/deletedLibraryRows";
 import { getTopicOptionsByCategory } from "@/lib/backend/promptTopics";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { getBrandAioSettings } from "@/lib/backend/brandAioConfig";
 import { collectionUsesLocalAgent, collectorDownloadsConfigured } from "@/lib/backend/collectionMode";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 
@@ -15,12 +16,13 @@ export const dynamic = "force-dynamic";
 
 export default async function PromptLibraryPage() {
   const tenant = await getCurrentTenant();
-  const [rows, health, trackedRows, deletedIds, topicOptions] = await Promise.all([
+  const [rows, health, trackedRows, deletedIds, topicOptions, aioSettings] = await Promise.all([
     listSeedLibraryRows(tenant.orgId, tenant.brandId),
     db.promptLibrary.getHealth(tenant.orgId),
     listTrackedTopics(tenant.orgId, tenant.brandId),
     getDeletedLibraryRowIds(tenant.orgId),
     getTopicOptionsByCategory(tenant.orgId),
+    tenant.brandId ? getBrandAioSettings(tenant.brandId) : null,
   ]);
 
   // mock 시드 행은 코드에 박혀있어 파일을 지울 수 없다 — 삭제된 id 목록으로
@@ -33,6 +35,7 @@ export default async function PromptLibraryPage() {
       health={health}
       topicOptionsByCategory={topicOptions.byCategory}
       uncategorizedTopicOptions={topicOptions.uncategorized}
+      aioDeviceCount={aioSettings?.devices.length ?? 2}
       collectionAgent={
         collectionUsesLocalAgent()
           ? { orgName: tenant.org.name, downloadPlatforms: collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : [] }
