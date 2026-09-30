@@ -26,6 +26,9 @@ export function AioCollectButton({
   searches,
   disabled,
   size = "md",
+  open: controlledOpen,
+  onOpenChange,
+  hideButton,
 }: {
   brandId: string;
   /** 있으면 이 프롬프트만 수집 */
@@ -38,10 +41,20 @@ export function AioCollectButton({
   searches: number;
   disabled?: boolean;
   size?: "md" | "sm";
+  /** 밖에서 창을 열고 닫을 때(예: 선택 수집의 한 단계) */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** true면 버튼 없이 창만 그린다 */
+  hideButton?: boolean;
 }) {
   const router = useRouter();
   const [job, setJob] = useState<AioCollectJob | null>(null);
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = controlledOpen ?? innerOpen;
+  const setOpen = (next: boolean) => {
+    setInnerOpen(next);
+    onOpenChange?.(next);
+  };
   const [force, setForce] = useState(false);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -121,7 +134,7 @@ export function AioCollectButton({
 
   return (
     <>
-      <Button
+      {!hideButton && <Button
         variant="secondary"
         size={size}
         icon={running ? <Loader2 size={size === "sm" ? 14 : 16} className="animate-spin" /> : <RefreshCw size={size === "sm" ? 14 : 16} />}
@@ -129,7 +142,7 @@ export function AioCollectButton({
         disabled={disabled && !running}
       >
         {running ? `수집 중 ${job.results.length}/${job.total || "…"}` : (buttonLabel ?? (keywordId ? "이 프롬프트 지금 수집" : "지금 수집"))}
-      </Button>
+      </Button>}
 
       <Modal open={open} onClose={running ? () => setOpen(false) : close}>
         <div className="flex items-center justify-between">

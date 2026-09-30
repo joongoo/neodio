@@ -47,6 +47,7 @@ export function AgentCollectionModal({
   onDone,
   orgName,
   downloadPlatforms,
+  fixedEngines,
 }: {
   open: boolean;
   onClose: () => void;
@@ -56,9 +57,11 @@ export function AgentCollectionModal({
   orgName: string;
   /** 설치 파일이 준비된 운영체제 */
   downloadPlatforms: CollectorPlatform[];
+  /** 있으면 엔진을 고르지 않고 이 엔진으로만 수집한다(프롬프트의 저장된 수집 표면대로 나눈 단계). */
+  fixedEngines?: CollectorEngine[];
 }) {
   const router = useRouter();
-  const [engines, setEngines] = useState<Set<CollectorEngine>>(new Set(["naver", "google"]));
+  const [engines, setEngines] = useState<Set<CollectorEngine>>(new Set(fixedEngines ?? ["naver", "google"]));
   const [view, setView] = useState<View>({ kind: "setup" });
   const [pending, setPending] = useState<CollectorJob[]>([]);
   const [job, setJob] = useState<CollectorJob | null>(null);
@@ -231,7 +234,9 @@ export function AgentCollectionModal({
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-neutral-500">엔진</span>
             <div className="flex h-10 items-center gap-4">
-              {ENGINE_OPTIONS.map((opt) => (
+              {fixedEngines ? (
+                <span className="text-sm text-neutral-700">{ENGINE_OPTIONS.filter((o) => fixedEngines.includes(o.id)).map((o) => o.label).join(" · ")}</span>
+              ) : ENGINE_OPTIONS.map((opt) => (
                 <label key={opt.id} className="flex items-center gap-1.5 text-sm text-neutral-700 cursor-pointer">
                   <input type="checkbox" checked={engines.has(opt.id)} onChange={() => toggleEngine(opt.id)} className="size-4 accent-slate-800" />
                   {opt.label}

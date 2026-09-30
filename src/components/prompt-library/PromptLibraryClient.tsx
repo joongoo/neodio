@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
@@ -15,7 +15,9 @@ import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow 
 import { SurfaceChips } from "@/components/prompt-library/SurfacePicker";
 import { BulkSurfaceModal } from "@/components/prompt-library/BulkSurfaceModal";
 import { AioCollectButton } from "@/components/youtube-aio/AioCollectButton";
-import { AI_ANSWER_SURFACES, PROMPT_SURFACES, aioDailyLoad } from "@/lib/promptSurfaces";
+import { SelectionCollectModal } from "@/components/prompt-library/SelectionCollectModal";
+import { buildCollectSteps, surfacesOf, type CollectStep } from "@/lib/collectSteps";
+import { AI_ANSWER_SURFACES, PROMPT_SURFACES, SURFACE_LABEL, aioDailyLoad, type PromptSurface } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
@@ -66,9 +68,13 @@ export function PromptLibraryClient({
   const [importOpen, setImportOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<PromptLibraryRow | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
-  const [collectOpen, setCollectOpen] = useState(false);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [surfaceOpen, setSurfaceOpen] = useState(false);
+  const [surfaceFilter, setSurfaceFilter] = useState<"전체" | PromptSurface>("전체");
+  // 선택 수집: 표면 고르기 창 → 표면별 수집 단계(queue)를 차례로.
+  const [chooseOpen, setChooseOpen] = useState(false);
+  const [queue, setQueue] = useState<CollectStep[]>([]);
+  const stepDoneRef = useRef(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
     new Set(["origin", "category", "topic", "surfaces", "lastModifiedAt", "lastModifiedBy"])
   );
@@ -84,9 +90,10 @@ export function PromptLibraryClient({
       if (category !== "전체" && r.category !== category) return false;
       if (topic !== "전체" && r.topic !== topic) return false;
       if (search && !r.prompt.toLowerCase().includes(search.toLowerCase())) return false;
+      if (surfaceFilter !== "전체" && !surfacesOf(r).includes(surfaceFilter)) return false;
       return true;
     });
-  }, [rows, category, topic, search]);
+  }, [rows, category, topic, search, surfaceFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -242,7 +249,17 @@ export function PromptLibraryClient({
 
   // 선택한 프롬프트 중 Google AI Overview 표면이 켜진 것 — AIO 수집 대상.
   const selectedRows = rows.filter((r) => selected.has(r.id));
-  const selectedAioPromptIds = selectedRows.filter((r) => r.surfaces?.includes("google-aio") && r.promptId).map((r) => r.promptId as string);
+  const step = queue[0];
+  // 단계 창을 닫을 때: 끝까지 수집해 반영했으면 다음 단계로, 중간에 닫았으면 남은 단계를 모두 접는다.
+  function finishStep() {
+    if (stepDoneRef.current && queue.length > 1) {
+      stepDoneRef.current = false;
+      setQueue(queue.slice(1));
+      return;
+    }
+    if (stepDoneRef.current) setSelected(new Set());
+    setQueue([]);
+  }
   const commonSurfaces = PROMPT_SURFACES.filter((surface) => selectedRows.length > 0 && selectedRows.every((r) => r.surfaces?.includes(surface)));
   const aioLoad = aioDailyLoad(rows.map((r) => r.surfaces), aioDeviceCount);
   const columns = allColumns.filter((c) => !optionalColumns.some((o) => o.key === c.key) || visibleCols.has(c.key));
@@ -349,23 +366,36 @@ export function PromptLibraryClient({
             }}
           />
         </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-neutral-500">수집 표면</span>
+          <Dropdown
+            variant="solid"
+            label=""
+            value={surfaceFilter === "전체" ? "전체" : SURFACE_LABEL[surfaceFilter]}
+            options={["전체", ...PROMPT_SURFACES.map((surface) => SURFACE_LABEL[surface])]}
+            onChange={(v) => {
+              setSurfaceFilter(PROMPT_SURFACES.find((surface) => SURFACE_LABEL[surface] === v) ?? "전체");
+              setPage(1);
+            }}
+          />
+        </div>
+        {filtered.length > 0 && (
+          <Button
+            variant="secondary"
+            onClick={() => setSelected(new Set(filtered.map((r) => r.id)))}
+            title="검색·카테고리·토픽·수집 표면 조건에 맞는 프롬프트를 페이지와 상관없이 모두 선택합니다"
+          >
+            조건에 맞는 {filtered.length}개 모두 선택
+          </Button>
+        )}
         <div className="flex-1" />
         {selected.size > 0 && (
           <>
             <Button variant="secondary" onClick={() => setSurfaceOpen(true)}>
               수집 표면 변경 ({selected.size})
             </Button>
-            {brandId && (
-              <AioCollectButton
-                brandId={brandId}
-                promptIds={selectedAioPromptIds}
-                buttonLabel={`AIO 수집 (${selectedAioPromptIds.length})`}
-                searches={selectedAioPromptIds.length * aioDeviceCount}
-                disabled={selectedAioPromptIds.length === 0}
-              />
-            )}
-            <Button variant="secondary" onClick={() => setCollectOpen(true)}>
-              AI 답변 수집 ({selected.size})
+            <Button variant="primary" onClick={() => setChooseOpen(true)}>
+              선택 수집 ({selected.size})
             </Button>
             <Button variant="secondary" onClick={deleteSelected}>
               선택 삭제 ({selected.size})
@@ -464,21 +494,59 @@ export function PromptLibraryClient({
           });
         }}
       />
-      {collectionAgent ? (
-        <AgentCollectionModal
-          open={collectOpen}
-          onClose={() => setCollectOpen(false)}
-          keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
-          onDone={() => setSelected(new Set())}
-          orgName={collectionAgent.orgName}
-          downloadPlatforms={collectionAgent.downloadPlatforms}
+      {chooseOpen && (
+        <SelectionCollectModal
+          open
+          onClose={() => setChooseOpen(false)}
+          rows={selectedRows}
+          aioDeviceCount={aioDeviceCount}
+          onStart={(enabled) => {
+            setChooseOpen(false);
+            stepDoneRef.current = false;
+            setQueue(buildCollectSteps(selectedRows, enabled));
+          }}
         />
-      ) : (
-        <BulkCollectionModal
-          open={collectOpen}
-          onClose={() => setCollectOpen(false)}
-          keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
-          onDone={() => setSelected(new Set())}
+      )}
+      {step?.kind === "ai" &&
+        (collectionAgent ? (
+          <AgentCollectionModal
+            key={`ai-${queue.length}`}
+            open
+            onClose={finishStep}
+            keywords={step.keywords}
+            fixedEngines={step.engines}
+            onDone={() => {
+              stepDoneRef.current = true;
+            }}
+            orgName={collectionAgent.orgName}
+            downloadPlatforms={collectionAgent.downloadPlatforms}
+          />
+        ) : (
+          <BulkCollectionModal
+            key={`ai-${queue.length}`}
+            open
+            onClose={finishStep}
+            keywords={step.keywords}
+            fixedEngines={step.engines}
+            onDone={() => {
+              stepDoneRef.current = true;
+            }}
+          />
+        ))}
+      {step?.kind === "aio" && brandId && (
+        <AioCollectButton
+          key={`aio-${queue.length}`}
+          hideButton
+          open
+          onOpenChange={(next) => {
+            if (!next) {
+              stepDoneRef.current = true;
+              finishStep();
+            }
+          }}
+          brandId={brandId}
+          promptIds={step.promptIds}
+          searches={step.promptIds.length * aioDeviceCount}
         />
       )}
       {surfaceOpen && (

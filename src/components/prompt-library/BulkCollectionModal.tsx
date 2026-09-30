@@ -41,13 +41,16 @@ export function BulkCollectionModal({
   onClose,
   keywords,
   onDone,
+  fixedEngines,
 }: {
   open: boolean;
   onClose: () => void;
   keywords: string[];
   onDone?: () => void;
+  /** 있으면 엔진을 고르지 않고 이 엔진으로만 수집한다. */
+  fixedEngines?: ("naver" | "google")[];
 }) {
-  const [engines, setEngines] = useState<Set<"naver" | "google">>(new Set(["naver", "google"]));
+  const [engines, setEngines] = useState<Set<"naver" | "google">>(new Set(fixedEngines ?? ["naver", "google"]));
   const [items, setItems] = useState<Item[] | null>(null);
   const [running, setRunning] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -149,7 +152,9 @@ export function BulkCollectionModal({
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-neutral-500">엔진</span>
             <div className="flex h-10 items-center gap-4">
-              {ENGINE_OPTIONS.map((opt) => (
+              {fixedEngines ? (
+                <span className="text-sm text-neutral-700">{ENGINE_OPTIONS.filter((o) => fixedEngines.includes(o.id)).map((o) => o.label).join(" · ")}</span>
+              ) : ENGINE_OPTIONS.map((opt) => (
                 <label key={opt.id} className="flex items-center gap-1.5 text-sm text-neutral-700 cursor-pointer">
                   <input
                     type="checkbox"
