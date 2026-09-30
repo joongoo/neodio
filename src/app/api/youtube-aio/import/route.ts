@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   const brand = brandId ? await getManagedBrand(tenant.orgId, brandId) : null;
   if (!brand) return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 404 });
   const keyword = (await listAioKeywords(brandId)).find((k) => k.id === keywordId);
-  if (!keyword) return NextResponse.json({ error: "키워드를 찾을 수 없습니다." }, { status: 404 });
+  if (!keyword) return NextResponse.json({ error: "프롬프트를 찾을 수 없습니다." }, { status: 404 });
 
   const result = sanitizeAioResult(body?.result);
   if (!result) return NextResponse.json({ error: "수집 결과 형식이 올바르지 않습니다." }, { status: 400 });

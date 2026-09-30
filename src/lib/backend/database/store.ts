@@ -337,7 +337,7 @@ export class PromptStore {
    * 이미 이어진 키워드는 프롬프트를 다시 만들지 않는다 — 활성이면 보관해 뒀던 추적과 AIO 표면만 되살린다(키워드를 다시 추가한 경우).
    * linked는 이번에 새로 이은 경우에만 true.
    */
-  async linkAioKeyword(keywordId: string): Promise<{ linked: boolean; createdPrompt: boolean; trackingCreated: boolean; trackingReactivated: boolean; trackingArchived: boolean; keyword: string; organizationId: string } | null> {
+  async linkAioKeyword(keywordId: string, options: { classify?: boolean } = {}): Promise<{ linked: boolean; createdPrompt: boolean; trackingCreated: boolean; trackingReactivated: boolean; trackingArchived: boolean; keyword: string; organizationId: string } | null> {
     return this.transaction(async () => {
       const row = await this.one<{ id: string; brand_id: string; keyword: string; keyword_group: keyof typeof AIO_GROUP_TO_PROMPT; status: "active" | "archived"; organization_id: string; prompt_id: string | null }>(
         `SELECT k.id,k.brand_id,k.keyword,k.keyword_group,k.status,k.prompt_id,b.organization_id FROM aio_keywords k JOIN brands b ON b.id=k.brand_id WHERE k.id=$1`, [keywordId]);
@@ -349,7 +349,7 @@ export class PromptStore {
       let promptId = row.prompt_id;
       if (!promptId) {
         const existingPrompt = await this.one<{ id: string }>("SELECT id FROM prompts WHERE organization_id=$1 AND normalized_text=$2", [orgId, normalize(row.keyword)]);
-        const mapping = AIO_GROUP_TO_PROMPT[row.keyword_group] ?? {};
+        const mapping = options.classify === false ? {} : AIO_GROUP_TO_PROMPT[row.keyword_group] ?? {};
         // 이미 있는 프롬프트의 분류(토픽·검색 의도)는 덮어쓰지 않는다.
         promptId = await this.upsertPrompt(orgId, {
           text: row.keyword, sourceType: "aio-keyword", sourceKey: row.id,

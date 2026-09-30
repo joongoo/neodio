@@ -29,20 +29,20 @@ export async function POST(request: NextRequest) {
   }
   const keywords = await listAioKeywords(brandId);
   const keyword = keywordId ? keywords.find((k) => k.id === keywordId) : null;
-  if (keywordId && !keyword) return NextResponse.json({ error: "키워드를 찾을 수 없습니다." }, { status: 404 });
-  if (keywords.length === 0) return NextResponse.json({ error: "수집할 키워드가 없습니다." }, { status: 400 });
+  if (keywordId && !keyword) return NextResponse.json({ error: "프롬프트를 찾을 수 없습니다." }, { status: 404 });
+  if (keywords.length === 0) return NextResponse.json({ error: "수집할 프롬프트가 없습니다." }, { status: 400 });
 
   if (collectionUsesLocalAgent()) {
     const planned = await planAioRun({ brandId, keywordIds: keyword ? [keyword.id] : undefined, force: keyword ? true : body?.force === true });
     if ("skippedReason" in planned) return NextResponse.json({ error: planned.skippedReason }, { status: 400 });
     const { plan } = planned;
     if (plan.tasks.length === 0) {
-      return NextResponse.json({ error: "오늘 이미 모두 수집했습니다. 다시 수집하려면 \"오늘 이미 수집한 키워드도 다시 수집\"을 선택하세요." }, { status: 400 });
+      return NextResponse.json({ error: "오늘 이미 모두 수집했습니다. 다시 수집하려면 \"오늘 이미 수집한 프롬프트도 다시 수집\"을 선택하세요." }, { status: 400 });
     }
     return NextResponse.json({
       agent: {
         brandId,
-        label: keyword ? keyword.keyword : "전체 키워드",
+        label: keyword ? keyword.keyword : "전체 프롬프트",
         country: plan.settings.country,
         language: plan.settings.language,
         minDelayMs: AGENT_MIN_DELAY_MS,
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   const job = startAioJob({
     brandId,
     keywordIds: keyword ? [keyword.id] : undefined,
-    label: keyword ? keyword.keyword : "전체 키워드",
+    label: keyword ? keyword.keyword : "전체 프롬프트",
     force: keyword ? true : body?.force === true,
   });
   return NextResponse.json({ job });

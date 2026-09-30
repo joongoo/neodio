@@ -3,6 +3,7 @@ import {
   AioHistoryState,
   AioKeyword,
   AioKeywordRow,
+  AioCitedVideo,
   AioObservation,
   AioOverview,
   AioRate,
@@ -108,6 +109,18 @@ export interface OverviewOptions {
   optimizationDate: string | null;
 }
 
+/** 한 수집에서 인용된 YouTube 영상들(같은 영상이 여러 번 나오면 가장 앞선 인용 하나), 인용 순서대로. */
+function youtubeVideosOf(o: AioObservation): AioCitedVideo[] {
+  const seen = new Set<string>();
+  return [...o.citations]
+    .sort((a, b) => a.position - b.position)
+    .flatMap((c) => {
+      if ((c.sourceType !== "own_video" && c.sourceType !== "other_youtube") || !c.videoId || seen.has(c.videoId)) return [];
+      seen.add(c.videoId);
+      return [{ videoId: c.videoId, title: c.title, channelId: c.channelId, channelTitle: null, own: c.sourceType === "own_video", position: c.position, startSeconds: c.startSeconds }];
+    });
+}
+
 export function buildAioOverview({ keywords, observations, today, weeks, optimizationDate }: OverviewOptions): AioOverview {
   const keywordIds = new Set(keywords.map((k) => k.id));
   const obs = observations.filter((o) => keywordIds.has(o.keywordId));
@@ -173,6 +186,7 @@ export function buildAioOverview({ keywords, observations, today, weeks, optimiz
         ownPosition: null,
         sourceCount: null,
         ownVideo: null,
+        youtubeVideos: [],
         alternative: null,
         change: { kind: "none", from: null, to: null },
         collectedDate: null,
@@ -194,6 +208,7 @@ export function buildAioOverview({ keywords, observations, today, weeks, optimiz
       ownPosition: ownPosition(o),
       sourceCount: presentNow ? o.citations.length : null,
       ownVideo: ownCitation?.videoId ? { videoId: ownCitation.videoId, title: ownCitation.title, startSeconds: ownCitation.startSeconds } : null,
+      youtubeVideos: presentNow ? youtubeVideosOf(o) : [],
       alternative: alternativeFor(o),
       change: changeFor(o, weekEarlier),
       collectedDate: o.collectedDate,

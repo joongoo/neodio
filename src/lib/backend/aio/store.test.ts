@@ -334,6 +334,30 @@ test("AIO keywords are prompts with the AIO surface: adding creates the tracked 
   assert.equal((await store.listAioKeywords(brandId)).filter((k) => k.keyword === "통합 검색어 A").length, 1, "without duplicating the keyword");
 });
 
+test("the AIO screens read the prompt text from the library, and a prompt added without a group gets no classification", async () => {
+  const s = await getPromptStore();
+  const orgId = "neodigm";
+
+  await store.addAioKeywords(brandId, ["그룹 없이 추가한 프롬프트"]);
+  const [plain] = await s.query<{ topic_id: string | null; search_intent: string | null }>(
+    "SELECT topic_id,search_intent FROM prompts WHERE organization_id=$1 AND text='그룹 없이 추가한 프롬프트'", [orgId]);
+  assert.deepEqual([plain.topic_id, plain.search_intent], [null, null], "no group means no topic or intent is invented");
+  assert.ok((await store.listAioKeywords(brandId)).some((k) => k.keyword === "그룹 없이 추가한 프롬프트"));
+
+  // 라이브러리에서 문장을 고치면 AIO 목록과 영상별 키워드 조회에도 새 문장이 보인다.
+  const row = (await s.library(orgId, brandId)).find((r) => r.prompt === "그룹 없이 추가한 프롬프트")!;
+  await s.updateLibrary(orgId, row.id, { prompt: "고친 프롬프트 문장", category: row.category, topic: row.topic });
+  const names = (await store.listAioKeywords(brandId)).map((k) => k.keyword);
+  assert.ok(names.includes("고친 프롬프트 문장"), "the edited text is shown");
+  assert.ok(!names.includes("그룹 없이 추가한 프롬프트"), "not the old one");
+
+  // 같은 검색어를 다시 추가해도(그룹 없이) 이미 있는 키워드의 그룹은 바뀌지 않는다.
+  await store.addAioKeywords(brandId, ["통합 검색어 B"], "howto");
+  await store.addAioKeywords(brandId, ["통합 검색어 B"]);
+  const [b] = await s.query<{ keyword_group: string }>("SELECT keyword_group FROM aio_keywords WHERE brand_id=$1 AND normalized_keyword='통합 검색어 b'", [brandId]);
+  assert.equal(b.keyword_group, "howto");
+});
+
 test("adding a same-text prompt to the library does not switch off an AIO keyword that is not linked yet", async () => {
   const s = await getPromptStore();
   await s.query(

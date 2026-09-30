@@ -26,10 +26,10 @@ export function AioCollectButton({
   size = "md",
 }: {
   brandId: string;
-  /** 있으면 이 키워드만 수집 */
+  /** 있으면 이 프롬프트만 수집 */
   keywordId?: string;
   keywordLabel?: string;
-  /** 예상 검색 횟수(키워드 × 디바이스) — 확인 단계의 소요 시간 안내용 */
+  /** 예상 검색 횟수(프롬프트 × 디바이스) — 확인 단계의 소요 시간 안내용 */
   searches: number;
   disabled?: boolean;
   size?: "md" | "sm";
@@ -123,7 +123,7 @@ export function AioCollectButton({
         onClick={() => setOpen(true)}
         disabled={disabled && !running}
       >
-        {running ? `수집 중 ${job.results.length}/${job.total || "…"}` : keywordId ? "이 키워드 지금 수집" : "지금 수집"}
+        {running ? `수집 중 ${job.results.length}/${job.total || "…"}` : keywordId ? "이 프롬프트 지금 수집" : "지금 수집"}
       </Button>
 
       <Modal open={open} onClose={running ? () => setOpen(false) : close}>
@@ -141,7 +141,7 @@ export function AioCollectButton({
                 </>
               ) : (
                 <>
-                  등록된 키워드를 지금 Google에서 검색해 AI Overview 인용을 기록합니다. 검색 <b>{searches}회</b>, 약 <b>{estimateMinutes}분</b>{" "}
+                  등록된 프롬프트를 지금 Google에서 검색해 AI Overview 인용을 기록합니다. 검색 <b>{searches}회</b>, 약 <b>{estimateMinutes}분</b>{" "}
                   걸립니다(캡차를 피하려고 검색 사이 1~2분씩 쉽니다).
                 </>
               )}
@@ -149,12 +149,12 @@ export function AioCollectButton({
             {!keywordId && (
               <label className="flex items-center gap-2 text-sm text-neutral-700">
                 <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} className="size-4 cursor-pointer accent-slate-800" />
-                오늘 이미 수집한 키워드도 다시 수집
+                오늘 이미 수집한 프롬프트도 다시 수집
               </label>
             )}
             <p className="rounded-md bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
               수집 중에는 이 PC에서 시크릿 Chrome 창이 열립니다 — 자동으로 닫히니 직접 닫지 마세요. Google이 캡차를 띄우면 그 자리에서 멈추고, 남은
-              키워드는 다음 수집 때 이어서 진행됩니다.
+              프롬프트는 다음 수집 때 이어서 진행됩니다.
             </p>
             {error && <p className="text-xs text-red-600">{error}</p>}
             <div className="flex justify-end gap-2">
@@ -246,7 +246,7 @@ function FinishedBanner({ job }: { job: AioCollectJob }) {
     return (
       <p className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
         <CircleCheck size={18} />
-        {job.total === 0 ? "오늘 이미 모든 키워드를 수집했습니다. 다시 수집하려면 옵션을 켜고 시작하세요." : `수집 완료 — ${job.results.length}건이 화면에 반영됐습니다.`}
+        {job.total === 0 ? "오늘 이미 모든 프롬프트를 수집했습니다. 다시 수집하려면 옵션을 켜고 시작하세요." : `수집 완료 — ${job.results.length}건이 화면에 반영됐습니다.`}
       </p>
     );
   }

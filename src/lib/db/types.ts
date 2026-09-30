@@ -796,6 +796,19 @@ export interface AioRate {
 
 export type AioChangeKind = "new" | "lost" | "up" | "down" | "same" | "none";
 
+/** AI Overview에 인용된 YouTube 영상 하나 — "프롬프트별 인용 현황"의 한 칸. */
+export interface AioCitedVideo {
+  videoId: string;
+  title: string;
+  channelId: string | null;
+  /** 영상 캐시에서 채운다(없으면 null). */
+  channelTitle: string | null;
+  /** 우리 채널 영상인가 */
+  own: boolean;
+  position: number;
+  startSeconds: number | null;
+}
+
 export interface AioKeywordRow {
   keywordId: string;
   keyword: string;
@@ -807,6 +820,8 @@ export interface AioKeywordRow {
   ownPosition: number | null;
   sourceCount: number | null;
   ownVideo: { videoId: string; title: string; startSeconds: number | null } | null;
+  /** 최신 수집에서 인용된 YouTube 영상(우리 것과 다른 채널 것 모두), 인용 순서대로. 수집 전이거나 AIO가 없으면 빈 목록. */
+  youtubeVideos: AioCitedVideo[];
   /** 우리 영상이 인용되지 않았을 때 대신 인용된 소스 설명 */
   alternative: string | null;
   change: { kind: AioChangeKind; from: number | null; to: number | null };
