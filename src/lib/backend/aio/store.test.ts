@@ -20,6 +20,10 @@ let store: typeof import("./store");
 let config: typeof import("../brandAioConfig");
 let metrics: typeof import("./metrics");
 let keywordsRoute: typeof import("../../../app/api/youtube-aio/keywords/route");
+let manageSyncRoute: typeof import("../../../app/api/youtube-manage/sync/route");
+let manageVideosRoute: typeof import("../../../app/api/youtube-manage/videos/route");
+let managePromptsRoute: typeof import("../../../app/api/youtube-manage/prompts/route");
+let manage: typeof import("./videoManage");
 let workLogsRoute: typeof import("../../../app/api/youtube-aio/work-logs/route");
 let snapshotRoute: typeof import("../../../app/api/youtube-aio/snapshot/route");
 let settingsRoute: typeof import("../../../app/api/brands-management/brands/[brandId]/aio-settings/route");
@@ -35,6 +39,10 @@ before(async () => {
   config = await import("../brandAioConfig");
   metrics = await import("./metrics");
   keywordsRoute = await import("../../../app/api/youtube-aio/keywords/route");
+  manageSyncRoute = await import("../../../app/api/youtube-manage/sync/route");
+  manageVideosRoute = await import("../../../app/api/youtube-manage/videos/route");
+  managePromptsRoute = await import("../../../app/api/youtube-manage/prompts/route");
+  manage = await import("./videoManage");
   workLogsRoute = await import("../../../app/api/youtube-aio/work-logs/route");
   snapshotRoute = await import("../../../app/api/youtube-aio/snapshot/route");
   settingsRoute = await import("../../../app/api/brands-management/brands/[brandId]/aio-settings/route");
@@ -368,6 +376,84 @@ test("adding a same-text prompt to the library does not switch off an AIO keywor
   const [row] = await s.query<{ status: string; prompt_id: string | null }>("SELECT status,prompt_id FROM aio_keywords WHERE id='aiokw-legacy'");
   assert.equal(row.status, "active", "the unlinked keyword keeps collecting");
   assert.equal(row.prompt_id, null);
+});
+
+test("YouTube 관리: synced videos start unchecked, checking is per video, expected prompts register with their surfaces and link back to the video", async () => {
+  const channelId = "UCownownownownownown01";
+  const synced = (videoId: string, title: string) => ({
+    videoId, channelId, channelTitle: "Salesforce", title, thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+    publishedAt: videoId === "sync1111111" ? "2026-09-01T00:00:00Z" : "2026-09-20T00:00:00Z", description: "설명 앞부분",
+  });
+  assert.deepEqual(await manage.saveSyncedVideos(brandId, [synced("sync1111111", "첫 영상"), synced("sync2222222", "둘째 영상")]), { added: 2, total: 2 });
+  // 다시 가져오면 새로 들어온 것만 센다 — 제목은 갱신되고 체크는 그대로.
+  await manage.setVideosChecked(brandId, ["sync1111111"], true);
+  assert.deepEqual(await manage.saveSyncedVideos(brandId, [synced("sync1111111", "첫 영상 (수정)"), synced("sync3333333", "셋째 영상")]), { added: 1, total: 2 });
+  const listed = await manage.listManagedVideos(brandId);
+  const syncedRows = listed.filter((v) => v.videoId.startsWith("sync"));
+  assert.deepEqual(syncedRows.map((v) => [v.videoId, v.title, v.checked, v.promptCount]), [
+    ["sync2222222", "둘째 영상", false, 0], // 게시일이 최신인 순(같은 날이면 ID 순)
+    ["sync3333333", "셋째 영상", false, 0],
+    ["sync1111111", "첫 영상 (수정)", true, 0],
+  ]);
+  assert.equal(listed.find((v) => v.videoId === "bbbbbbbbbbb")?.checked, true, "a manually registered video is already checked");
+  assert.equal(listed.find((v) => v.videoId === "sync1111111")?.description, "설명 앞부분");
+
+  // 체크 API
+  assert.equal((await manageVideosRoute.PATCH(request("/x", "PATCH", { brandId: "nope", videoIds: ["sync2222222"], checked: true }))).status, 404);
+  assert.equal((await manageVideosRoute.PATCH(request("/x", "PATCH", { brandId, videoIds: [], checked: true }))).status, 400);
+  assert.deepEqual(await (await manageVideosRoute.PATCH(request("/x", "PATCH", { brandId, videoIds: ["sync2222222", "sync1111111", "unknown0000"], checked: true }))).json(), { changed: 1 });
+  assert.deepEqual(await (await manageVideosRoute.PATCH(request("/x", "PATCH", { brandId, videoIds: ["sync2222222"], checked: false }))).json(), { changed: 1 });
+
+  // 가져오기 API — 키가 없으면 안내, 채널이 없으면 400
+  assert.equal((await manageSyncRoute.POST(request("/x", "POST", { brandId: "nope" }))).status, 404);
+  assert.equal((await manageSyncRoute.POST(request("/x", "POST", { brandId }))).status, 400);
+  await config.addBrandYoutubeChannel(brandId, { channelId, handle: "@salesforce", title: "Salesforce", thumbnailUrl: null });
+  const savedKey = process.env.YOUTUBE_API_KEY;
+  delete process.env.YOUTUBE_API_KEY;
+  assert.equal((await manageSyncRoute.POST(request("/x", "POST", { brandId }))).status, 503);
+  if (savedKey !== undefined) process.env.YOUTUBE_API_KEY = savedKey;
+  await config.removeBrandYoutubeChannel(brandId, channelId);
+
+  // 예상 프롬프트 등록
+  const post = (prompts: unknown) => managePromptsRoute.POST(request("/x", "POST", { brandId, prompts }));
+  assert.equal((await post([{ videoId: "unknown0000", text: "남의 영상", surfaces: ["google-aio"] }])).status, 400);
+  assert.equal((await post([{ videoId: "sync1111111", text: "표면 없음", surfaces: [] }])).status, 400);
+  assert.equal((await post([])).status, 400);
+  const ok = await post([
+    { videoId: "sync1111111", text: "Slack 세일즈포스 연동 방법", surfaces: ["google-aio"] },
+    { videoId: "sync1111111", text: "세일즈포스에서 Slack 알림을 받으려면 어떻게 설정하나요?", surfaces: ["google-ai-mode", "naver-ai"] },
+  ]);
+  assert.deepEqual(await ok.json(), { registered: 2 });
+
+  const s = await getPromptStore();
+  const library = await s.library("neodigm", brandId);
+  const aioRow = library.find((r) => r.prompt === "Slack 세일즈포스 연동 방법")!;
+  assert.deepEqual(aioRow.surfaces, ["google-aio"]);
+  assert.equal(aioRow.category, "YouTube 영상");
+  assert.equal(aioRow.topic, "첫 영상 (수정)");
+  assert.equal((await manage.listManagedVideos(brandId)).find((v) => v.videoId === "sync1111111")?.promptCount, 2);
+
+  // 영상 상세: 등록한 프롬프트, AIO 수집 여부, 인용 결과
+  let rows = await manage.videoPromptRows(brandId, "sync1111111", "mobile");
+  assert.deepEqual(rows.map((r) => [r.text, r.surfaces, r.aioTracked, r.aioMeasured, r.lastCitedDate]), [
+    ["Slack 세일즈포스 연동 방법", ["google-aio"], true, false, null],
+    ["세일즈포스에서 Slack 알림을 받으려면 어떻게 설정하나요?", ["google-ai-mode", "naver-ai"], false, false, null],
+  ]);
+  const keyword = (await store.listAioKeywords(brandId)).find((k) => k.keyword === "Slack 세일즈포스 연동 방법")!;
+  const cited: AioCitation = { position: 2, url: "https://www.youtube.com/watch?v=sync1111111", domain: "youtube.com", title: "첫 영상", sourceType: "own_video", videoId: "sync1111111", channelId, startSeconds: null };
+  const save = (date: string, citations: AioCitation[]) =>
+    store.saveAioObservation(brandId, { keywordId: keyword.id, device: "mobile", country: "kr", language: "ko", collectedAt: `${date}T03:00:00.000Z`, status: "aio_present", aioText: "본문", paragraphs: [], citations, screenshotPath: null, htmlPath: null, errorMessage: null });
+  await save("2026-09-20", [{ ...cited, position: 3 }]);
+  await save("2026-09-25", []); // 수집했지만 인용 안 됨 — 마지막 인용일은 그대로
+  rows = await manage.videoPromptRows(brandId, "sync1111111", "mobile");
+  assert.deepEqual([rows[0].aioMeasured, rows[0].lastCitedDate, rows[0].lastPosition], [true, "2026-09-20", 3]);
+  const desktop = await manage.videoPromptRows(brandId, "sync1111111", "desktop");
+  assert.deepEqual([desktop[0].aioMeasured, desktop[0].lastCitedDate], [false, null], "measurement is per device");
+  // 다른 영상의 상세에는 나타나지 않는다.
+  assert.deepEqual(await manage.videoPromptRows(brandId, "sync2222222", "mobile"), []);
+  // 인용 키워드 표(기존 함수)에도 프롬프트 문장으로 나온다.
+  const byKeyword = await store.videoKeywordCitations(brandId, "sync1111111", "mobile");
+  assert.deepEqual(byKeyword.map((k) => [k.keyword, k.lastPosition]), [["Slack 세일즈포스 연동 방법", 3]]);
 });
 
 test("deleting a brand removes its AIO data", async () => {

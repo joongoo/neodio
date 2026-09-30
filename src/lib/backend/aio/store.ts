@@ -84,25 +84,33 @@ export async function archiveAioKeyword(brandId: string, keywordId: string): Pro
 export async function getCachedVideos(videoIds: string[]): Promise<Map<string, YoutubeVideoMeta>> {
   if (videoIds.length === 0) return new Map();
   const rows = await (await store()).query<VideoRow>(
-    "SELECT video_id,channel_id,channel_title,title,thumbnail_url FROM youtube_videos WHERE video_id = ANY($1)",
+    "SELECT video_id,channel_id,channel_title,title,thumbnail_url,published_at,description FROM youtube_videos WHERE video_id = ANY($1)",
     [[...new Set(videoIds)]]
   );
   return new Map(rows.map((row) => [row.video_id, toVideoMeta(row)]));
 }
 
-type VideoRow = { video_id: string; channel_id: string; channel_title: string | null; title: string; thumbnail_url: string };
+export type VideoRow = {
+  video_id: string; channel_id: string; channel_title: string | null; title: string; thumbnail_url: string;
+  published_at?: string | null; description?: string | null;
+};
 
-function toVideoMeta(row: VideoRow): YoutubeVideoMeta {
-  return { videoId: row.video_id, channelId: row.channel_id, channelTitle: row.channel_title, title: row.title, thumbnailUrl: row.thumbnail_url };
+export function toVideoMeta(row: VideoRow): YoutubeVideoMeta {
+  return {
+    videoId: row.video_id, channelId: row.channel_id, channelTitle: row.channel_title, title: row.title, thumbnailUrl: row.thumbnail_url,
+    publishedAt: row.published_at ?? null, description: row.description ?? null,
+  };
 }
 
-// 채널 이름은 조회 방식에 따라 없을 수 있어(수집기 판정) 비어 있으면 기존 값을 남긴다.
+// 채널 이름·게시일·설명은 조회 방식에 따라 없을 수 있어(수집기 판정) 비어 있으면 기존 값을 남긴다.
 export async function cacheVideo(video: YoutubeVideoMeta): Promise<void> {
   await (await store()).query(
-    `INSERT INTO youtube_videos (video_id,channel_id,channel_title,title,thumbnail_url,fetched_at) VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO youtube_videos (video_id,channel_id,channel_title,title,thumbnail_url,fetched_at,published_at,description) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (video_id) DO UPDATE SET channel_id=EXCLUDED.channel_id,channel_title=COALESCE(EXCLUDED.channel_title,youtube_videos.channel_title),
-       title=EXCLUDED.title,thumbnail_url=EXCLUDED.thumbnail_url,fetched_at=EXCLUDED.fetched_at`,
-    [video.videoId, video.channelId, video.channelTitle ?? null, video.title, video.thumbnailUrl, new Date().toISOString()]
+       title=EXCLUDED.title,thumbnail_url=EXCLUDED.thumbnail_url,fetched_at=EXCLUDED.fetched_at,
+       published_at=COALESCE(EXCLUDED.published_at,youtube_videos.published_at),description=COALESCE(EXCLUDED.description,youtube_videos.description)`,
+    [video.videoId, video.channelId, video.channelTitle ?? null, video.title, video.thumbnailUrl, new Date().toISOString(),
+      video.publishedAt ?? null, video.description ?? null]
   );
 }
 
@@ -112,12 +120,12 @@ export async function cacheVideo(video: YoutubeVideoMeta): Promise<void> {
 // 저장하지 않고 읽는 쪽에서 brand_youtube_channels와 대조한다.
 
 export async function listBrandVideos(brandId: string): Promise<BrandVideo[]> {
-  const rows = await (await store()).query<VideoRow & { added_at: string }>(
-    `SELECT b.video_id,v.channel_id,v.channel_title,v.title,v.thumbnail_url,b.added_at FROM brand_videos b
+  const rows = await (await store()).query<VideoRow & { added_at: string; checked: boolean }>(
+    `SELECT b.video_id,v.channel_id,v.channel_title,v.title,v.thumbnail_url,v.published_at,v.description,b.added_at,b.checked FROM brand_videos b
      JOIN youtube_videos v ON v.video_id=b.video_id WHERE b.brand_id=$1 AND b.status='active' ORDER BY b.added_at DESC,b.video_id`,
     [brandId]
   );
-  return rows.map((row) => ({ ...toVideoMeta(row), addedAt: row.added_at }));
+  return rows.map((row) => ({ ...toVideoMeta(row), addedAt: row.added_at, checked: row.checked }));
 }
 
 /** 영상 메타를 캐시하고 추적 등록한다. 보관된 영상이면 다시 활성화한다. */

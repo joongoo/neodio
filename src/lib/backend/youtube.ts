@@ -1,3 +1,5 @@
+import type { YoutubeVideoMeta } from "@/lib/db/types";
+
 // YouTube 채널/영상 식별 — AIO 인용 판정의 기준은 도메인(youtube.com)이
 // 아니라 "채널 ID"다(docs/youtube-aio-tracker-plan.md §1). 인용 링크에서
 // 영상 ID를 뽑고, 영상 → 채널 ID를 조회해 브랜드에 등록된 채널과 대조한다.
@@ -209,4 +211,76 @@ export async function resolveYoutubeVideo(videoId: string): Promise<YoutubeVideo
     title: metaContent(html, "og:title") ?? metaContent(html, "title") ?? videoId,
     thumbnailUrl: fallbackThumb,
   };
+}
+
+// ---- 채널 영상 목록 (YouTube 관리의 "영상 가져오기") ----
+// 채널의 업로드 재생목록(UC… → UU…)을 50개씩 넘겨 읽는다. playlistItems.list는 호출당 1유닛이라
+// 영상 500개도 10유닛이면 끝난다(하루 무료 10,000유닛). 공개 페이지 HTML로는 전체 목록을 안정적으로 못 읽으므로 API 키가 필요하다.
+
+export class YoutubeApiKeyMissingError extends Error {
+  constructor() {
+    super("채널 영상을 가져오려면 YOUTUBE_API_KEY가 필요합니다.");
+  }
+}
+
+export const CHANNEL_VIDEO_LIMIT = 500;
+const DESCRIPTION_LIMIT = 1500;
+
+type ApiPlaylistItems = {
+  nextPageToken?: string;
+  items?: {
+    snippet?: {
+      title?: string;
+      description?: string;
+      publishedAt?: string;
+      videoOwnerChannelId?: string;
+      videoOwnerChannelTitle?: string;
+      thumbnails?: Record<string, { url: string }>;
+      resourceId?: { videoId?: string };
+    };
+    contentDetails?: { videoId?: string; videoPublishedAt?: string };
+  }[];
+};
+
+/** 업로드 재생목록 한 페이지 → 영상 메타. 삭제·비공개 영상은 건너뛴다. (순수 함수 — 테스트 대상) */
+export function parsePlaylistPage(data: ApiPlaylistItems, channelId: string, channelTitle: string | null): YoutubeVideoMeta[] {
+  const videos: YoutubeVideoMeta[] = [];
+  for (const item of data.items ?? []) {
+    const snippet = item.snippet;
+    const videoId = item.contentDetails?.videoId ?? snippet?.resourceId?.videoId;
+    if (!snippet || !videoId || !VIDEO_ID_PATTERN.test(videoId)) continue;
+    // 삭제·비공개 영상은 제목이 고정 문구이고 썸네일이 없다.
+    if (snippet.title === "Deleted video" || snippet.title === "Private video" || !snippet.thumbnails) continue;
+    videos.push({
+      videoId,
+      channelId: snippet.videoOwnerChannelId ?? channelId,
+      channelTitle: snippet.videoOwnerChannelTitle ?? channelTitle,
+      title: snippet.title ?? videoId,
+      thumbnailUrl: snippet.thumbnails.medium?.url ?? snippet.thumbnails.default?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      publishedAt: item.contentDetails?.videoPublishedAt ?? snippet.publishedAt ?? null,
+      description: snippet.description ? snippet.description.slice(0, DESCRIPTION_LIMIT) : null,
+    });
+  }
+  return videos;
+}
+
+/** 채널의 공개 영상을 최신순으로 가져온다(최대 CHANNEL_VIDEO_LIMIT). 키가 없으면 YoutubeApiKeyMissingError. */
+export async function listChannelVideos(channelId: string, channelTitle: string | null, limit = CHANNEL_VIDEO_LIMIT): Promise<YoutubeVideoMeta[]> {
+  if (!process.env.YOUTUBE_API_KEY) throw new YoutubeApiKeyMissingError();
+  if (!CHANNEL_ID_PATTERN.test(channelId)) return [];
+  const uploads = `UU${channelId.slice(2)}`;
+  const videos: YoutubeVideoMeta[] = [];
+  let pageToken: string | undefined;
+  while (videos.length < limit) {
+    const data = await apiGet<ApiPlaylistItems>("playlistItems", {
+      part: "snippet,contentDetails",
+      playlistId: uploads,
+      maxResults: "50",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    videos.push(...parsePlaylistPage(data, channelId, channelTitle));
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+  return videos.slice(0, limit);
 }

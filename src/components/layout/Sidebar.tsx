@@ -48,6 +48,7 @@ const NAV: NavGroup[] = [
       { label: "검색어 트렌드", href: "/search-trend" },
       { label: "검색 성과 (GSC)", href: "/search-performance" },
       { label: "YouTube AIO 인용", href: "/youtube-aio" },
+      { label: "YouTube 관리", href: "/youtube-manage" },
       { label: "수집 로그", href: "/collection-runs" },
     ],
   },

@@ -16,6 +16,7 @@ export const RESERVED_ORG_SLUGS = new Set([
   "search-trend",
   "search-performance",
   "youtube-aio",
+  "youtube-manage",
   "collection-runs",
   "prompt-strategy",
   "prompt-library",

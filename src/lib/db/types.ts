@@ -746,11 +746,36 @@ export interface YoutubeVideoMeta {
   thumbnailUrl: string;
   /** 채널 이름 — 타 채널 영상 표시용. 수집기 판정은 없이 캐시하기도 한다. */
   channelTitle?: string | null;
+  /** 게시일(ISO) — 채널 동기화로 가져온 영상만 있다. */
+  publishedAt?: string | null;
+  /** 설명 앞부분 — 예상 프롬프트를 만들 때 쓴다(동기화한 영상만). */
+  description?: string | null;
 }
 
 /** 브랜드가 추적 등록한 영상(영상 단위 인용 추적). */
 export interface BrandVideo extends YoutubeVideoMeta {
   addedAt: string;
+  /** YouTube 관리에서 체크한 영상 — 예상 프롬프트 생성·인용 확인 대상 */
+  checked: boolean;
+}
+
+/** YouTube 관리 목록 한 줄 — 영상 + 이 영상용으로 만든 프롬프트 수. */
+export interface ManagedVideo extends BrandVideo {
+  promptCount: number;
+}
+
+/** YouTube 관리 상세: 이 영상용으로 만든 예상 프롬프트와 Google AIO 수집 결과. */
+export interface VideoPromptRow {
+  promptId: string;
+  text: string;
+  surfaces: string[];
+  /** 이 프롬프트가 Google AIO 수집 대상(활성 AIO 키워드)이 되어 있는지 */
+  aioTracked: boolean;
+  /** AIO를 수집해 본 적이 있는지 — false면 "미수집"이지 "미인용"이 아니다 */
+  aioMeasured: boolean;
+  /** 이 영상이 AIO에 인용된 마지막 날(없으면 null) */
+  lastCitedDate: string | null;
+  lastPosition: number | null;
 }
 
 export type BrandVideoAddResult = "added" | "reactivated" | "exists";
@@ -769,6 +794,7 @@ export interface VideoCitationSummary {
 /** 영상 상세의 키워드별 인용 한 줄 — 활성 키워드만. */
 export interface VideoKeywordCitation {
   keywordId: string;
+  /** 프롬프트 문장(프롬프트와 이어진 키워드면 프롬프트 텍스트) */
   keyword: string;
   group: AioKeywordGroup;
   lastCitedDate: string;

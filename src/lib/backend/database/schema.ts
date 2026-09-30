@@ -188,6 +188,11 @@ ALTER TABLE organizations ADD COLUMN IF NOT EXISTS slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS organizations_slug ON organizations(slug);
 CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand_id,collected_date);
 ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS channel_title TEXT;
+-- YouTube 관리: 채널 영상 동기화로 가져온 게시일·설명, 그리고 "체크"(예상 프롬프트를 만들고 인용을 추적할 영상) 표시.
+-- 직접 등록한 영상은 이미 추적 대상이므로 checked 기본값은 true, 동기화가 새로 넣는 영상만 false로 넣는다.
+ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS published_at TEXT;
+ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE brand_videos ADD COLUMN IF NOT EXISTS checked BOOLEAN NOT NULL DEFAULT true;
 -- 프롬프트(질의)는 prompts 한 곳에서 등록하고, 어느 표면에서 수집할지는 추적(prompt_tracking)마다 정한다.
 CREATE TABLE IF NOT EXISTS prompt_tracking_surfaces (
   tracking_id TEXT NOT NULL REFERENCES prompt_tracking(id) ON DELETE CASCADE,
