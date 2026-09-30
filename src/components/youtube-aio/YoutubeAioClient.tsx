@@ -127,8 +127,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
         <>
           {waiting && (
             <div className="rounded-lg bg-neutral-100 px-4 py-3 text-sm text-neutral-700">
-              <b>첫 수집 대기 중</b> — 키워드 {data.totalKeywords}개가 등록됐습니다. 상단 &quot;지금 수집&quot;을 누르거나 정기 수집(
-              <code>npm run collect:aio</code>)이 한 번 돌면 아래 지표가 채워집니다. 아직 측정하지 않은 값은 0%가 아니라 &quot;–&quot;로 표시됩니다.
+              <b>첫 수집 대기 중</b> — 키워드 {data.totalKeywords}개가 등록됐습니다. 상단 &quot;지금 수집&quot;을 누르거나 정기 수집이 한 번 돌면 아래 지표가 채워집니다. 아직 측정하지 않은 값은 0%가 아니라 &quot;–&quot;로 표시됩니다.
             </div>
           )}
 

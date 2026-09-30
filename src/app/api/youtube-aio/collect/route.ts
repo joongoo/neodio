@@ -11,7 +11,7 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 function refuseOnServerless() {
   if (!process.env.VERCEL) return null;
   return NextResponse.json(
-    { error: "AIO 수집은 실제 Chrome이 있는 로컬/수집 서버에서만 실행할 수 있어요. 그곳에서 `npm run collect:aio`를 실행해주세요." },
+    { error: "지금 이 환경에서는 AIO 수집을 바로 실행할 수 없어요. 정기 수집이 돌면 지표가 채워집니다." },
     { status: 501 }
   );
 }
