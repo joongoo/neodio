@@ -109,7 +109,9 @@ function writeLaunchers(dir, platform, version) {
     [
       `네오디오 수집기 ${version}`,
       "",
-      platform.startsWith("mac") ? "설치: install.command를 더블클릭 → 차단되면 시스템 설정 > 개인정보 보호 및 보안 > 맨 아래로 스크롤 > 그래도 열기" : "설치: install.cmd 더블클릭",
+      platform.startsWith("mac")
+        ? "설치: install.command를 더블클릭 → 차단되면 시스템 설정 > 개인정보 보호 및 보안 > 맨 아래로 스크롤 > 그래도 열기"
+        : "설치: zip을 '모두 압축 풀기'로 푼 폴더에서 install.cmd를 더블클릭 (파란 'Windows의 PC 보호' 창이 뜨면 추가 정보 > 실행)",
       "설치하면 로그인할 때마다 자동으로 실행되고, 웹의 '선택 수집'이 이 PC의 Chrome으로 수집합니다.",
       "Google Chrome이 설치돼 있어야 합니다.",
       platform.startsWith("mac") ? "제거: uninstall.command" : "제거: uninstall.cmd",

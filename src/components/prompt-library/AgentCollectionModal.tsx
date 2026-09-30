@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Check, CircleCheck, Download, Loader2, RefreshCw, TriangleAlert, UploadCloud } from "lucide-react";
+import { Ban, Check, CircleCheck, Loader2, RefreshCw, TriangleAlert, UploadCloud } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
+import { CollectorInstallGuide } from "@/components/collector/CollectorInstallGuide";
 import { Button } from "@/components/ui/Button";
 import {
-  COLLECTOR_PLATFORM_LABEL,
   MIN_COLLECTOR_VERSION,
   compareVersions,
   type CollectorAgentStatus,
@@ -17,7 +17,6 @@ import {
 import {
   cancelAgentJob,
   createAgentJob,
-  detectCollectorPlatform,
   getAgentJob,
   getAgentResults,
   getAgentStatus,
@@ -31,7 +30,6 @@ const ENGINE_OPTIONS: { id: CollectorEngine; label: string }[] = [
   { id: "google", label: "구글 AI 모드" },
 ];
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버", google: "구글" };
-const ALL_PLATFORMS: CollectorPlatform[] = ["mac-arm64", "mac-x64", "win-x64"];
 const POLL_MS = 2000;
 const IMPORT_CHUNK = 20;
 
@@ -298,11 +296,6 @@ export function CollectorProblem({
   onRetry: () => void;
   onBack: () => void;
 }) {
-  const [platform, setPlatform] = useState<CollectorPlatform | null | undefined>(undefined);
-  useEffect(() => {
-    detectCollectorPlatform().then(setPlatform);
-  }, []);
-
   if (problem === "no_chrome") {
     return (
       <div className="mt-2 flex flex-col gap-4">
@@ -314,11 +307,6 @@ export function CollectorProblem({
     );
   }
 
-  const isMac = platform === null ? /Macintosh|Mac OS X/i.test(typeof navigator === "undefined" ? "" : navigator.userAgent) : platform?.startsWith("mac");
-  const primary: CollectorPlatform[] = platform ? [platform] : isMac ? ["mac-arm64", "mac-x64"] : [];
-  const others = ALL_PLATFORMS.filter((p) => !primary.includes(p));
-  const safari = typeof navigator !== "undefined" && /Safari/i.test(navigator.userAgent) && !/Chrome|Chromium|Edg/i.test(navigator.userAgent);
-
   return (
     <div className="mt-2 flex flex-col gap-4">
       <p className="text-sm text-neutral-600">
@@ -327,48 +315,10 @@ export function CollectorProblem({
           : "이 PC에서 수집기를 찾지 못했습니다. 수집기를 설치하면 이 화면에서 바로 수집과 사이트 크롤을 시킬 수 있습니다. 이미 설치했다면 PC를 다시 켰거나 수집기가 꺼진 상태일 수 있습니다 — 설치 파일을 한 번 더 실행하면 다시 켜집니다."}
       </p>
 
-      <div className="flex flex-wrap gap-2">
-        {primary.map((p) => (
-          <DownloadButton key={p} platform={p} available={downloadPlatforms.includes(p)} primary />
-        ))}
-        {others.map((p) => (
-          <DownloadButton key={p} platform={p} available={downloadPlatforms.includes(p)} />
-        ))}
-      </div>
-
-      <ol className="flex list-decimal flex-col gap-1 rounded-md bg-neutral-50 py-3 pr-3 pl-8 text-xs text-neutral-600">
-        {isMac ? (
-          <>
-            <li>받은 zip 파일을 더블클릭해 압축을 풉니다.</li>
-            <li>
-              폴더 안의 <b>install.command</b>를 더블클릭합니다. 아래 창이 뜨면 <b>완료</b>를 누릅니다(휴지통으로 이동은 누르지 마세요).
-              <GuideImage src="mac-1-blocked" alt="install.command 열지 않음 창" width={230} />
-            </li>
-            <li>
-              <b>시스템 설정 → 개인정보 보호 및 보안</b>을 열고 <b>맨 아래로 스크롤</b>하면 나오는 &quot;install.command&quot; 항목에서 <b>그래도 열기</b>를
-              누릅니다.
-              <GuideImage src="mac-2-settings" alt="개인정보 보호 및 보안의 그래도 열기 버튼" width={380} />
-            </li>
-            <li>
-              다시 확인 창이 뜨면 <b>그래도 열기</b>를 누르고 Mac 암호를 입력합니다. 터미널이 열리며 설치가 진행됩니다.
-              <GuideImage src="mac-3-confirm" alt="열겠습니까 확인 창" width={230} />
-            </li>
-            <li>터미널에 &quot;설치 완료&quot;가 보이면 아래 &quot;다시 확인&quot;을 누릅니다.</li>
-          </>
-        ) : (
-          <>
-            <li>받은 zip 파일을 우클릭 → &quot;압축 풀기&quot;로 풉니다.</li>
-            <li>
-              폴더 안의 <b>install.cmd</b>를 더블클릭합니다(보호 창이 뜨면 &quot;추가 정보 → 실행&quot;).
-            </li>
-            <li>&quot;설치 완료&quot;가 보이면 아래 &quot;다시 확인&quot;을 누릅니다.</li>
-          </>
-        )}
-        <li>설치 후에는 PC를 켤 때마다 수집기가 자동으로 실행됩니다.</li>
-      </ol>
+      <CollectorInstallGuide outdated={problem === "outdated"} downloadPlatforms={downloadPlatforms} />
 
       <p className="text-[11px] text-neutral-500">
-        {safari
+        {isSafari()
           ? "Safari에서는 PC의 수집기에 연결할 수 없습니다. Chrome에서 이 화면을 열어 주세요."
           : "브라우저가 \"로컬 네트워크의 기기에 접근\" 권한을 물으면 허용을 눌러 주세요."}
       </p>
@@ -378,29 +328,8 @@ export function CollectorProblem({
   );
 }
 
-function GuideImage({ src, alt, width }: { src: string; alt: string; width: number }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- 안내용 고정 스크린샷, 최적화 불필요
-    <img src={`/collector-guide/${src}.png`} alt={alt} width={width} className="mt-1.5 max-w-full rounded-md border border-neutral-200" />
-  );
-}
-
-function DownloadButton({ platform, available, primary = false }: { platform: CollectorPlatform; available: boolean; primary?: boolean }) {
-  const className = primary
-    ? "inline-flex h-10 items-center gap-1.5 rounded-md bg-slate-800 px-4 text-sm font-bold text-white hover:opacity-90"
-    : "inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-200 px-3 text-xs text-neutral-600 hover:bg-neutral-50";
-  if (!available) {
-    return (
-      <span className={`${className} cursor-not-allowed opacity-40`} title="설치 파일 준비 중">
-        <Download size={primary ? 16 : 13} /> {COLLECTOR_PLATFORM_LABEL[platform]}
-      </span>
-    );
-  }
-  return (
-    <a href={`/api/collector-download?platform=${platform}`} className={className}>
-      <Download size={primary ? 16 : 13} /> {primary ? `수집기 받기 · ${COLLECTOR_PLATFORM_LABEL[platform]}` : COLLECTOR_PLATFORM_LABEL[platform]}
-    </a>
-  );
+function isSafari() {
+  return typeof navigator !== "undefined" && /Safari/i.test(navigator.userAgent) && !/Chrome|Chromium|Edg/i.test(navigator.userAgent);
 }
 
 function ProblemActions({ busy, onRetry, onBack }: { busy: boolean; onRetry: () => void; onBack: () => void }) {
