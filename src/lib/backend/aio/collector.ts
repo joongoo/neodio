@@ -14,7 +14,7 @@ import { AioDevice, AioObservationStatus, AioParagraph, YoutubeVideoMeta } from 
 // 단일 IP로 Google을 치므로 캡차를 피하는 유일한 수단이다(Phase 0: 20~40초
 // 간격은 10번째 요청에 캡차). 캡차가 뜨면 그 회차는 거기서 멈춘다.
 
-interface CollectorResult {
+export interface CollectorResult {
   status: AioObservationStatus;
   errorKind?: "captcha" | "error";
   errorMessage?: string;
@@ -123,29 +123,83 @@ async function lookupVideo(videoId: string): Promise<YoutubeVideoMeta | null> {
   return fetched;
 }
 
-export async function runAioCollection(options: AioRunOptions): Promise<AioRunSummary> {
-  const { brandId, onEvent, shouldStop } = options;
-  const summary: AioRunSummary = { planned: 0, completed: 0, captcha: false, stopped: false, skippedReason: null };
+export interface AioPlan {
+  brand: NonNullable<Awaited<ReturnType<typeof getManagedBrandById>>>;
+  channelIds: string[];
+  settings: Awaited<ReturnType<typeof getBrandAioSettings>>;
+  devices: AioDevice[];
+  /** 섞은 순서의 수집 계획(키워드 × 디바이스) — 오늘 이미 수집한 것은 뺀 뒤 limit만큼 */
+  tasks: { keyword: Awaited<ReturnType<typeof listAioKeywords>>[number]; device: AioDevice }[];
+  /** 오늘 이미 수집해 건너뛴 만큼을 포함해, 계획에서 빠진 수 */
+  skipped: number;
+}
 
-  // 정기 수집 CLI처럼 조직(쿠키)을 모르는 곳에서도 돌아야 해서 브랜드 id로 찾는다.
+/**
+ * 어떤 키워드 × 디바이스를 수집할지 정한다 — 서버가 직접 돌리는 수집(runAioCollection)과 사용자 PC의
+ * 수집기에 맡기는 수집(/api/youtube-aio/collect의 agent 계획)이 같은 규칙을 쓴다.
+ * 정기 수집 CLI처럼 조직(쿠키)을 모르는 곳에서도 돌아야 해서 브랜드 id로 찾는다.
+ */
+export async function planAioRun(
+  options: Pick<AioRunOptions, "brandId" | "keywordIds" | "devices" | "force" | "limit">
+): Promise<{ plan: AioPlan } | { skippedReason: string }> {
+  const { brandId } = options;
   const brand = await getManagedBrandById(brandId);
-  if (!brand) return { ...summary, skippedReason: "브랜드를 찾을 수 없습니다." };
+  if (!brand) return { skippedReason: "브랜드를 찾을 수 없습니다." };
   const channels = await listBrandYoutubeChannels(brandId);
-  if (channels.length === 0) return { ...summary, skippedReason: "YouTube 채널이 연동되지 않았습니다." };
+  if (channels.length === 0) return { skippedReason: "YouTube 채널이 연동되지 않았습니다." };
 
   const settings = await getBrandAioSettings(brandId);
   const devices = options.devices?.length ? options.devices : settings.devices;
   const keywords = (await listAioKeywords(brandId)).filter((k) => !options.keywordIds || options.keywordIds.includes(k.id));
-  if (keywords.length === 0) return { ...summary, skippedReason: "수집할 키워드가 없습니다." };
+  if (keywords.length === 0) return { skippedReason: "수집할 키워드가 없습니다." };
 
   const skip = options.force ? new Set<string>() : await collectedToday(brandId, seoulDate(new Date().toISOString()));
   const tasks = shuffle(keywords.flatMap((keyword) => devices.map((device) => ({ keyword, device }))))
     .filter((t) => !skip.has(`${t.keyword.id}:${t.device}`))
     .slice(0, options.limit ?? Infinity);
-  summary.planned = tasks.length;
-  onEvent?.({ type: "plan", total: tasks.length, skipped: keywords.length * devices.length - tasks.length, devices });
+  return { plan: { brand, channelIds: channels.map((c) => c.channelId), settings, devices, tasks, skipped: keywords.length * devices.length - tasks.length } };
+}
 
-  const context = buildJudgeContext(brand, channels.map((c) => c.channelId));
+/** 수집 결과 한 건을 판정(자사 영상·경쟁사 등 분류)해 저장한다 — 서버가 직접 돌린 결과와 수집기가 올린 결과가 같이 쓴다. */
+export async function saveCollectedResult(params: {
+  brandId: string;
+  keywordId: string;
+  device: AioDevice;
+  country: string;
+  language: string;
+  result: CollectorResult;
+  context: ReturnType<typeof buildJudgeContext>;
+}) {
+  const { brandId, keywordId, device, country, language, result, context } = params;
+  const citations = result.status === "aio_present" ? await judgeCitations(result.sources ?? [], context, lookupVideo) : [];
+  const saved = await saveAioObservation(brandId, {
+    keywordId,
+    device,
+    country,
+    language,
+    collectedAt: result.collectedAt,
+    status: result.status,
+    aioText: result.aioText ?? null,
+    paragraphs: result.paragraphs ?? [],
+    citations,
+    screenshotPath: result.screenshotPath ?? null,
+    htmlPath: result.htmlPath ?? null,
+    errorMessage: result.errorMessage ?? null,
+  });
+  return { citations, saved };
+}
+
+export async function runAioCollection(options: AioRunOptions): Promise<AioRunSummary> {
+  const { brandId, onEvent, shouldStop } = options;
+  const summary: AioRunSummary = { planned: 0, completed: 0, captcha: false, stopped: false, skippedReason: null };
+
+  const planned = await planAioRun(options);
+  if ("skippedReason" in planned) return { ...summary, skippedReason: planned.skippedReason };
+  const { brand, channelIds, settings, devices, tasks, skipped } = planned.plan;
+  summary.planned = tasks.length;
+  onEvent?.({ type: "plan", total: tasks.length, skipped, devices });
+
+  const context = buildJudgeContext(brand, channelIds);
 
   for (const [index, { keyword, device }] of tasks.entries()) {
     if (shouldStop?.()) return { ...summary, stopped: true };
@@ -188,20 +242,14 @@ export async function runAioCollection(options: AioRunOptions): Promise<AioRunSu
       continue;
     }
 
-    const citations = result.status === "aio_present" ? await judgeCitations(result.sources ?? [], context, lookupVideo) : [];
-    const saved = await saveAioObservation(brandId, {
+    const { citations, saved } = await saveCollectedResult({
+      brandId,
       keywordId: keyword.id,
       device,
       country: settings.country,
       language: settings.language,
-      collectedAt: result.collectedAt,
-      status: result.status,
-      aioText: result.aioText ?? null,
-      paragraphs: result.paragraphs ?? [],
-      citations,
-      screenshotPath: result.screenshotPath ?? null,
-      htmlPath: result.htmlPath ?? null,
-      errorMessage: result.errorMessage ?? null,
+      result,
+      context,
     });
     summary.completed += 1;
 

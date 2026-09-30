@@ -168,3 +168,31 @@ test("short ranges trend by day, with the optimization date marked on its own da
   );
   assert.equal(overview.optimizationLabel, "9/20");
 });
+
+test("each row lists the YouTube videos cited in the latest collection — own and other channels, in citation order, without repeats", () => {
+  const overview = buildAioOverview({
+    keywords: [kw("a"), kw("b"), kw("c"), kw("d")],
+    observations: [
+      obs("a", today, "aio_present", [
+        { ...cite(3, "other_youtube", "v-other"), channelId: "UC_OTHER", title: "타 채널 영상", startSeconds: 30 },
+        cite(1, "own_web"),
+        { ...cite(2, "own_video", "v-own"), channelId: "UC_OWN", title: "우리 영상", startSeconds: 95 },
+        { ...cite(5, "own_video", "v-own"), channelId: "UC_OWN", title: "우리 영상" },
+      ]),
+      obs("b", today, "aio_present", [cite(1, "own_web"), cite(2, "competitor")]),
+      obs("c", today, "aio_absent"),
+    ],
+    today,
+    weeks: 2,
+    optimizationDate: null,
+  });
+  const row = (id: string) => overview.rows.find((r) => r.keywordId === id)!;
+  assert.deepEqual(
+    row("a").youtubeVideos.map((v) => [v.videoId, v.own, v.position, v.startSeconds, v.channelId, v.channelTitle]),
+    [["v-own", true, 2, 95, "UC_OWN", null], ["v-other", false, 3, 30, "UC_OTHER", null]],
+    "a repeated video keeps only its earliest citation; the channel name is filled in later from the video cache"
+  );
+  assert.deepEqual(row("b").youtubeVideos, [], "AIO present without YouTube");
+  assert.deepEqual(row("c").youtubeVideos, [], "no AIO");
+  assert.deepEqual(row("d").youtubeVideos, [], "not measured yet");
+});

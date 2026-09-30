@@ -188,6 +188,16 @@ ALTER TABLE organizations ADD COLUMN IF NOT EXISTS slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS organizations_slug ON organizations(slug);
 CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand_id,collected_date);
 ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS channel_title TEXT;
+-- 프롬프트(질의)는 prompts 한 곳에서 등록하고, 어느 표면에서 수집할지는 추적(prompt_tracking)마다 정한다.
+CREATE TABLE IF NOT EXISTS prompt_tracking_surfaces (
+  tracking_id TEXT NOT NULL REFERENCES prompt_tracking(id) ON DELETE CASCADE,
+  surface TEXT NOT NULL CHECK(surface IN ('google-aio','google-ai-mode','naver-ai')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(tracking_id,surface)
+);
+-- AIO 키워드를 프롬프트로 통합하는 동안 두 저장소를 잇는 열 — 이관이 끝나면 aio_keywords를 없앤다(docs/prompt-surfaces-plan.md).
+ALTER TABLE aio_keywords ADD COLUMN IF NOT EXISTS prompt_id TEXT REFERENCES prompts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS aio_keywords_prompt ON aio_keywords(prompt_id);
 CREATE INDEX IF NOT EXISTS aio_citations_video ON aio_citations(video_id);
 CREATE INDEX IF NOT EXISTS aio_work_logs_video ON aio_video_work_logs(brand_id,video_id,work_date);
 CREATE INDEX IF NOT EXISTS detected_brand_decisions_status ON detected_brand_decisions(organization_id,brand_id,status);

@@ -302,6 +302,74 @@ test("tracked videos: register, archive, reactivate; citation summaries from cit
   assert.equal(await store.hasMeasurementSince(brandId, "mobile", "2026-09-25"), false);
 });
 
+test("AIO keywords are prompts with the AIO surface: adding creates the tracked prompt, archiving turns the surface off, re-adding restores it", async () => {
+  const s = await getPromptStore();
+  const orgId = "neodigm";
+  const surfacesOf = async (text: string) => {
+    const [row] = (await s.library(orgId, brandId)).filter((r) => r.prompt === text);
+    return row ? row.surfaces : null;
+  };
+
+  await store.addAioKeywords(brandId, ["통합 검색어 A", "통합 검색어 B"], "comparison");
+  assert.deepEqual(await surfacesOf("통합 검색어 A"), ["google-aio"], "a new AIO keyword shows up in the prompt library with only the AIO surface");
+  const [a] = (await store.listAioKeywords(brandId)).filter((k) => k.keyword === "통합 검색어 A");
+  const [{ prompt_id: linked }] = await s.query<{ prompt_id: string | null }>("SELECT prompt_id FROM aio_keywords WHERE id=$1", [a.id]);
+  assert.ok(linked, "and the keyword points at its prompt");
+  const [{ search_intent: intent }] = await s.query<{ search_intent: string | null }>("SELECT search_intent FROM prompts WHERE id=$1", [linked!]);
+  assert.equal(intent, "업체 비교", "the group became the search intent");
+
+  // 라이브러리에 이미 AI 답변 표면으로 있던 프롬프트에 같은 검색어를 AIO로 추가하면 표면만 더해진다.
+  await s.track(orgId, { text: "함께 쓰는 질의" }, { brandId, origin: "manual" });
+  await store.addAioKeywords(brandId, ["함께 쓰는 질의"], "category");
+  assert.deepEqual(await surfacesOf("함께 쓰는 질의"), ["google-aio", "google-ai-mode", "naver-ai"]);
+
+  await store.archiveAioKeyword(brandId, a.id);
+  assert.equal(await surfacesOf("통합 검색어 A"), null, "an AIO-only prompt leaves the library when its keyword is archived");
+  const [shared] = (await store.listAioKeywords(brandId)).filter((k) => k.keyword === "함께 쓰는 질의");
+  await store.archiveAioKeyword(brandId, shared.id);
+  assert.deepEqual(await surfacesOf("함께 쓰는 질의"), ["google-ai-mode", "naver-ai"], "a prompt with other surfaces stays and loses only the AIO one");
+
+  await store.addAioKeywords(brandId, ["통합 검색어 A"], "comparison");
+  assert.deepEqual(await surfacesOf("통합 검색어 A"), ["google-aio"], "adding it again restores the tracked prompt and its AIO surface");
+  assert.equal((await store.listAioKeywords(brandId)).filter((k) => k.keyword === "통합 검색어 A").length, 1, "without duplicating the keyword");
+});
+
+test("the AIO screens read the prompt text from the library, and a prompt added without a group gets no classification", async () => {
+  const s = await getPromptStore();
+  const orgId = "neodigm";
+
+  await store.addAioKeywords(brandId, ["그룹 없이 추가한 프롬프트"]);
+  const [plain] = await s.query<{ topic_id: string | null; search_intent: string | null }>(
+    "SELECT topic_id,search_intent FROM prompts WHERE organization_id=$1 AND text='그룹 없이 추가한 프롬프트'", [orgId]);
+  assert.deepEqual([plain.topic_id, plain.search_intent], [null, null], "no group means no topic or intent is invented");
+  assert.ok((await store.listAioKeywords(brandId)).some((k) => k.keyword === "그룹 없이 추가한 프롬프트"));
+
+  // 라이브러리에서 문장을 고치면 AIO 목록과 영상별 키워드 조회에도 새 문장이 보인다.
+  const row = (await s.library(orgId, brandId)).find((r) => r.prompt === "그룹 없이 추가한 프롬프트")!;
+  await s.updateLibrary(orgId, row.id, { prompt: "고친 프롬프트 문장", category: row.category, topic: row.topic });
+  const names = (await store.listAioKeywords(brandId)).map((k) => k.keyword);
+  assert.ok(names.includes("고친 프롬프트 문장"), "the edited text is shown");
+  assert.ok(!names.includes("그룹 없이 추가한 프롬프트"), "not the old one");
+
+  // 같은 검색어를 다시 추가해도(그룹 없이) 이미 있는 키워드의 그룹은 바뀌지 않는다.
+  await store.addAioKeywords(brandId, ["통합 검색어 B"], "howto");
+  await store.addAioKeywords(brandId, ["통합 검색어 B"]);
+  const [b] = await s.query<{ keyword_group: string }>("SELECT keyword_group FROM aio_keywords WHERE brand_id=$1 AND normalized_keyword='통합 검색어 b'", [brandId]);
+  assert.equal(b.keyword_group, "howto");
+});
+
+test("adding a same-text prompt to the library does not switch off an AIO keyword that is not linked yet", async () => {
+  const s = await getPromptStore();
+  await s.query(
+    "INSERT INTO aio_keywords (id,brand_id,keyword,normalized_keyword,keyword_group,status,created_at) VALUES ('aiokw-legacy',$1,'기존 AIO 키워드','기존 aio 키워드','category','active','2026-09-01T00:00:00.000Z')",
+    [brandId]
+  );
+  await s.track("neodigm", { text: "기존 AIO 키워드" }, { brandId, origin: "manual" });
+  const [row] = await s.query<{ status: string; prompt_id: string | null }>("SELECT status,prompt_id FROM aio_keywords WHERE id='aiokw-legacy'");
+  assert.equal(row.status, "active", "the unlinked keyword keeps collecting");
+  assert.equal(row.prompt_id, null);
+});
+
 test("deleting a brand removes its AIO data", async () => {
   const s = await getPromptStore();
   await s.deleteBrand("neodigm", brandId);

@@ -6,8 +6,11 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { CollectorProblem } from "@/components/prompt-library/AgentCollectionModal";
 import { getAgentStatus } from "@/lib/collectorClient";
-import type { CollectorPlatform } from "@/lib/collectorAgent";
-import { COLLECTOR_SETUP_EVENT, crawlReadiness, type CollectorSetupDetail } from "@/lib/sitemapCrawlClient";
+import { AIO_COLLECT_MIN_VERSION, SITEMAP_CRAWL_MIN_VERSION, compareVersions, type CollectorPlatform } from "@/lib/collectorAgent";
+import { COLLECTOR_SETUP_EVENT, agentReadiness, type CollectorSetupDetail } from "@/lib/collectorSetup";
+
+// 다시 확인할 때는 가장 높은 요구 버전을 기준으로 한다 — 어느 작업에서 열렸든 이 버전이면 둘 다 된다.
+const RECHECK_MIN_VERSION = [SITEMAP_CRAWL_MIN_VERSION, AIO_COLLECT_MIN_VERSION].sort(compareVersions).at(-1)!;
 
 // 화면 어디서든 수집기 준비가 필요할 때(사이트맵 크롤 등) 뜨는 설치 안내 창 — 앱 레이아웃에 한 번만 둔다.
 // startSitemapCrawl이 수집기가 없거나 오래됐거나 Chrome이 없으면 이벤트로 이 창을 연다.
@@ -34,7 +37,7 @@ export function CollectorSetupHost() {
     setBusy(true);
     try {
       const status = await getAgentStatus();
-      const reason = crawlReadiness(status);
+      const reason = agentReadiness(status, RECHECK_MIN_VERSION);
       if (reason) setDetail({ reason, status });
       else setReady(true);
     } finally {
@@ -65,7 +68,7 @@ export function CollectorSetupHost() {
         detail && (
           <>
             <p className="mt-2 text-xs text-neutral-500">
-              사이트 크롤은 이 PC에 설치한 수집기가 Chrome으로 진행하고, 결과는 이 화면이 서버에 저장합니다.
+              사이트 크롤과 AI Overview 수집은 이 PC에 설치한 수집기가 Chrome으로 진행하고, 결과는 이 화면이 서버에 저장합니다.
             </p>
             <CollectorProblem problem={detail.reason} status={detail.status} downloadPlatforms={platforms} busy={busy} onRetry={recheck} onBack={close} />
           </>

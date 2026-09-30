@@ -1,3 +1,4 @@
+import { normalizeKeyword } from "@/lib/aioKeywordMapping";
 import { randomUUID } from "node:crypto";
 import { getPromptStore } from "../database";
 import {
@@ -22,9 +23,7 @@ import {
 
 export const AIO_KEYWORD_GROUPS: AioKeywordGroup[] = ["brand", "category", "comparison", "howto"];
 
-export function normalizeKeyword(keyword: string): string {
-  return keyword.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");
-}
+export { normalizeKeyword };
 
 /** 수집 시각 → Asia/Seoul 기준 날짜(yyyy-mm-dd). 하루 1건 기준이 한국 날짜라서. */
 export function seoulDate(iso: string): string {
@@ -39,14 +38,17 @@ async function store() {
 
 export async function listAioKeywords(brandId: string): Promise<AioKeyword[]> {
   const rows = await (await store()).query<{ id: string; keyword: string; keyword_group: AioKeywordGroup; created_at: string }>(
-    "SELECT id,keyword,keyword_group,created_at FROM aio_keywords WHERE brand_id=$1 AND status='active' ORDER BY created_at,keyword",
+    // 프롬프트 문장은 프롬프트 라이브러리(prompts)가 원본이다 — 라이브러리에서 고친 문장이 여기에도 바로 보이게 한다.
+    `SELECT k.id,coalesce(p.text,k.keyword) AS keyword,k.keyword_group,k.created_at FROM aio_keywords k
+     LEFT JOIN prompts p ON p.id=k.prompt_id WHERE k.brand_id=$1 AND k.status='active' ORDER BY k.created_at,coalesce(p.text,k.keyword)`,
     [brandId]
   );
   return rows.map((row) => ({ id: row.id, keyword: row.keyword, group: row.keyword_group, createdAt: row.created_at }));
 }
 
 /** 이미 있는 키워드는 그룹만 갱신하고 보관 상태면 다시 활성화한다. 추가/갱신된 개수를 돌려준다. */
-export async function addAioKeywords(brandId: string, keywords: string[], group: AioKeywordGroup): Promise<number> {
+export async function addAioKeywords(brandId: string, keywords: string[], group?: AioKeywordGroup | null): Promise<number> {
+  // 그룹을 안 정하면 프롬프트에 토픽·검색 의도를 붙이지 않는다(라이브러리에 "카테고리 키워드" 같은 분류가 쌓이지 않게).
   const s = await store();
   const unique = new Map<string, string>();
   for (const raw of keywords) {
@@ -58,11 +60,14 @@ export async function addAioKeywords(brandId: string, keywords: string[], group:
   const now = new Date().toISOString();
   await s.transaction(async () => {
     for (const [normalized, keyword] of unique) {
-      await s.query(
+      const [saved] = await s.query<{ id: string }>(
         `INSERT INTO aio_keywords (id,brand_id,keyword,normalized_keyword,keyword_group,status,created_at) VALUES ($1,$2,$3,$4,$5,'active',$6)
-         ON CONFLICT (brand_id,normalized_keyword) DO UPDATE SET keyword_group=EXCLUDED.keyword_group,status='active'`,
-        [`aiokw-${randomUUID()}`, brandId, keyword, normalized, group, now]
+         ON CONFLICT (brand_id,normalized_keyword) DO UPDATE SET keyword_group=CASE WHEN $7::boolean THEN EXCLUDED.keyword_group ELSE aio_keywords.keyword_group END,status='active'
+         RETURNING id`,
+        [`aiokw-${randomUUID()}`, brandId, keyword, normalized, group ?? "category", now, !!group]
       );
+      // 프롬프트 라이브러리와 한 곳으로 — 키워드는 곧 "Google AI Overview 표면이 켜진 프롬프트"다(docs/prompt-surfaces-plan.md).
+      await s.linkAioKeyword(saved.id, { classify: !!group });
     }
   });
   return unique.size;
@@ -70,7 +75,8 @@ export async function addAioKeywords(brandId: string, keywords: string[], group:
 
 // 보관(삭제 아님) — 지난 수집 결과와 추이는 남겨 둔다.
 export async function archiveAioKeyword(brandId: string, keywordId: string): Promise<void> {
-  await (await store()).query("UPDATE aio_keywords SET status='archived' WHERE brand_id=$1 AND id=$2", [brandId, keywordId]);
+  // 프롬프트의 AIO 표면도 함께 끈다(다른 표면이 없으면 프롬프트도 보관).
+  await (await store()).unlinkAioKeyword(brandId, keywordId);
 }
 
 // ---- 영상 메타 캐시 ----
@@ -191,13 +197,14 @@ export async function videoKeywordCitations(brandId: string, videoId: string, de
      ), per_keyword AS (
        SELECT keyword_id, max(collected_date) AS last_date, count(DISTINCT collected_date)::int AS cited_days FROM cited GROUP BY keyword_id
      )
-     SELECT p.keyword_id, k.keyword, k.keyword_group, p.last_date, p.cited_days, min(c.position)::int AS last_position,
+     SELECT p.keyword_id, coalesce(pr.text,k.keyword) AS keyword, k.keyword_group, p.last_date, p.cited_days, min(c.position)::int AS last_position,
        COALESCE(array_agg(DISTINCT c.start_seconds) FILTER (WHERE c.start_seconds IS NOT NULL), '{}') AS starts
      FROM per_keyword p
      JOIN aio_keywords k ON k.id=p.keyword_id AND k.status='active'
+     LEFT JOIN prompts pr ON pr.id=k.prompt_id
      JOIN cited c ON c.keyword_id=p.keyword_id AND c.collected_date=p.last_date
-     GROUP BY p.keyword_id,k.keyword,k.keyword_group,p.last_date,p.cited_days
-     ORDER BY p.last_date DESC, last_position, k.keyword`,
+     GROUP BY p.keyword_id,coalesce(pr.text,k.keyword),k.keyword_group,p.last_date,p.cited_days
+     ORDER BY p.last_date DESC, last_position, coalesce(pr.text,k.keyword)`,
     [brandId, videoId, device]
   );
   return rows.map((row) => ({

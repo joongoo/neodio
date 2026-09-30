@@ -1,14 +1,15 @@
 import type { PromptLibraryRow } from "@/lib/db/types";
 import { getPromptStore } from "./database";
 import type { PromptInput } from "./database/store";
+import type { PromptSurface } from "@/lib/promptSurfaces";
 
 // 프롬프트 추적은 조직의 자사 브랜드(헤더 선택, tenant.ts) 단위다 — 예전엔
 // brand-neodigm 고정이었다. brandId는 호출하는 페이지/API가 넘긴다.
-export async function saveLibraryRow(orgId: string, brandId: string, row: Omit<PromptLibraryRow, "id">, source: Partial<PromptInput> = {}): Promise<PromptLibraryRow> {
+export async function saveLibraryRow(orgId: string, brandId: string, row: Omit<PromptLibraryRow, "id">, source: Partial<PromptInput> = {}, options: { surfaces?: PromptSurface[] } = {}): Promise<PromptLibraryRow> {
   if (!brandId) throw new Error("브랜드를 먼저 등록하세요 — 프롬프트는 조직의 브랜드 단위로 추적됩니다.");
   const store = await getPromptStore();
   return store.track(orgId, { ...source, text: row.prompt, category: row.category, topic: row.topic,
-    sourceType: source.sourceType ?? row.origin }, { brandId, origin: row.origin });
+    sourceType: source.sourceType ?? row.origin }, { brandId, origin: row.origin, surfaces: options.surfaces });
 }
 
 export async function trackTopic(orgId: string, brandId: string, promptText: string, category: string,

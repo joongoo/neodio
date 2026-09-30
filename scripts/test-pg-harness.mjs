@@ -46,7 +46,7 @@ function cleanup() {
   rmSync(dir, { recursive: true, force: true });
 }
 
-const child = spawn("npx", ["tsx", "--test", "src/lib/backend/database/store.test.ts", "src/lib/backend/database/api.test.ts", "src/lib/backend/aio/store.test.ts", "src/lib/backend/database/orgSync.test.ts", "src/lib/backend/collectionImport.test.ts"],
+const child = spawn("npx", ["tsx", "--test", "src/lib/backend/database/store.test.ts", "src/lib/backend/database/api.test.ts", "src/lib/backend/aio/store.test.ts", "src/lib/backend/database/orgSync.test.ts", "src/lib/backend/collectionImport.test.ts", "src/lib/backend/database/promptSurfaces.test.ts"],
   { env: childEnv, stdio: "inherit" });
 child.on("exit", (code) => { cleanup(); process.exit(code ?? 1); });
 child.on("error", (error) => { console.error(error); cleanup(); process.exit(1); });

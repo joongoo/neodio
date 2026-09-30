@@ -21,7 +21,7 @@ export const mentionsByModelByOrg: Record<string, Record<string, RankedRow[]>> =
       { label: "Claude", value: 151, display: "151 (16%)" },
       { label: "Perplexity", value: 146, display: "146 (15%)" },
       { label: "Naver AI검색", value: 132, display: "132 (14%)" },
-      { label: "Google AI Overview", value: 127, display: "127 (13%)" },
+      { label: "Google AI 모드", value: 127, display: "127 (13%)" },
     ],
     visibility: [
       { label: "ChatGPT", value: 68, display: "68%" },
@@ -29,7 +29,7 @@ export const mentionsByModelByOrg: Record<string, Record<string, RankedRow[]>> =
       { label: "Claude", value: 61, display: "61%" },
       { label: "Perplexity", value: 59, display: "59%" },
       { label: "Naver AI검색", value: 55, display: "55%" },
-      { label: "Google AI Overview", value: 53, display: "53%" },
+      { label: "Google AI 모드", value: 53, display: "53%" },
     ],
     exposure: [
       { label: "ChatGPT", value: 1220, display: "1.2K" },
@@ -37,7 +37,7 @@ export const mentionsByModelByOrg: Record<string, Record<string, RankedRow[]>> =
       { label: "Claude", value: 760, display: "760" },
       { label: "Perplexity", value: 704, display: "704" },
       { label: "Naver AI검색", value: 612, display: "612" },
-      { label: "Google AI Overview", value: 598, display: "598" },
+      { label: "Google AI 모드", value: 598, display: "598" },
     ],
   },
 };
@@ -193,7 +193,7 @@ export const topicsByOrgAndCategory: Record<string, Record<string, VisibilityTab
           {
             id: "p5",
             prompt: "AI 검색 결과에서 B2B 마케팅 서비스 회사가 더 잘 인용되려면?",
-            model: "Google AI Overview",
+            model: "Google AI 모드",
             myBrand: "—",
             brand: "3",
             source: "8",

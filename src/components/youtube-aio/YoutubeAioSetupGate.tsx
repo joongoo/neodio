@@ -29,7 +29,7 @@ export function YoutubeAioSetupGate({ brandId, brandName, base }: { brandId: str
             ) : (
               "브랜드를 먼저 등록하고 YouTube 채널을 연결하세요."
             )}{" "}
-            연결 후 추적할 키워드를 추가하면 매일 수집이 시작됩니다.
+            연결 후 추적할 프롬프트를 추가하면 수집이 시작됩니다.
           </p>
         </div>
         <Button variant="primary" href={href} icon={<ArrowRight size={16} />} iconPosition="end">

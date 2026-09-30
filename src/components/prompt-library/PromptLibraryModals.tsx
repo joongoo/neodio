@@ -12,6 +12,9 @@ const CATEGORY_OPTIONS = CANONICAL_CATEGORIES;
 
 // 프롬프트 문장이 완전히 같으면(앞뒤 공백/대소문자만 다른 경우 포함) 같은
 // 프롬프트로 간주 — 수동 추가/CSV 가져오기 양쪽에서 중복 삽입을 막는 데 쓴다.
+import { SurfacePicker } from "@/components/prompt-library/SurfacePicker";
+import { AI_ANSWER_SURFACES, suggestSurfaces, type PromptSurface } from "@/lib/promptSurfaces";
+
 function normalizePrompt(prompt: string) {
   return prompt.trim().toLowerCase();
 }
@@ -90,7 +93,7 @@ export function AddPromptModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onAdd: (row: Omit<PromptLibraryRow, "id" | "origin">) => void;
+  onAdd: (row: Omit<PromptLibraryRow, "id" | "origin"> & { surfaces: PromptSurface[] }) => void;
   /** 중복 검사 대상 — 이미 라이브러리에 있는 프롬프트 문장 전체. */
   existingPrompts: string[];
   /** 카테고리별 기존 토픽 목록 — 새로 타이핑하는 대신 여기서 고르게 한다. */
@@ -105,13 +108,17 @@ export function AddPromptModal({
     (a, b) => a.localeCompare(b, "ko")
   );
   const [prompt, setPrompt] = useState("");
+  // 문장 형태로 제안한 표면을 따라가다가, 사용자가 직접 고르면 그 선택을 유지한다.
+  const [surfaces, setSurfaces] = useState<PromptSurface[]>([...AI_ANSWER_SURFACES]);
+  const [surfacesTouched, setSurfacesTouched] = useState(false);
+  const suggested = prompt.trim() ? suggestSurfaces(prompt) : [...AI_ANSWER_SURFACES];
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   const isDuplicate = prompt.trim() !== "" && existingPrompts.some((p) => normalizePrompt(p) === normalizePrompt(prompt));
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!category || !prompt.trim()) return;
+    if (!category || !prompt.trim() || surfaces.length === 0) return;
     if (isDuplicate) {
       setDuplicateError("이미 프롬프트 라이브러리에 동일한 프롬프트가 있습니다.");
       return;
@@ -120,11 +127,14 @@ export function AddPromptModal({
       prompt: prompt.trim(),
       category,
       topic: topic.trim() || "—",
+      surfaces,
       lastModifiedAt: new Date().toISOString().slice(0, 10),
       lastModifiedBy: "나",
     });
     setPrompt("");
     setTopic("");
+    setSurfaces([...AI_ANSWER_SURFACES]);
+    setSurfacesTouched(false);
     setDuplicateError(null);
     onClose();
   }
@@ -158,6 +168,7 @@ export function AddPromptModal({
             onChange={(e) => {
               setPrompt(e.target.value);
               setDuplicateError(null);
+              if (!surfacesTouched) setSurfaces(e.target.value.trim() ? suggestSurfaces(e.target.value) : [...AI_ANSWER_SURFACES]);
             }}
             rows={3}
             required
@@ -169,11 +180,21 @@ export function AddPromptModal({
           )}
           {!isDuplicate && duplicateError && <p className="text-xs text-red-600">{duplicateError}</p>}
         </Field>
+        <Field label="수집 표면 *">
+          <SurfacePicker
+            value={surfaces}
+            suggested={suggested}
+            onChange={(next) => {
+              setSurfaces(next);
+              setSurfacesTouched(true);
+            }}
+          />
+        </Field>
         <div className="mt-2 flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             취소
           </Button>
-          <Button type="submit" variant="primary" disabled={isDuplicate}>
+          <Button type="submit" variant="primary" disabled={isDuplicate || surfaces.length === 0}>
             추가
           </Button>
         </div>
@@ -192,7 +213,7 @@ export function EditPromptModal({
 }: {
   row: PromptLibraryRow | null;
   onClose: () => void;
-  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic">) => void;
+  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic"> & { surfaces?: PromptSurface[] }) => void;
   /** 중복 검사 대상 — 지금 편집 중인 행 자기 자신은 호출부에서 미리 빼고 넘긴다. */
   existingPrompts: string[];
   topicOptionsByCategory: Record<string, string[]>;
@@ -231,7 +252,7 @@ function EditPromptForm({
 }: {
   row: PromptLibraryRow;
   onClose: () => void;
-  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic">) => void;
+  onSave: (id: string, patch: Pick<PromptLibraryRow, "prompt" | "category" | "topic"> & { surfaces?: PromptSurface[] }) => void;
   existingPrompts: string[];
   topicOptionsByCategory: Record<string, string[]>;
   uncategorizedTopicOptions: string[];
@@ -240,6 +261,10 @@ function EditPromptForm({
   const [category, setCategory] = useState(row.category);
   const [topic, setTopic] = useState(row.topic === "—" ? "" : row.topic);
   const [prompt, setPrompt] = useState(row.prompt);
+  // 표면 정보가 없는 행(목업)은 편집 창에서 표면을 건드리지 않는다.
+  const originalSurfaces = row.surfaces;
+  const [surfaces, setSurfaces] = useState<PromptSurface[]>(row.surfaces ?? [...AI_ANSWER_SURFACES]);
+  const surfacesChanged = !!originalSurfaces && (surfaces.length !== originalSurfaces.length || surfaces.some((s) => !originalSurfaces.includes(s)));
   const topicOptions = [...new Set([...(topicOptionsByCategory[category] ?? []), ...uncategorizedTopicOptions])].sort(
     (a, b) => a.localeCompare(b, "ko")
   );
@@ -248,8 +273,8 @@ function EditPromptForm({
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (isDuplicate) return;
-    onSave(row.id, { prompt: prompt.trim(), category, topic: topic.trim() || "—" });
+    if (isDuplicate || (originalSurfaces && surfaces.length === 0)) return;
+    onSave(row.id, { prompt: prompt.trim(), category, topic: topic.trim() || "—", ...(surfacesChanged ? { surfaces } : {}) });
     onClose();
   }
 
@@ -280,11 +305,16 @@ function EditPromptForm({
         />
         {isDuplicate && <p className="text-xs text-red-600">이미 프롬프트 라이브러리에 동일한 프롬프트가 있습니다.</p>}
       </Field>
+      {originalSurfaces && (
+        <Field label="수집 표면">
+          <SurfacePicker value={surfaces} onChange={setSurfaces} />
+        </Field>
+      )}
       <div className="mt-2 flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onClose}>
           취소
         </Button>
-        <Button type="submit" variant="primary" disabled={isDuplicate}>
+        <Button type="submit" variant="primary" disabled={isDuplicate || (!!originalSurfaces && surfaces.length === 0)}>
           저장
         </Button>
       </div>

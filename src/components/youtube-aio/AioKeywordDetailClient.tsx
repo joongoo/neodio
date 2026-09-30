@@ -53,7 +53,7 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
     <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
       <Link href={`${base}/youtube-aio?device=${device}`} className="flex w-fit items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900">
         <ArrowLeft size={16} />
-        키워드 목록
+        프롬프트 목록
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -105,7 +105,7 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
           <div className="rounded-lg border border-neutral-200 p-5">
             <p className="mb-3 text-xs font-semibold text-neutral-500">AI 개요</p>
             {!latest ? (
-              <p className="text-sm text-neutral-500">아직 이 키워드를 수집하지 않았습니다. 상단 &quot;이 키워드 지금 수집&quot;을 누르거나 다음 정기 수집 후 표시됩니다.</p>
+              <p className="text-sm text-neutral-500">아직 이 프롬프트를 수집하지 않았습니다. 상단 &quot;이 키워드 지금 수집&quot;을 누르거나 다음 정기 수집 후 표시됩니다.</p>
             ) : !present ? (
               <p className="text-sm text-neutral-500">{shortDate(latest.collectedDate)} 검색에서는 AI Overview가 뜨지 않았습니다 (일반 SERP만).</p>
             ) : latest.paragraphs.length === 0 ? (
@@ -355,9 +355,9 @@ function OwnVideoPanel({ video, brandId, demo, device, base }: { video: AioOwnVi
       </Card>
 
       <Card className="flex flex-col gap-3 p-6">
-        <h2 className="text-base font-bold text-neutral-900">이 영상이 인용되는 다른 키워드</h2>
+        <h2 className="text-base font-bold text-neutral-900">이 영상이 인용되는 다른 프롬프트</h2>
         {video.otherKeywords.length === 0 ? (
-          <p className="text-sm text-neutral-500">최근 30일 동안 다른 추적 키워드에서는 인용되지 않았습니다.</p>
+          <p className="text-sm text-neutral-500">최근 30일 동안 다른 추적 프롬프트에서는 인용되지 않았습니다.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {video.otherKeywords.map((k) => (

@@ -132,6 +132,12 @@ export async function loadAioOverviewPage(params: {
   // 7일 변화 계산을 위해 기간보다 1주 더 읽는다.
   const observations = (await ctx.loadObservations(addDays(ctx.today, -(weeks + 1) * 7))).filter((o) => o.device === device);
   const overview = buildAioOverview({ keywords, observations, today: ctx.today, weeks, optimizationDate: baseDate });
+  // 인용된 영상의 채널 이름은 영상 캐시에서 채운다 — 표에서 "어느 채널의 영상인지"를 보여 주려고.
+  const citedIds = [...new Set(overview.rows.flatMap((row) => row.youtubeVideos.map((v) => v.videoId)))];
+  const videos = citedIds.length > 0 ? await ctx.loadVideos(citedIds) : new Map<string, YoutubeVideoMeta>();
+  for (const row of overview.rows) {
+    for (const video of row.youtubeVideos) video.channelTitle = videos.get(video.videoId)?.channelTitle ?? null;
+  }
 
   return {
     kind: "ready",
