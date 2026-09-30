@@ -13,7 +13,9 @@ import { ConfigureColumnsModal } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
 import { AddPromptModal, EditPromptModal, ImportPromptsModal, ImportedPromptRow } from "@/components/prompt-library/PromptLibraryModals";
 import { SurfaceChips } from "@/components/prompt-library/SurfacePicker";
-import { aioDailyLoad } from "@/lib/promptSurfaces";
+import { BulkSurfaceModal } from "@/components/prompt-library/BulkSurfaceModal";
+import { AioCollectButton } from "@/components/youtube-aio/AioCollectButton";
+import { AI_ANSWER_SURFACES, PROMPT_SURFACES, aioDailyLoad } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
@@ -34,6 +36,7 @@ export function PromptLibraryClient({
   uncategorizedTopicOptions,
   collectionAgent,
   aioDeviceCount,
+  brandId,
 }: {
   initialRows: PromptLibraryRow[];
   health: PromptLibraryHealth | null;
@@ -44,6 +47,8 @@ export function PromptLibraryClient({
   collectionAgent: { orgName: string; downloadPlatforms: CollectorPlatform[] } | null;
   /** 브랜드의 AIO 수집 디바이스 수(모바일·데스크톱) — 하루 AIO 수집량 안내에 쓴다. */
   aioDeviceCount: number;
+  /** 지금 보고 있는 브랜드 — AIO 수집에 쓴다. 브랜드가 없으면 빈 문자열. */
+  brandId: string;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
@@ -63,6 +68,7 @@ export function PromptLibraryClient({
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [surfaceOpen, setSurfaceOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
     new Set(["origin", "category", "topic", "surfaces", "lastModifiedAt", "lastModifiedBy"])
   );
@@ -234,6 +240,10 @@ export function PromptLibraryClient({
     },
   ];
 
+  // 선택한 프롬프트 중 Google AI Overview 표면이 켜진 것 — AIO 수집 대상.
+  const selectedRows = rows.filter((r) => selected.has(r.id));
+  const selectedAioPromptIds = selectedRows.filter((r) => r.surfaces?.includes("google-aio") && r.promptId).map((r) => r.promptId as string);
+  const commonSurfaces = PROMPT_SURFACES.filter((surface) => selectedRows.length > 0 && selectedRows.every((r) => r.surfaces?.includes(surface)));
   const aioLoad = aioDailyLoad(rows.map((r) => r.surfaces), aioDeviceCount);
   const columns = allColumns.filter((c) => !optionalColumns.some((o) => o.key === c.key) || visibleCols.has(c.key));
 
@@ -342,8 +352,20 @@ export function PromptLibraryClient({
         <div className="flex-1" />
         {selected.size > 0 && (
           <>
+            <Button variant="secondary" onClick={() => setSurfaceOpen(true)}>
+              수집 표면 변경 ({selected.size})
+            </Button>
+            {brandId && (
+              <AioCollectButton
+                brandId={brandId}
+                promptIds={selectedAioPromptIds}
+                buttonLabel={`AIO 수집 (${selectedAioPromptIds.length})`}
+                searches={selectedAioPromptIds.length * aioDeviceCount}
+                disabled={selectedAioPromptIds.length === 0}
+              />
+            )}
             <Button variant="secondary" onClick={() => setCollectOpen(true)}>
-              선택 수집 ({selected.size})
+              AI 답변 수집 ({selected.size})
             </Button>
             <Button variant="secondary" onClick={deleteSelected}>
               선택 삭제 ({selected.size})
@@ -457,6 +479,18 @@ export function PromptLibraryClient({
           onClose={() => setCollectOpen(false)}
           keywords={rows.filter((r) => selected.has(r.id)).map((r) => r.prompt)}
           onDone={() => setSelected(new Set())}
+        />
+      )}
+      {surfaceOpen && (
+        <BulkSurfaceModal
+          open
+          onClose={() => setSurfaceOpen(false)}
+          ids={selectedRows.map((r) => r.id)}
+          initial={commonSurfaces.length > 0 ? commonSurfaces : [...AI_ANSWER_SURFACES]}
+          onSaved={(ids, surfaces) => {
+            setRows((prev) => prev.map((r) => (ids.includes(r.id) ? { ...r, surfaces } : r)));
+            router.refresh();
+          }}
         />
       )}
       <ConfigureColumnsModal

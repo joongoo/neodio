@@ -21,6 +21,8 @@ export function AioCollectButton({
   brandId,
   keywordId,
   keywordLabel,
+  promptIds,
+  buttonLabel,
   searches,
   disabled,
   size = "md",
@@ -29,6 +31,9 @@ export function AioCollectButton({
   /** 있으면 이 프롬프트만 수집 */
   keywordId?: string;
   keywordLabel?: string;
+  /** 있으면 프롬프트 라이브러리에서 고른 이 프롬프트들(AIO 표면이 켜진 것)만 수집 */
+  promptIds?: string[];
+  buttonLabel?: string;
   /** 예상 검색 횟수(프롬프트 × 디바이스) — 확인 단계의 소요 시간 안내용 */
   searches: number;
   disabled?: boolean;
@@ -84,7 +89,7 @@ export function AioCollectButton({
   async function start() {
     setStarting(true);
     setError(null);
-    const started = await startAioCollect({ brandId, keywordId, force });
+    const started = await startAioCollect({ brandId, keywordId, promptIds, force });
     setStarting(false);
     if (!started.ok) {
       if (started.handled) {
@@ -123,7 +128,7 @@ export function AioCollectButton({
         onClick={() => setOpen(true)}
         disabled={disabled && !running}
       >
-        {running ? `수집 중 ${job.results.length}/${job.total || "…"}` : keywordId ? "이 프롬프트 지금 수집" : "지금 수집"}
+        {running ? `수집 중 ${job.results.length}/${job.total || "…"}` : (buttonLabel ?? (keywordId ? "이 프롬프트 지금 수집" : "지금 수집"))}
       </Button>
 
       <Modal open={open} onClose={running ? () => setOpen(false) : close}>
@@ -135,7 +140,12 @@ export function AioCollectButton({
         {!job ? (
           <div className="mt-4 flex flex-col gap-4">
             <p className="text-sm text-neutral-700">
-              {keywordId ? (
+              {promptIds ? (
+                <>
+                  선택한 프롬프트 <b>{promptIds.length}개</b>를 지금 Google에서 검색해 AI Overview 인용을 기록합니다. 검색 <b>{searches}회</b>, 약 <b>{estimateMinutes}분</b>{" "}
+                  걸리고, 오늘 이미 수집했다면 새 결과로 바꿉니다.
+                </>
+              ) : keywordId ? (
                 <>
                   <b>&quot;{keywordLabel}&quot;</b>을(를) 지금 Google에서 검색해 AI Overview 인용을 기록합니다. 오늘 이미 수집했다면 새 결과로 바꿉니다.
                 </>
@@ -146,7 +156,7 @@ export function AioCollectButton({
                 </>
               )}
             </p>
-            {!keywordId && (
+            {!keywordId && !promptIds && (
               <label className="flex items-center gap-2 text-sm text-neutral-700">
                 <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} className="size-4 cursor-pointer accent-slate-800" />
                 오늘 이미 수집한 프롬프트도 다시 수집

@@ -35,6 +35,7 @@ export default async function PromptLibraryPage() {
       health={health}
       topicOptionsByCategory={topicOptions.byCategory}
       uncategorizedTopicOptions={topicOptions.uncategorized}
+      brandId={tenant.brandId}
       aioDeviceCount={aioSettings?.devices.length ?? 2}
       collectionAgent={
         collectionUsesLocalAgent()

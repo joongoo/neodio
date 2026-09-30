@@ -46,6 +46,16 @@ export async function listAioKeywords(brandId: string): Promise<AioKeyword[]> {
   return rows.map((row) => ({ id: row.id, keyword: row.keyword, group: row.keyword_group, createdAt: row.created_at }));
 }
 
+/** 프롬프트 ID에 이어진 활성 AIO 수집 대상(키워드) ID — 프롬프트 라이브러리에서 고른 프롬프트를 AIO로 수집할 때 쓴다. */
+export async function aioKeywordIdsForPrompts(brandId: string, promptIds: string[]): Promise<string[]> {
+  if (promptIds.length === 0) return [];
+  const rows = await (await store()).query<{ id: string }>(
+    "SELECT id FROM aio_keywords WHERE brand_id=$1 AND status='active' AND prompt_id = ANY($2) ORDER BY created_at",
+    [brandId, [...new Set(promptIds)]]
+  );
+  return rows.map((row) => row.id);
+}
+
 /** 이미 있는 키워드는 그룹만 갱신하고 보관 상태면 다시 활성화한다. 추가/갱신된 개수를 돌려준다. */
 export async function addAioKeywords(brandId: string, keywords: string[], group?: AioKeywordGroup | null): Promise<number> {
   // 그룹을 안 정하면 프롬프트에 토픽·검색 의도를 붙이지 않는다(라이브러리에 "카테고리 키워드" 같은 분류가 쌓이지 않게).

@@ -50,7 +50,7 @@ function toAioJob(agentJob: CollectorJob, results: AioJobResult[]): AioCollectJo
   };
 }
 
-export async function startAioCollect(input: { brandId: string; keywordId?: string; force: boolean }): Promise<AioStart> {
+export async function startAioCollect(input: { brandId: string; keywordId?: string; promptIds?: string[]; force: boolean }): Promise<AioStart> {
   const res = await fetch("/api/youtube-aio/collect", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

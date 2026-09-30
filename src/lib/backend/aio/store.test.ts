@@ -24,6 +24,7 @@ let manageSyncRoute: typeof import("../../../app/api/youtube-manage/sync/route")
 let manageVideosRoute: typeof import("../../../app/api/youtube-manage/videos/route");
 let managePromptsRoute: typeof import("../../../app/api/youtube-manage/prompts/route");
 let manage: typeof import("./videoManage");
+let bulkSurfacesRoute: typeof import("../../../app/api/tracked-topics/surfaces/route");
 let workLogsRoute: typeof import("../../../app/api/youtube-aio/work-logs/route");
 let snapshotRoute: typeof import("../../../app/api/youtube-aio/snapshot/route");
 let settingsRoute: typeof import("../../../app/api/brands-management/brands/[brandId]/aio-settings/route");
@@ -43,6 +44,7 @@ before(async () => {
   manageVideosRoute = await import("../../../app/api/youtube-manage/videos/route");
   managePromptsRoute = await import("../../../app/api/youtube-manage/prompts/route");
   manage = await import("./videoManage");
+  bulkSurfacesRoute = await import("../../../app/api/tracked-topics/surfaces/route");
   workLogsRoute = await import("../../../app/api/youtube-aio/work-logs/route");
   snapshotRoute = await import("../../../app/api/youtube-aio/snapshot/route");
   settingsRoute = await import("../../../app/api/brands-management/brands/[brandId]/aio-settings/route");
@@ -454,6 +456,28 @@ test("YouTube 관리: synced videos start unchecked, checking is per video, expe
   // 인용 키워드 표(기존 함수)에도 프롬프트 문장으로 나온다.
   const byKeyword = await store.videoKeywordCitations(brandId, "sync1111111", "mobile");
   assert.deepEqual(byKeyword.map((k) => [k.keyword, k.lastPosition]), [["Slack 세일즈포스 연동 방법", 3]]);
+});
+
+test("라이브러리에서 고른 프롬프트: 표면 일괄 변경이 AIO 수집 대상과 맞물리고, AIO 수집은 켜진 것만 고른다", async () => {
+  const s = await getPromptStore();
+  const one = await s.track("neodigm", { text: "일괄 표면 프롬프트 하나" }, { brandId, origin: "manual" });
+  const two = await s.track("neodigm", { text: "일괄 표면 프롬프트 둘" }, { brandId, origin: "manual" });
+  assert.deepEqual(one.surfaces, ["google-ai-mode", "naver-ai"]);
+  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId, two.promptId]), [], "AIO 표면이 없으면 수집 대상이 아니다");
+
+  const post = (body: unknown) => bulkSurfacesRoute.POST(request("/x", "POST", body));
+  assert.equal((await post({ ids: [], surfaces: ["google-aio"] })).status, 400);
+  assert.equal((await post({ ids: [one.id], surfaces: [] })).status, 400);
+  assert.deepEqual(await (await post({ ids: [one.id, "tracked-none", one.id], surfaces: ["google-aio", "naver-ai"] })).json(), { changed: 1 });
+
+  const surfaces = async (id: string) => (await s.library("neodigm", brandId)).find((r) => r.id === id)?.surfaces;
+  assert.deepEqual(await surfaces(one.id), ["google-aio", "naver-ai"]);
+  assert.deepEqual(await surfaces(two.id), ["google-ai-mode", "naver-ai"], "선택하지 않은 프롬프트는 그대로");
+  const ids = await store.aioKeywordIdsForPrompts(brandId, [one.promptId, two.promptId]);
+  assert.equal(ids.length, 1, "AIO가 켜진 프롬프트만 수집 대상으로 나온다");
+
+  await post({ ids: [one.id], surfaces: ["naver-ai"] });
+  assert.deepEqual(await store.aioKeywordIdsForPrompts(brandId, [one.promptId]), [], "AIO를 끄면 수집 대상에서 빠진다");
 });
 
 test("deleting a brand removes its AIO data", async () => {

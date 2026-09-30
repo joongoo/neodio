@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cancelAioJob, getAioJob, getLatestAioJob, getRunningAioJob, startAioJob } from "@/lib/backend/aio/jobRunner";
-import { listAioKeywords } from "@/lib/backend/aio/store";
+import { aioKeywordIdsForPrompts, listAioKeywords } from "@/lib/backend/aio/store";
 import { listBrandYoutubeChannels } from "@/lib/backend/brandAioConfig";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
@@ -21,6 +21,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";
   const keywordId = typeof body?.keywordId === "string" ? body.keywordId : null;
+  // 프롬프트 라이브러리에서 고른 프롬프트들 — AIO 표면이 켜진 것만 수집 대상이 된다.
+  const promptIds: string[] = Array.isArray(body?.promptIds) ? body.promptIds.filter((id: unknown): id is string => typeof id === "string").slice(0, 200) : [];
   if (!brandId || !(await getManagedBrand(tenant.orgId, brandId))) {
     return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 404 });
   }
@@ -31,9 +33,19 @@ export async function POST(request: NextRequest) {
   const keyword = keywordId ? keywords.find((k) => k.id === keywordId) : null;
   if (keywordId && !keyword) return NextResponse.json({ error: "프롬프트를 찾을 수 없습니다." }, { status: 404 });
   if (keywords.length === 0) return NextResponse.json({ error: "수집할 프롬프트가 없습니다." }, { status: 400 });
+  let selectedIds: string[] | undefined = keyword ? [keyword.id] : undefined;
+  if (!keyword && promptIds.length > 0) {
+    selectedIds = await aioKeywordIdsForPrompts(brandId, promptIds);
+    if (selectedIds.length === 0) {
+      return NextResponse.json({ error: "선택한 프롬프트 중 Google AI Overview 표면이 켜진 프롬프트가 없습니다." }, { status: 400 });
+    }
+  }
+  // 하나 또는 골라서 수집하는 건 오늘 이미 수집했어도 다시 보려는 것이다.
+  const explicit = Boolean(selectedIds);
+  const label = keyword ? keyword.keyword : selectedIds ? `선택한 프롬프트 ${selectedIds.length}개` : "전체 프롬프트";
 
   if (collectionUsesLocalAgent()) {
-    const planned = await planAioRun({ brandId, keywordIds: keyword ? [keyword.id] : undefined, force: keyword ? true : body?.force === true });
+    const planned = await planAioRun({ brandId, keywordIds: selectedIds, force: explicit ? true : body?.force === true });
     if ("skippedReason" in planned) return NextResponse.json({ error: planned.skippedReason }, { status: 400 });
     const { plan } = planned;
     if (plan.tasks.length === 0) {
@@ -42,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       agent: {
         brandId,
-        label: keyword ? keyword.keyword : "전체 프롬프트",
+        label,
         country: plan.settings.country,
         language: plan.settings.language,
         minDelayMs: AGENT_MIN_DELAY_MS,
@@ -60,9 +72,9 @@ export async function POST(request: NextRequest) {
   // 키워드 하나를 "지금" 수집하는 건 오늘 이미 수집했어도 다시 보려는 것이다.
   const job = startAioJob({
     brandId,
-    keywordIds: keyword ? [keyword.id] : undefined,
-    label: keyword ? keyword.keyword : "전체 프롬프트",
-    force: keyword ? true : body?.force === true,
+    keywordIds: selectedIds,
+    label,
+    force: explicit ? true : body?.force === true,
   });
   return NextResponse.json({ job });
 }
