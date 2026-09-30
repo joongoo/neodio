@@ -19,6 +19,8 @@ export interface RunLlmOptions {
   locale?: string;
   /** 일시 오류(429/5xx) 재시도 횟수 */
   retries?: number;
+  /** 웹 검색 근거가 한도(429)로 막히면 검색 없이 한 번 더 묻는다 — 언급률은 재도 인용률은 못 재는 답변이 남는다. */
+  fallbackWithoutSearch?: boolean;
   now?: () => Date;
 }
 
@@ -50,18 +52,32 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
 
   let answer: Awaited<ReturnType<LlmProvider["ask"]>> | null = null;
   let errorMessage: string | null = null;
+  let webSearch = options.webSearch;
+  let quotaBlocked = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      answer = await provider.ask(query, { apiKey, model, webSearch: options.webSearch, locale: options.locale });
+      answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale });
       if (!answer.text) throw new LlmRequestError("빈 답변");
       errorMessage = null;
       break;
     } catch (error) {
       answer = null;
       errorMessage = error instanceof Error ? error.message : String(error);
+      quotaBlocked = error instanceof LlmRequestError && error.status === 429;
       const retryable = error instanceof LlmRequestError && error.retryable;
       if (!retryable || attempt === retries) break;
       await sleep(2_000 * 2 ** attempt);
+    }
+  }
+  if (!answer && quotaBlocked && options.fallbackWithoutSearch && webSearch !== false) {
+    webSearch = false;
+    try {
+      answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale });
+      if (!answer.text) throw new LlmRequestError("빈 답변");
+      errorMessage = null;
+    } catch (error) {
+      answer = null;
+      errorMessage = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -81,6 +97,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
       answerTextLength: answer?.text.length ?? 0,
       citations: answer?.citations ?? [],
       errorMessage,
+      webSearch: webSearch !== false,
       model: answer?.model ?? model,
       providerData: answer?.providerData,
     },

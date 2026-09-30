@@ -4,11 +4,12 @@ import { AI_ANSWER_SURFACES, PROMPT_SURFACES, type PromptSurface } from "@/lib/p
 // 플랫폼마다 수집 방식이 달라서(네이버·Google AI 모드는 답변 수집, AIO는 검색 결과 수집) 단계가 나뉘고,
 // 답변 수집은 프롬프트별로 켜진 엔진 조합이 같은 것끼리 묶어 한 번에 돌린다 — 네이버만 켠 프롬프트가 구글로도 수집되지 않게.
 
-export type CollectEngine = "naver" | "google";
+export type CollectEngine = "naver" | "naver-overview" | "google";
 
 export type CollectStep =
   | { kind: "ai"; engines: CollectEngine[]; keywords: string[] }
-  | { kind: "aio"; promptIds: string[] };
+  | { kind: "aio"; promptIds: string[] }
+  | { kind: "gemini"; keywords: string[] };
 
 export interface CollectRow {
   prompt: string;
@@ -24,12 +25,13 @@ export function countBySurface(rows: CollectRow[]): Record<PromptSurface, number
   return Object.fromEntries(PROMPT_SURFACES.map((surface) => [surface, rows.filter((row) => surfacesOf(row).includes(surface)).length])) as Record<PromptSurface, number>;
 }
 
-/** 체크한 플랫폼만 수집하는 단계 목록. 답변 수집 단계가 앞, AIO 단계가 뒤. */
+/** 체크한 플랫폼만 수집하는 단계 목록. 답변 수집 단계가 앞, AIO·Gemini 단계가 뒤. */
 export function buildCollectSteps(rows: CollectRow[], enabled: ReadonlySet<PromptSurface>): CollectStep[] {
   const groups = new Map<string, { engines: CollectEngine[]; keywords: string[] }>();
   for (const row of rows) {
     const surfaces = surfacesOf(row);
     const engines: CollectEngine[] = [];
+    if (enabled.has("naver-aio") && surfaces.includes("naver-aio")) engines.push("naver-overview");
     if (enabled.has("naver-ai") && surfaces.includes("naver-ai")) engines.push("naver");
     if (enabled.has("google-ai-mode") && surfaces.includes("google-ai-mode")) engines.push("google");
     if (engines.length === 0) continue;
@@ -41,5 +43,7 @@ export function buildCollectSteps(rows: CollectRow[], enabled: ReadonlySet<Promp
   const steps: CollectStep[] = [...groups.values()].map((group) => ({ kind: "ai" as const, ...group }));
   const promptIds = enabled.has("google-aio") ? rows.filter((row) => row.promptId && surfacesOf(row).includes("google-aio")).map((row) => row.promptId as string) : [];
   if (promptIds.length > 0) steps.push({ kind: "aio", promptIds });
+  const geminiKeywords = enabled.has("gemini") ? rows.filter((row) => surfacesOf(row).includes("gemini")).map((row) => row.prompt) : [];
+  if (geminiKeywords.length > 0) steps.push({ kind: "gemini", keywords: geminiKeywords });
   return steps;
 }

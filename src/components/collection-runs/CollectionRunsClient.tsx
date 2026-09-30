@@ -17,6 +17,7 @@ import { useTenantBase } from "@/lib/useTenantBase";
 
 const ENGINE_LABEL: Record<string, string> = {
   "naver-ai-search": "네이버 AI검색",
+  "naver-overview": "네이버 AI 브리핑",
   "google-ai-overview": "Google AI 모드",
 };
 

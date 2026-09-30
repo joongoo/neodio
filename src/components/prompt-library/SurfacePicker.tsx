@@ -5,10 +5,12 @@ import { PROMPT_SURFACES, SURFACE_LABEL, type PromptSurface } from "@/lib/prompt
 const SURFACE_HINT: Record<PromptSurface, string> = {
   "google-aio": "구글 검색 결과 맨 위의 AI 개요(AI Overview). 검색 1건이 느리고 하루 수집 상한이 있어 검색어형에 알맞습니다.",
   "google-ai-mode": "구글 AI 모드의 대화형 답변.",
+  "naver-aio": "네이버 통합검색 첫 화면의 AI 브리핑. 검색어형에 알맞고, 브리핑이 없는 검색어는 '없음'으로 기록됩니다.",
   "naver-ai": "네이버 AI 검색(AI 탭)의 대화형 답변.",
+  gemini: "Gemini의 웹 검색 근거 답변. 이 PC의 수집기 없이 서버가 API로 수집합니다.",
 };
 
-const CHIP_SHORT: Record<PromptSurface, string> = { "google-aio": "구글AIO", "google-ai-mode": "구글AI", "naver-ai": "네이버AI" };
+const CHIP_SHORT: Record<PromptSurface, string> = { "google-aio": "구글AIO", "google-ai-mode": "구글AI", "naver-aio": "네이버AIO", "naver-ai": "네이버AI", gemini: "Gemini" };
 
 // 프롬프트를 어느 플랫폼에서 수집할지 고르는 체크박스 — 프롬프트 추가·편집 창이 같이 쓴다.
 export function SurfacePicker({

@@ -8,6 +8,7 @@ const DEFAULT_QUERY = "B2B 통합 마케팅 솔루션 추천";
 const DEFAULT_MARKET_ID = "market-kr";
 const DEFAULT_PROMPT_ID = "manual-naver-ai-test";
 const NAVER_AI_MODEL_ID = "model-naver-ai-search";
+const NAVER_OVERVIEW_MODEL_ID = "model-naver-overview";
 
 function argValue(name, fallback = undefined) {
   const prefix = `--${name}=`;
@@ -32,6 +33,11 @@ function buildNaverQueryValue(query) {
 
 function buildNaverAiAnswerUrl(query) {
   return `https://search.naver.com/search.naver?ssc=tab.ait.all&query=${buildNaverQueryValue(query)}&ait_pv=answer`;
+}
+
+// 검색 결과 첫 화면(통합검색)에 뜨는 AI 브리핑 — AI 탭과 같은 fds-aib 화면 조각을 쓰지만 주소와 대기 방식이 다르다.
+function buildNaverOverviewUrl(query) {
+  return `https://search.naver.com/search.naver?query=${buildNaverQueryValue(query)}`;
 }
 
 function normalizeWhitespace(value) {
@@ -128,6 +134,19 @@ async function waitForAiAnswer(page, timeoutMs, minWaitMs) {
   }
 }
 
+// 통합검색은 AI 브리핑이 있으면 첫 화면에 바로 그려진다 — 없는 질의는 끝까지 안 나오므로 짧게 기다리고 없다고 본다.
+async function waitForOverview(page, timeoutMs) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const found = await page
+      .evaluate(() => !!document.querySelector(".fds-aib-expandable-container .fds-markdown-p, .fds-aib-expandable-container .fds-markdown-h"))
+      .catch(() => false);
+    if (found) break;
+    await page.waitForTimeout(1_000);
+  }
+  await waitForAiAnswer(page, timeoutMs, 0);
+}
+
 async function pickAnswerText(page, query) {
   return page.evaluate((queryText) => {
     const normalize = (value) => value.replace(/\s+/g, " ").trim();
@@ -200,21 +219,25 @@ async function pickAnswerText(page, query) {
   }, query);
 }
 
-async function collectCitations(page) {
-  const links = await page.evaluate(() => {
+async function collectCitations(page, overview = false) {
+  const links = await page.evaluate((isOverview) => {
+    // 통합검색의 AI 브리핑은 출처가 일반 앵커(fds-anchor-layout)로 그려진다 — 브리핑 상자 안의 링크만 본다.
     const anchors = document.querySelectorAll(
-      "a.fds-source-overlay-item[href], [aria-label='출처 정보'] a[href], .fds-aib-expandable-container a.fds-source-overlay-item[href]"
+      isOverview
+        ? ".fds-aib-expandable-container a.fds-anchor-layout[href], .fds-aib-expandable-container a.fds-source-overlay-item[href]"
+        : "a.fds-source-overlay-item[href], [aria-label='출처 정보'] a[href], .fds-aib-expandable-container a.fds-source-overlay-item[href]"
     );
 
     return Array.from(anchors).map((anchor) => ({
       href: anchor.getAttribute("data-nlog-imp-url") || anchor.href,
-      text: (anchor.innerText || anchor.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim(),
-      title:
+      text: (anchor.innerText || anchor.getAttribute("aria-label") || "").replace(/\s+/g, " ").replace(/\s*새 창 열림\s*$/, "").trim(),
+      title: (
         anchor.querySelector(".fds-source-overlay-item-title")?.textContent?.replace(/\s+/g, " ").trim() ||
         anchor.getAttribute("title") ||
-        "",
+        ""
+      ).replace(/\s*새 창 열림\s*$/, ""),
     }));
-  });
+  }, overview);
 
   const seen = new Set();
   const citations = [];
@@ -243,7 +266,8 @@ async function main() {
   const htmlFile = argValue("html-file");
   const promptId = argValue("prompt-id", DEFAULT_PROMPT_ID);
   const marketId = argValue("market-id", DEFAULT_MARKET_ID);
-  const outputDir = argValue("out", ".tmp/naver-ai");
+  const overview = argValue("mode") === "overview";
+  const outputDir = argValue("out", overview ? ".tmp/naver-overview" : ".tmp/naver-ai");
   const headed = hasFlag("headed");
   const timeoutMs = Number(argValue("timeout-ms", "45000"));
   const minWaitMs = Number(argValue("min-wait-ms", "18000"));
@@ -254,7 +278,10 @@ async function main() {
   const cdpEndpoint = argValue("cdp-endpoint");
   const runAt = new Date().toISOString();
 
-  const searchUrl = urlArg || buildNaverAiAnswerUrl(query);
+  const searchUrl = urlArg || (overview ? buildNaverOverviewUrl(query) : buildNaverAiAnswerUrl(query));
+  const filePrefix = overview ? "naver-overview" : "naver-ai";
+  const modelId = overview ? NAVER_OVERVIEW_MODEL_ID : NAVER_AI_MODEL_ID;
+  const sourceName = overview ? "naver-overview" : "naver-ai-search";
 
   await mkdir(outputDir, { recursive: true });
 
@@ -297,13 +324,17 @@ async function main() {
     } else {
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-      await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
-      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-      if (clickToStart) {
-        await page.mouse.click(680, 520);
-        await page.waitForTimeout(1_000);
+      if (overview) {
+        await waitForOverview(page, Math.min(timeoutMs, 15_000));
+      } else {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
+        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+        if (clickToStart) {
+          await page.mouse.click(680, 520);
+          await page.waitForTimeout(1_000);
+        }
+        await waitForAiAnswer(page, timeoutMs, minWaitMs);
       }
-      await waitForAiAnswer(page, timeoutMs, minWaitMs);
       await page.getByText("자세히 더보기").first().click({ timeout: 5_000 }).catch(() => {});
       await waitForAiAnswer(page, Math.min(timeoutMs, 20_000), 0);
       await page.getByText(/출처 \d+건 전체보기/).first().click({ timeout: 5_000 }).catch(() => {});
@@ -314,10 +345,10 @@ async function main() {
     }
 
     const rawResponse = normalizeMultiline(await pickAnswerText(page, query));
-    const citations = await collectCitations(page);
+    const citations = await collectCitations(page, overview);
     const artifactId = Date.now();
-    const screenshotPath = path.join(outputDir, `naver-ai-${artifactId}.png`);
-    const htmlPath = path.join(outputDir, `naver-ai-${artifactId}.html`);
+    const screenshotPath = path.join(outputDir, `${filePrefix}-${artifactId}.png`);
+    const htmlPath = path.join(outputDir, `${filePrefix}-${artifactId}.html`);
     await writeFile(htmlPath, await page.content(), "utf8");
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
@@ -328,16 +359,16 @@ async function main() {
 
     const result = {
       promptRun: {
-        id: `run-naver-ai-${Date.now()}`,
+        id: `run-${filePrefix}-${Date.now()}`,
         promptId,
-        llmModelId: NAVER_AI_MODEL_ID,
+        llmModelId: modelId,
         marketId,
         runAt,
         status,
         rawResponse,
         rawMetadata: {
           collectionJobId: process.env.NEODIO_COLLECTION_JOB_ID || undefined,
-          source: "naver-ai-search",
+          source: sourceName,
           collectedBy: "playwright",
           query,
           queryUrl: searchUrl,
@@ -357,28 +388,28 @@ async function main() {
       },
     };
 
-    const outputPath = path.join(outputDir, `naver-ai-${runAt.replaceAll(":", "-")}.json`);
+    const outputPath = path.join(outputDir, `${filePrefix}-${runAt.replaceAll(":", "-")}.json`);
     await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
     console.log(JSON.stringify({ status, outputPath, answerTextLength: rawResponse.length, citations: citations.length }, null, 2));
   } catch (error) {
     status = "failed";
-    const outputPath = path.join(outputDir, `naver-ai-${runAt.replaceAll(":", "-")}.json`);
+    const outputPath = path.join(outputDir, `${filePrefix}-${runAt.replaceAll(":", "-")}.json`);
     await writeFile(
       outputPath,
       `${JSON.stringify(
         {
           promptRun: {
-            id: `run-naver-ai-${Date.now()}`,
+            id: `run-${filePrefix}-${Date.now()}`,
             promptId,
-            llmModelId: NAVER_AI_MODEL_ID,
+            llmModelId: modelId,
             marketId,
             runAt,
             status,
             rawResponse: "",
             rawMetadata: {
               collectionJobId: process.env.NEODIO_COLLECTION_JOB_ID || undefined,
-              source: "naver-ai-search",
+              source: sourceName,
               collectedBy: "playwright",
               query,
               queryUrl: searchUrl,

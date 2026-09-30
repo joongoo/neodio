@@ -9,7 +9,9 @@ import { countBySurface, type CollectRow } from "@/lib/collectSteps";
 const HINT: Record<PromptSurface, string> = {
   "google-aio": "구글 검색 결과의 AI 개요(AI Overview)를 검색해 YouTube 인용을 기록합니다. 검색 사이에 쉬어 가서 오래 걸립니다.",
   "google-ai-mode": "구글 AI 모드의 답변을 수집합니다.",
+  "naver-aio": "네이버 통합검색 첫 화면의 AI 브리핑을 수집합니다. 수집기 0.4.0 이상이 필요합니다.",
   "naver-ai": "네이버 AI 검색(AI 탭)의 답변을 수집합니다.",
+  gemini: "Gemini API로 답변과 출처를 수집합니다(수집기 불필요).",
 };
 
 // "선택 수집" — 고른 프롬프트를 각자 저장된 플랫폼대로 수집한다. 여기서는 어느 플랫폼을 이번에 수집할지만 정하고,

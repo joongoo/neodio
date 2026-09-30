@@ -19,6 +19,8 @@ import { SelectionCollectModal } from "@/components/prompt-library/SelectionColl
 import { buildCollectSteps, surfacesOf, type CollectStep } from "@/lib/collectSteps";
 import { AI_ANSWER_SURFACES, PROMPT_SURFACES, SURFACE_LABEL, aioDailyLoad, type PromptSurface } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
+import { GeminiCollectModal } from "@/components/prompt-library/GeminiCollectModal";
+import { Modal } from "@/components/ui/Modal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
@@ -521,18 +523,36 @@ export function PromptLibraryClient({
             orgName={collectionAgent.orgName}
             downloadPlatforms={collectionAgent.downloadPlatforms}
           />
-        ) : (
+        ) : step.engines.some((e) => e !== "naver-overview") ? (
           <BulkCollectionModal
             key={`ai-${queue.length}`}
             open
             onClose={finishStep}
             keywords={step.keywords}
-            fixedEngines={step.engines}
+            fixedEngines={step.engines.filter((e): e is "naver" | "google" => e !== "naver-overview")}
             onDone={() => {
               stepDoneRef.current = true;
             }}
           />
+        ) : (
+          <Modal open onClose={finishStep}>
+            <h2 className="text-lg font-bold text-neutral-900">네이버AIO는 수집기가 필요합니다</h2>
+            <p className="mt-2 text-sm text-neutral-600">이 PC의 수집기(0.4.0 이상)를 설치한 뒤 다시 수집해 주세요.</p>
+            <div className="mt-4 flex justify-end">
+              <Button variant="primary" onClick={finishStep}>확인</Button>
+            </div>
+          </Modal>
         ))}
+      {step?.kind === "gemini" && (
+        <GeminiCollectModal
+          key={`gemini-${queue.length}`}
+          keywords={step.keywords}
+          onClose={finishStep}
+          onDone={() => {
+            stepDoneRef.current = true;
+          }}
+        />
+      )}
       {step?.kind === "aio" && brandId && (
         <AioCollectButton
           key={`aio-${queue.length}`}

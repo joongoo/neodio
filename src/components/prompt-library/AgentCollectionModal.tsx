@@ -8,6 +8,7 @@ import { CollectorInstallGuide } from "@/components/collector/CollectorInstallGu
 import { Button } from "@/components/ui/Button";
 import {
   MIN_COLLECTOR_VERSION,
+  NAVER_OVERVIEW_MIN_VERSION,
   compareVersions,
   type CollectorAgentStatus,
   type CollectorEngine,
@@ -26,10 +27,11 @@ import {
 } from "@/lib/collectorClient";
 
 const ENGINE_OPTIONS: { id: CollectorEngine; label: string }[] = [
+  { id: "naver-overview", label: "네이버AIO" },
   { id: "naver", label: "네이버AI" },
   { id: "google", label: "구글AI" },
 ];
-const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버", google: "구글" };
+const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 const POLL_MS = 2000;
 const IMPORT_CHUNK = 20;
 
@@ -140,7 +142,7 @@ export function AgentCollectionModal({
     const status = await getAgentStatus();
     const problem: Problem | null = !status
       ? "unreachable"
-      : compareVersions(status.version, MIN_COLLECTOR_VERSION) < 0
+      : compareVersions(status.version, engines.has("naver-overview") ? NAVER_OVERVIEW_MIN_VERSION : MIN_COLLECTOR_VERSION) < 0
         ? "outdated"
         : !status.chrome
           ? "no_chrome"

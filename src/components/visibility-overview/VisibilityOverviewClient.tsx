@@ -23,7 +23,7 @@ const MODEL_TABS = [
 ];
 
 const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
-const MODEL_OPTIONS = ["전체", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Google AI 모드"];
+const MODEL_OPTIONS = ["전체", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Naver AI 브리핑", "Google AI 모드"];
 
 function hasMarket(row: VisibilityTableRow): row is Extract<VisibilityTableRow, { market: string }> {
   return "market" in row;

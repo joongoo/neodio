@@ -13,7 +13,7 @@ import type { CollectionJob } from "../collectionJobTypes";
 
 const ORG_ID = "neodigm";
 export const DEFAULT_TRACKING_BRAND = "brand-neodigm";
-const RUN_DIRS = [".tmp/naver-ai", ".tmp/google-ai"];
+const RUN_DIRS = [".tmp/naver-ai", ".tmp/naver-overview", ".tmp/google-ai"];
 let initializing: Promise<PromptStore> | undefined;
 
 async function jsonFile<T>(filename: string, fallback: T): Promise<T> {

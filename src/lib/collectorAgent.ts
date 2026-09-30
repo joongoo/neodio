@@ -11,12 +11,14 @@ export const COLLECTOR_AGENT_PORT = 17380;
 export const COLLECTOR_AGENT_URL = `http://127.0.0.1:${COLLECTOR_AGENT_PORT}`;
 
 /** 수집기 버전 — 수집 스크립트나 이 약속이 바뀌면 올리고, 웹은 MIN보다 낮으면 업데이트를 안내한다. */
-export const COLLECTOR_VERSION = "0.3.0";
+export const COLLECTOR_VERSION = "0.4.0";
 export const MIN_COLLECTOR_VERSION = "0.1.0";
 /** 사이트맵 크롤 작업을 받을 수 있는 최소 수집기 버전 — 0.1.x 수집기는 이 작업을 모른다. */
 export const SITEMAP_CRAWL_MIN_VERSION = "0.2.0";
 /** AI Overview 수집 작업을 받을 수 있는 최소 수집기 버전. */
 export const AIO_COLLECT_MIN_VERSION = "0.3.0";
+/** 네이버 AI 브리핑(통합검색) 수집을 받을 수 있는 최소 수집기 버전 — 이전 수집기는 이 엔진을 모른다. */
+export const NAVER_OVERVIEW_MIN_VERSION = "0.4.0";
 
 export type CollectorPlatform = "mac-arm64" | "mac-x64" | "win-x64";
 
@@ -26,7 +28,7 @@ export const COLLECTOR_PLATFORM_LABEL: Record<CollectorPlatform, string> = {
   "win-x64": "Windows",
 };
 
-export type CollectorEngine = "naver" | "google";
+export type CollectorEngine = "naver" | "naver-overview" | "google";
 
 export interface CollectorAgentStatus {
   app: "neodio-collector";

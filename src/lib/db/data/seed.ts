@@ -41,6 +41,13 @@ export const seedLlmModels: LlmModelSeed[] = [
     answerSurface: "ai_overview",
   },
   {
+    id: "model-naver-overview",
+    name: "Naver AI 브리핑",
+    provider: "Naver",
+    modelKey: "naver-overview",
+    answerSurface: "ai_overview",
+  },
+  {
     id: "model-naver-ai-search",
     name: "Naver AI검색",
     provider: "Naver",

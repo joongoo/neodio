@@ -4,7 +4,7 @@ import { processPromptRuns } from "../src/lib/backend/processing";
 import { seedBrands, seedPromptRuns } from "../src/lib/db/data/seed";
 import { PromptRunSeed } from "../src/lib/db/types";
 
-const DEFAULT_INPUT_DIRS = [".tmp/naver-ai", ".tmp/google-ai"];
+const DEFAULT_INPUT_DIRS = [".tmp/naver-ai", ".tmp/naver-overview", ".tmp/google-ai"];
 const DEFAULT_OUTPUT_DIR = ".tmp/processed";
 
 function argValue(name: string, fallback: string) {

@@ -13,7 +13,7 @@ import {
   type VideoForSuggestion,
 } from "@/lib/videoPromptSuggestion";
 
-const SURFACE_SHORT: Record<PromptSurface, string> = { "google-aio": "구글AIO", "google-ai-mode": "구글AI", "naver-ai": "네이버AI" };
+const SURFACE_SHORT: Record<PromptSurface, string> = { "google-aio": "구글AIO", "google-ai-mode": "구글AI", "naver-aio": "네이버AIO", "naver-ai": "네이버AI", gemini: "Gemini" };
 
 interface ReviewItem {
   key: string;

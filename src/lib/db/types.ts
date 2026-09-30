@@ -80,11 +80,13 @@ export interface RawCitationMetadata {
 export interface PromptRunMetadata {
   collectionJobId?: string;
   locale?: string;
-  source: "seed" | "naver-ai-search" | "google-ai-overview" | "api" | "headless-browser";
+  source: "seed" | "naver-ai-search" | "naver-overview" | "google-ai-overview" | "api" | "headless-browser";
   basedOn?: string[];
   collectedBy?: string;
   /** API 수집(source "api")에서 실제로 호출한 모델 이름 */
   model?: string;
+  /** API 수집에서 웹 검색 근거를 썼는지 — false면 모델 지식만의 답변이라 출처(인용)가 없다 */
+  webSearch?: boolean;
   /** API 제공사 원본에서 보존한 값(검색어, 토큰 사용량 등) */
   providerData?: Record<string, unknown>;
   query?: string;

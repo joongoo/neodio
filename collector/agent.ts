@@ -44,8 +44,12 @@ const BUNDLED = existsSync(path.join(HERE, "collect-naver-ai.mjs"));
 const SCRIPT_DIR = BUNDLED ? HERE : path.resolve(HERE, "../scripts");
 const SCRIPTS: Record<CollectorEngine, string> = {
   naver: path.join(SCRIPT_DIR, "collect-naver-ai.mjs"),
+  "naver-overview": path.join(SCRIPT_DIR, "collect-naver-ai.mjs"),
   google: path.join(SCRIPT_DIR, "collect-google-ai.mjs"),
 };
+
+const ENGINE_NAME: Record<CollectorEngine, string> = { naver: "네이버 AI검색", "naver-overview": "네이버 AI 브리핑", google: "구글 AI 모드" };
+const ENGINE_SHORT: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 
 const CRAWL_SCRIPT = path.join(SCRIPT_DIR, "crawl-sitemap.mjs");
 const AIO_SCRIPT = path.join(SCRIPT_DIR, "collect-google-aio.mjs");
@@ -251,7 +255,8 @@ function killChild(child: ChildProcess) {
 function runScript(job: CollectorJob, engine: CollectorEngine, keyword: string, outDir: string): Promise<number> {
   const args = [SCRIPTS[engine], "--query", keyword, "--out", outDir];
   // 네이버도 설치된 Chrome으로 — 배포본에 Playwright 브라우저를 따로 넣지 않는다.
-  if (engine === "naver") args.push("--browser-channel", "chrome");
+  if (engine === "naver" || engine === "naver-overview") args.push("--browser-channel", "chrome");
+  if (engine === "naver-overview") args.push("--mode", "overview");
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: WORK_DIR,
@@ -427,13 +432,13 @@ async function runJob(job: CollectorJob) {
       if (running?.cancelled) break;
       item.engine = engine;
       saveJob(job);
-      appendJobLog(job, `"${item.keyword}" ${engine === "naver" ? "네이버 AI검색" : "구글 AI 모드"} 수집`);
+      appendJobLog(job, `"${item.keyword}" ${ENGINE_NAME[engine]} 수집`);
       const outDir = path.join(RESULTS_DIR, job.id, `${engine}-ai`);
       mkdirSync(outDir, { recursive: true });
       const before = new Set(jsonFiles(outDir));
       const code = await runScript(job, engine, item.keyword, outDir);
       item.results += jsonFiles(outDir).filter((n) => !before.has(n)).length;
-      if (code !== 0 && !running?.cancelled) failures.push(engine === "naver" ? "네이버" : "구글");
+      if (code !== 0 && !running?.cancelled) failures.push(ENGINE_SHORT[engine]);
     }
     item.engine = null;
     if (running?.cancelled) item.status = "cancelled";
@@ -615,7 +620,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       .filter((k): k is string => typeof k === "string")
       .map((k) => k.trim())
       .filter(Boolean);
-    const engines = (Array.isArray(body?.engines) ? body.engines : []).filter((e): e is CollectorEngine => e === "naver" || e === "google");
+    const engines = (Array.isArray(body?.engines) ? body.engines : []).filter((e): e is CollectorEngine => e === "naver" || e === "naver-overview" || e === "google");
     if (keywords.length === 0 || keywords.length > MAX_KEYWORDS) return send(res, 400, { error: `키워드는 1~${MAX_KEYWORDS}개여야 합니다.` }, origin);
     if (engines.length === 0) return send(res, 400, { error: "엔진을 하나 이상 선택하세요." }, origin);
     const label = typeof body?.label === "string" ? body.label.slice(0, 100) : "";

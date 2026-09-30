@@ -1,16 +1,20 @@
 // 플랫폼(surface) — 프롬프트(질의)는 한 곳에서만 등록하고, "어디에서 수집할지"는 플랫폼 설정이다.
 //   · google-aio      Google 검색의 AI Overview (디바이스별, 문단·영상 인용 구간 기록) — YouTube AIO 트래커
 //   · google-ai-mode  Google AI 모드(udm=50, 대화형 답변)
-//   · naver-ai        네이버 AI 브리핑
+//   · naver-aio       네이버 통합검색 첫 화면의 AI 브리핑(오버뷰) — 사용자 PC의 수집기가 검색 결과에서 읽는다
+//   · naver-ai        네이버 AI 검색(AI 탭)의 대화형 답변
+//   · gemini          Gemini API 답변(웹 검색 근거 포함) — 서버가 공식 API로 바로 수집, 수집기 불필요
 // 결과 테이블은 플랫폼 성격에 맞게 따로 두고(aio_observations / prompt_runs), 프롬프트 기준으로 합쳐 읽는다.
 // 클라이언트와 서버가 같이 쓰므로 Node 모듈을 가져오지 않는다.
-export const PROMPT_SURFACES = ["google-aio", "google-ai-mode", "naver-ai"] as const;
+export const PROMPT_SURFACES = ["google-aio", "google-ai-mode", "naver-aio", "naver-ai", "gemini"] as const;
 export type PromptSurface = (typeof PROMPT_SURFACES)[number];
 
 export const SURFACE_LABEL: Record<PromptSurface, string> = {
   "google-aio": "구글AIO",
   "google-ai-mode": "구글AI",
+  "naver-aio": "네이버AIO",
   "naver-ai": "네이버AI",
+  gemini: "Gemini",
 };
 
 /** 지금까지 프롬프트 라이브러리가 수집하던 플랫폼 — 기존 추적 프롬프트의 기본값. */

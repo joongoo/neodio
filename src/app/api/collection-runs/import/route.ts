@@ -7,6 +7,7 @@ const MAX_RUNS_PER_REQUEST = 50;
 // 수집 스크립트가 rawMetadata.source에 쓰는 값 → 저장 위치(dir). 로컬 수집 결과 폴더 이름과 같다.
 const SOURCE_DIRS: Record<string, string> = {
   "naver-ai-search": ".tmp/naver-ai",
+  "naver-overview": ".tmp/naver-overview",
   "google-ai-overview": ".tmp/google-ai",
 };
 

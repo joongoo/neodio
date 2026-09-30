@@ -10,7 +10,7 @@ import { db, PromptResearchResult } from "@/lib/db";
 import { LivePromptResearch } from "@/components/prompt-research/LivePromptResearch";
 
 const MARKET_OPTIONS = ["미국 (US)", "한국 (KR)", "전세계"];
-const MODEL_OPTIONS = ["전체 모델", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Google AI 모드"];
+const MODEL_OPTIONS = ["전체 모델", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Naver AI 브리핑", "Google AI 모드"];
 
 // Matches Figma "Prompt Research Screen (Wireframe)" / "... - Results"
 // (node 646:12012 / 646:12033). Topic search is client-driven against a

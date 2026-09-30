@@ -14,7 +14,7 @@ import { Pool } from "pg";
 import { PromptStore } from "../src/lib/backend/database/store";
 import type { PromptRunSeed } from "../src/lib/db/types";
 
-const RUN_DIRS = [".tmp/naver-ai", ".tmp/google-ai"];
+const RUN_DIRS = [".tmp/naver-ai", ".tmp/naver-overview", ".tmp/google-ai"];
 const DEFAULT_ORG_ID = "neodigm";
 
 function argValue(name: string): string | undefined {
