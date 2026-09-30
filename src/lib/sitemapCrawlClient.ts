@@ -1,11 +1,7 @@
 "use client";
 
-import {
-  SITEMAP_CRAWL_MIN_VERSION,
-  compareVersions,
-  type CollectorAgentStatus,
-  type CollectorCrawlResult,
-} from "./collectorAgent";
+import { SITEMAP_CRAWL_MIN_VERSION, type CollectorAgentStatus, type CollectorCrawlResult } from "./collectorAgent";
+import { agentReadiness, openCollectorSetup, type CollectorSetupReason } from "./collectorSetup";
 import {
   createAgentCrawlJob,
   getAgentCrawlResults,
@@ -22,13 +18,7 @@ import type { SitemapCrawlJob } from "./backend/sitemapCrawlJobTypes";
 // 호출하는 화면은 두 경우를 똑같이 다룬다: start → jobId, status를 폴링 → done.
 // 수집기가 없거나 오래됐거나 Chrome이 없으면 설치 안내 창(CollectorSetupHost)을 띄우고 handled로 알린다.
 
-export type CollectorSetupReason = "unreachable" | "outdated" | "no_chrome";
-export const COLLECTOR_SETUP_EVENT = "neodio:collector-setup";
-
-export interface CollectorSetupDetail {
-  reason: CollectorSetupReason;
-  status: CollectorAgentStatus | null;
-}
+export { COLLECTOR_SETUP_EVENT, type CollectorSetupDetail, type CollectorSetupReason } from "./collectorSetup";
 
 export type CrawlStart = { ok: true; jobId: string } | { ok: false; error: string; handled: boolean };
 
@@ -42,16 +32,9 @@ export interface CrawlStatus {
 
 const AGENT_PREFIX = "agent:";
 
-function openCollectorSetup(detail: CollectorSetupDetail) {
-  window.dispatchEvent(new CustomEvent<CollectorSetupDetail>(COLLECTOR_SETUP_EVENT, { detail }));
-}
-
 /** 수집기가 크롤을 받을 준비가 됐는지 — 아니면 이유. */
 export function crawlReadiness(status: CollectorAgentStatus | null): CollectorSetupReason | null {
-  if (!status) return "unreachable";
-  if (compareVersions(status.version, SITEMAP_CRAWL_MIN_VERSION) < 0) return "outdated";
-  if (!status.chrome) return "no_chrome";
-  return null;
+  return agentReadiness(status, SITEMAP_CRAWL_MIN_VERSION);
 }
 
 export async function startSitemapCrawl(input: { domain: string; sitemapUrl?: string; urls?: string[] }): Promise<CrawlStart> {

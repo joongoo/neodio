@@ -21,12 +21,15 @@ import {
   COLLECTOR_AGENT_PORT,
   COLLECTOR_VERSION,
   type CollectorAgentStatus,
+  type CollectorAioResult,
+  type CollectorAioSpec,
   type CollectorCrawlResult,
   type CollectorCrawlSpec,
   type CollectorEngine,
   type CollectorJob,
   type CollectorRunFile,
 } from "../src/lib/collectorAgent";
+import { parseAioSpec } from "../src/lib/collectorAioSpec";
 import { parseCrawlSpec } from "../src/lib/collectorCrawlSpec";
 import { resolveChromePath } from "../scripts/lib/incognito-chrome.mjs";
 
@@ -45,6 +48,7 @@ const SCRIPTS: Record<CollectorEngine, string> = {
 };
 
 const CRAWL_SCRIPT = path.join(SCRIPT_DIR, "crawl-sitemap.mjs");
+const AIO_SCRIPT = path.join(SCRIPT_DIR, "collect-google-aio.mjs");
 
 // 시험용 — 설치된 수집기와 겹치지 않게 포트와 작업 폴더를 바꿔 개발용 수집기를 따로 띄울 수 있다.
 const AGENT_PORT = Number(process.env.NEODIO_COLLECTOR_PORT) || COLLECTOR_AGENT_PORT;
@@ -207,6 +211,28 @@ function createCrawlJob(spec: CollectorCrawlSpec, label: string): CollectorJob {
   return job;
 }
 
+function createAioJob(spec: CollectorAioSpec, label: string): CollectorJob {
+  const job: CollectorJob = {
+    id: `cjob-${Date.now()}-${randomUUID().slice(0, 8)}`,
+    kind: "aio-collect",
+    aio: spec,
+    aioState: { waitUntil: null, captcha: false },
+    label,
+    engines: [],
+    status: "queued",
+    items: spec.tasks.map((task) => ({ keyword: `${task.keyword} · ${task.device}`, status: "pending", engine: null, results: 0, error: null })),
+    createdAt: new Date().toISOString(),
+    finishedAt: null,
+    appliedAt: null,
+    log: [],
+  };
+  jobs.set(job.id, job);
+  saveJob(job);
+  queue.push(job.id);
+  void processQueue();
+  return job;
+}
+
 function jsonFiles(dir: string): string[] {
   try {
     return readdirSync(dir).filter((n) => n.endsWith(".json"));
@@ -290,10 +316,106 @@ async function runCrawlJob(job: CollectorJob, spec: CollectorCrawlSpec) {
   log(`■ 사이트맵 크롤 ${cancelled ? "중단" : "완료"} ${job.id}`);
 }
 
+/** 검색 사이에 쉰다 — 중단 요청을 1초 안에 알아채도록 잘게 나눠 잔다. */
+async function interruptibleSleep(ms: number) {
+  const until = Date.now() + ms;
+  while (Date.now() < until && !running?.cancelled) await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())));
+}
+
+/** Google AI Overview 검색 한 건 — 설치된 Chrome을 시크릿으로 띄워 검색하고 결과 JSON을 outDir에 남긴다. */
+function runAioScript(job: CollectorJob, spec: CollectorAioSpec, task: CollectorAioSpec["tasks"][number], outDir: string): Promise<number> {
+  const args = [AIO_SCRIPT, "--query", task.keyword, "--device", task.device, "--country", spec.country, "--language", spec.language, "--out", outDir];
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { cwd: WORK_DIR, env: { ...process.env }, windowsHide: true });
+    if (running) running.child = child;
+    child.stdout?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    child.stderr?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
+    child.on("error", (error) => {
+      appendJobLog(job, `실행 실패: ${error.message}`);
+      resolve(1);
+    });
+    child.on("close", (code) => {
+      if (running) running.child = null;
+      resolve(code ?? 1);
+    });
+  });
+}
+
+function aioTaskDir(job: CollectorJob, index: number) {
+  return path.join(RESULTS_DIR, job.id, "aio", String(index));
+}
+
+/** 이 작업이 끝낸 검색들의 원본 결과 — 수집 스크립트가 쓴 JSON. 화면 캡처·HTML은 이 PC에 남는다. */
+function jobAioResults(job: CollectorJob): CollectorAioResult[] {
+  const results: CollectorAioResult[] = [];
+  for (const [index] of (job.aio?.tasks ?? []).entries()) {
+    const dir = aioTaskDir(job, index);
+    const file = jsonFiles(dir).sort().at(-1);
+    if (!file) continue;
+    try {
+      results.push({ index, result: JSON.parse(readFileSync(path.join(dir, file), "utf8")) });
+    } catch {
+      // 쓰다 만 파일은 건너뛴다
+    }
+  }
+  return results;
+}
+
+async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
+  const state = (job.aioState ??= { waitUntil: null, captcha: false });
+  log(`▶ AI Overview 수집 시작 ${job.id} — ${spec.tasks.length}건`);
+  mkdirSync(WORK_DIR, { recursive: true });
+
+  for (const [index, task] of spec.tasks.entries()) {
+    if (running?.cancelled) break;
+    const item = job.items[index];
+    if (index > 0) {
+      const delay = spec.minDelayMs + Math.floor(Math.random() * (spec.maxDelayMs - spec.minDelayMs + 1));
+      state.waitUntil = Date.now() + delay;
+      saveJob(job);
+      await interruptibleSleep(delay);
+      state.waitUntil = null;
+      if (running?.cancelled) break;
+    }
+    item.status = "running";
+    saveJob(job);
+    appendJobLog(job, `"${task.keyword}" (${task.device}) 검색`);
+    const outDir = aioTaskDir(job, index);
+    mkdirSync(outDir, { recursive: true });
+    const code = await runAioScript(job, spec, task, outDir);
+    const written = jsonFiles(outDir).length > 0;
+    if (running?.cancelled) item.status = "cancelled";
+    else if (!written) {
+      item.status = "error";
+      item.error = code === 0 ? "결과가 남지 않았습니다." : "검색에 실패했습니다.";
+    } else {
+      item.status = "done";
+      item.results = 1;
+      // Google이 캡차를 띄우면 그 자리에서 멈춘다 — 남은 검색은 다음 수집 때 이어서 한다.
+      const result = jobAioResults(job).find((r) => r.index === index)?.result as { errorKind?: string } | undefined;
+      if (result?.errorKind === "captcha") {
+        state.captcha = true;
+        saveJob(job);
+        break;
+      }
+    }
+    saveJob(job);
+  }
+
+  const cancelled = !!running?.cancelled;
+  for (const item of job.items) if (item.status === "pending") item.status = "cancelled";
+  state.waitUntil = null;
+  job.status = cancelled ? "cancelled" : "done";
+  job.finishedAt = new Date().toISOString();
+  saveJob(job);
+  log(`■ AI Overview 수집 ${cancelled ? "중단" : state.captcha ? "멈춤(캡차)" : "완료"} ${job.id}`);
+}
+
 async function runJob(job: CollectorJob) {
   job.status = "running";
   saveJob(job);
   if (job.kind === "sitemap-crawl" && job.crawl) return runCrawlJob(job, job.crawl);
+  if (job.kind === "aio-collect" && job.aio) return runAioJob(job, job.aio);
   log(`▶ 수집 시작 ${job.id} — ${job.items.length}개, ${job.engines.join(", ")}`);
   mkdirSync(WORK_DIR, { recursive: true });
 
@@ -478,7 +600,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   if (parts.length === 1 && req.method === "POST") {
     // 브라우저가 보낸 간단 요청(폼 등)으로는 수집을 시킬 수 없게 JSON만 받는다.
     if (!String(req.headers["content-type"] ?? "").includes("application/json")) return send(res, 415, { error: "JSON만 받습니다." }, origin);
-    const body = (await readBody(req)) as { keywords?: unknown; engines?: unknown; label?: unknown; kind?: unknown; crawl?: unknown } | null;
+    const body = (await readBody(req)) as { keywords?: unknown; engines?: unknown; label?: unknown; kind?: unknown; crawl?: unknown; aio?: unknown } | null;
+    if (body?.kind === "aio-collect") {
+      const spec = parseAioSpec((body as { aio?: unknown }).aio);
+      if ("error" in spec) return send(res, 400, { error: spec.error }, origin);
+      return send(res, 200, { job: createAioJob(spec, typeof body?.label === "string" ? body.label.slice(0, 100) : "") }, origin);
+    }
     if (body?.kind === "sitemap-crawl") {
       const spec = parseCrawlSpec(body.crawl);
       if ("error" in spec) return send(res, 400, { error: spec.error }, origin);
@@ -500,6 +627,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (parts.length === 2 && req.method === "GET") return send(res, 200, { job }, origin);
   if (parts.length === 3 && parts[2] === "results" && req.method === "GET") return send(res, 200, { runs: jobResults(job) }, origin);
+  if (parts.length === 3 && parts[2] === "aio" && req.method === "GET") return send(res, 200, { results: jobAioResults(job) }, origin);
   if (parts.length === 3 && parts[2] === "crawl" && req.method === "GET") return send(res, 200, { crawls: jobCrawlResults(job) }, origin);
   if (parts.length === 3 && parts[2] === "cancel" && req.method === "POST") {
     return cancelJob(job) ? send(res, 200, { job }, origin) : send(res, 409, { error: "이미 끝난 작업입니다." }, origin);

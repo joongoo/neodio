@@ -3,6 +3,8 @@
 import {
   COLLECTOR_AGENT_URL,
   type CollectorAgentStatus,
+  type CollectorAioResult,
+  type CollectorAioSpec,
   type CollectorCrawlResult,
   type CollectorCrawlSpec,
   type CollectorEngine,
@@ -53,6 +55,15 @@ export async function getAgentCrawlResults(id: string): Promise<CollectorCrawlRe
   return (await call<{ crawls: CollectorCrawlResult[] }>(`/jobs/${encodeURIComponent(id)}/crawl`, { timeoutMs: 30_000 })).crawls;
 }
 
+export async function createAgentAioJob(aio: CollectorAioSpec, label: string): Promise<CollectorJob> {
+  return (await call<{ job: CollectorJob }>("/jobs", { method: "POST", body: JSON.stringify({ kind: "aio-collect", aio, label }) })).job;
+}
+
+/** AI Overview 수집 작업이 지금까지 끝낸 검색들의 원본 결과. */
+export async function getAgentAioResults(id: string): Promise<CollectorAioResult[]> {
+  return (await call<{ results?: CollectorAioResult[] }>(`/jobs/${encodeURIComponent(id)}/aio`, { timeoutMs: 30_000 })).results ?? [];
+}
+
 export async function getAgentJob(id: string): Promise<CollectorJob> {
   return (await call<{ job: CollectorJob }>(`/jobs/${encodeURIComponent(id)}`)).job;
 }
@@ -91,8 +102,8 @@ export async function detectCollectorPlatform(): Promise<CollectorPlatform | nul
 
 /** 수집기 결과 중 반영할 것이 남은 작업 — 진행 중이거나, 끝났는데 아직 반영하지 않은 것. */
 export function isPendingAgentJob(job: CollectorJob): boolean {
-  // 사이트맵 크롤 작업은 "선택 수집"의 반영 대기 목록에 섞이지 않는다(크롤 화면이 따로 반영한다).
-  if (job.kind === "sitemap-crawl") return false;
+  // 사이트맵 크롤·AIO 수집 작업은 "선택 수집"의 반영 대기 목록에 섞이지 않는다(각 화면이 따로 반영한다).
+  if (job.kind === "sitemap-crawl" || job.kind === "aio-collect") return false;
   if (job.appliedAt) return false;
   if (job.status === "queued" || job.status === "running") return true;
   return job.items.some((item) => item.results > 0);

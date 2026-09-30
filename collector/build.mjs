@@ -80,7 +80,7 @@ async function bundle(appDir, origins) {
     outfile: path.join(appDir, "agent.mjs"),
     define: { __COLLECTOR_ORIGINS__: JSON.stringify(origins) },
   });
-  for (const script of ["collect-naver-ai.mjs", "collect-google-ai.mjs", "crawl-sitemap.mjs"]) {
+  for (const script of ["collect-naver-ai.mjs", "collect-google-ai.mjs", "crawl-sitemap.mjs", "collect-google-aio.mjs"]) {
     await build({ ...common, entryPoints: [path.join(ROOT, "scripts", script)], outfile: path.join(appDir, script) });
   }
   writeFileSync(path.join(appDir, "package.json"), JSON.stringify({ name: "neodio-collector-app", private: true, type: "module" }, null, 2));

@@ -7,10 +7,11 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import type { AioCollectJob, AioJobResult } from "@/lib/backend/aio/jobTypes";
+import { cancelAioCollect, pollAioCollect, resumeAioCollect, startAioCollect } from "@/lib/aioCollectClient";
 import { DEVICE_LABEL } from "./labels";
 
 // "지금 수집" — 정기 수집(cron)을 기다리지 않고 바로 AIO를 수집한다.
-// 전체 현황에서는 전체 키워드, 키워드 상세에서는 그 키워드만. 서버에서
+// 전체 현황에서는 전체 키워드, 키워드 상세에서는 그 키워드만. 이 PC에서
 // 실제 Chrome이 열리고, 여러 건이면 캡차를 피하려고 1~2분씩 쉬어 간다.
 const POLL_MS = 2000;
 const AVG_SECONDS_PER_SEARCH = 20;
@@ -46,18 +47,16 @@ export function AioCollectButton({
   const running = job?.status === "running";
 
   const poll = useCallback(async (id: string) => {
-    const res = await fetch(`/api/youtube-aio/collect?jobId=${encodeURIComponent(id)}`, { cache: "no-store" }).catch(() => null);
-    const data = await res?.json().catch(() => null);
-    if (data?.job) setJob(data.job);
+    const next = await pollAioCollect(id);
+    if (next) setJob(next);
   }, []);
 
   // 새로고침·다른 탭에서 돌아와도 진행 중인 수집을 이어서 보여준다.
   useEffect(() => {
     let alive = true;
-    fetch(`/api/youtube-aio/collect?brandId=${encodeURIComponent(brandId)}`, { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (alive && data?.job?.status === "running") setJob(data.job);
+    resumeAioCollect(brandId)
+      .then((resumed) => {
+        if (alive && resumed) setJob(resumed);
       })
       .catch(() => {});
     return () => {
@@ -85,25 +84,24 @@ export function AioCollectButton({
   async function start() {
     setStarting(true);
     setError(null);
-    const res = await fetch("/api/youtube-aio/collect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandId, keywordId, force }),
-    }).catch(() => null);
-    const data = await res?.json().catch(() => null);
+    const started = await startAioCollect({ brandId, keywordId, force });
     setStarting(false);
-    if (!res?.ok) {
-      setError(data?.error ?? "수집을 시작하지 못했습니다.");
-      if (data?.jobId) void poll(data.jobId);
+    if (!started.ok) {
+      if (started.handled) {
+        setOpen(false);
+        return;
+      }
+      setError(started.error);
+      if (started.jobId) void poll(started.jobId);
       return;
     }
-    setJob(data.job);
+    setJob(started.job);
   }
 
   async function cancel() {
     if (!job) return;
     setCancelling(true);
-    await fetch(`/api/youtube-aio/collect?jobId=${encodeURIComponent(job.id)}`, { method: "DELETE" }).catch(() => null);
+    await cancelAioCollect(job.id);
     await poll(job.id);
     setCancelling(false);
   }
@@ -155,7 +153,7 @@ export function AioCollectButton({
               </label>
             )}
             <p className="rounded-md bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-              수집 중에는 서버에서 시크릿 Chrome 창이 열립니다 — 자동으로 닫히니 직접 닫지 마세요. Google이 캡차를 띄우면 그 자리에서 멈추고, 남은
+              수집 중에는 이 PC에서 시크릿 Chrome 창이 열립니다 — 자동으로 닫히니 직접 닫지 마세요. Google이 캡차를 띄우면 그 자리에서 멈추고, 남은
               키워드는 다음 수집 때 이어서 진행됩니다.
             </p>
             {error && <p className="text-xs text-red-600">{error}</p>}

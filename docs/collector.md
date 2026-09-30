@@ -34,16 +34,37 @@
 시험용 환경변수: `NEODIO_COLLECTOR_PORT`, `NEODIO_COLLECTOR_HOME`으로 설치된 수집기와 겹치지 않는 개발용 수집기를 따로 띄울 수 있다
 (`npx tsx collector/agent.ts run`).
 
+## YouTube AIO "지금 수집" (0.3.0부터)
+
+Google AI Overview는 실제 Chrome으로 검색해야 해서 운영에서는 이것도 수집기가 한다. 무엇을 수집할지는 서버가 정하고, 수집기는 검색만 한다.
+
+```
+"지금 수집" → 서버가 계획을 짠다(키워드 × 디바이스, 오늘 수집한 건 제외, 섞은 순서) — POST /api/youtube-aio/collect 가 { agent: 계획 }을 돌려준다
+  → 브라우저가 수집기에 "aio-collect" 작업을 시킨다(검색 사이 1~2분 쉼, 캡차가 뜨면 그 자리에서 멈춤)
+  → 검색이 하나 끝날 때마다 브라우저가 그 원본 결과를 POST /api/youtube-aio/import 로 올린다
+  → 서버가 자사 영상 판정(채널 매칭)과 저장을 한다
+```
+
+- 화면 쪽 창구는 [aioCollectClient.ts](../src/lib/aioCollectClient.ts) — 로컬 개발은 서버가 직접 수집하고, 서버가 `agent` 계획을 돌려주는 환경(운영,
+  또는 `NEODIO_COLLECTION_MODE=agent`)은 수집기로 넘어간다. 화면(`AioCollectButton`)은 두 경우를 같게 다룬다.
+- 판정·저장을 서버가 하는 이유: 채널 매칭에 YouTube 조회가 필요하고, 판정 기준을 화면(수집기)이 정하게 두지 않기 위해서다. 수집기는 서버·DB에 붙지 않는다.
+- 서버는 올라온 결과의 모양·범위를 다시 검증한다([aioResultImport.ts](../src/lib/aioResultImport.ts)). 최근 48시간 안에 수집한 값만 받고(같은 날 결과를 덮어쓰므로),
+  화면 캡처·HTML 경로(그 PC의 파일)는 받지 않는다.
+- 수집기는 검색 사이 간격에 하한(30초)을 강제한다([collectorAioSpec.ts](../src/lib/collectorAioSpec.ts)) — 화면이 간격을 줄여 캡차를 부르지 못하게.
+- 브라우저를 닫아도 수집은 PC에서 계속되고, 다시 열면 이어서 보여 주며 아직 올리지 않은 결과를 올린다.
+- 수집기가 없거나 0.3.0보다 오래됐거나 Chrome이 없으면 설치 안내 창이 뜬다. **0.2.x 수집기는 이 작업을 모른다** — 새 zip을 설치해야 한다.
+
 ## 구성
 
 | 위치 | 역할 |
 |---|---|
-| [collector/agent.ts](../collector/agent.ts) | 수집기 — `run`(127.0.0.1 서버; AI 수집·사이트맵 크롤 작업), `install`(설치 + 로그인 시 자동 시작), `uninstall`, `status` |
+| [collector/agent.ts](../collector/agent.ts) | 수집기 — `run`(127.0.0.1 서버; AI 수집·사이트맵 크롤·AIO 수집 작업), `install`(설치 + 로그인 시 자동 시작), `uninstall`, `status` |
 | [collector/build.mjs](../collector/build.mjs) | 운영체제별 설치 파일(zip) 만들기 |
 | [src/lib/collectorAgent.ts](../src/lib/collectorAgent.ts) | 웹 ↔ 수집기 약속(포트, 버전, 작업 형식) |
 | [src/lib/collectorClient.ts](../src/lib/collectorClient.ts) | 브라우저에서 수집기 호출 |
 | [AgentCollectionModal](../src/components/prompt-library/AgentCollectionModal.tsx) | 선택 수집 화면(확인 → 설치 안내 → 진행 → 반영) |
 | `/api/collection-runs/import` | 반영 — 지금 조직으로 저장, 같은 실행은 덮어쓰기 |
+| `/api/youtube-aio/import` | AIO 수집 반영 — 검색 한 건의 원본을 받아 서버가 판정·저장 |
 | `/api/sitemap-crawl/import` | 사이트맵 크롤 반영 — 지금 조직의 `sitemap_crawls`에 저장, 같은 크롤은 덮어쓰기 |
 | `/api/collector-download?platform=` | 비공개 Blob의 설치 파일로 가는 임시 링크(10분) — 로그인한 화면에서만 |
 
