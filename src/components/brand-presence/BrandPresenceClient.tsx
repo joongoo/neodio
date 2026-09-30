@@ -27,7 +27,7 @@ import {
 } from "@/lib/db";
 
 const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
-const MODEL_OPTIONS = ["전체", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Google AI Overview"];
+const MODEL_OPTIONS = ["전체", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Google AI 모드"];
 const MAX_COMPETITORS = 5;
 
 const SENTIMENT_LABEL: Record<Sentiment, string> = { positive: "긍정", neutral: "중립", negative: "부정" };

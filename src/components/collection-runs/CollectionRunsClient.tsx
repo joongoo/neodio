@@ -17,7 +17,7 @@ import { useTenantBase } from "@/lib/useTenantBase";
 
 const ENGINE_LABEL: Record<string, string> = {
   "naver-ai-search": "네이버 AI검색",
-  "google-ai-overview": "Google AI Overview",
+  "google-ai-overview": "Google AI 모드",
 };
 
 // API로 수집한 실행(source "api")은 collectedBy(`<provider>-api`)로 어떤 LLM인지 구분한다.
@@ -181,7 +181,7 @@ export function CollectionRunsClient({
       <div>
         <h1 className="text-2xl font-semibold text-neutral-900">수집 로그</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          네이버 AI검색·Google AI Overview 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai`)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다.
+          네이버 AI검색·Google AI 모드 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai`)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다.
         </p>
       </div>
 

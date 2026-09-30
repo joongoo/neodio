@@ -35,7 +35,7 @@ export const seedLlmModels: LlmModelSeed[] = [
   { id: "model-copilot", name: "Copilot", provider: "Microsoft", modelKey: "copilot-web", answerSurface: "chat" },
   {
     id: "model-google-ai-overview",
-    name: "Google AI Overview",
+    name: "Google AI 모드",
     provider: "Google",
     modelKey: "google-ai-overview",
     answerSurface: "ai_overview",

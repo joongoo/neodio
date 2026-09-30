@@ -44,7 +44,7 @@ export const brandPresenceByOrg: Record<string, BrandPresenceData> = {
       { id: "di-2", topic: "마케팅 자동화 구축", source: "Gemini", popularity: 87, visibilityScore: 63, mentions: 158, sentiment: "positive", totalCitations: 37, ownCitations: 9 },
       { id: "di-3", topic: "HubSpot 온보딩 파트너", source: "Naver AI검색", popularity: 79, visibilityScore: 59, mentions: 132, sentiment: "neutral", totalCitations: 29, ownCitations: 8 },
       { id: "di-4", topic: "MarTech 아키텍처 설계", source: "Claude", popularity: 68, visibilityScore: 54, mentions: 97, sentiment: "positive", totalCitations: 22, ownCitations: 6 },
-      { id: "di-5", topic: "AI 검색 최적화", source: "Google AI Overview", popularity: 64, visibilityScore: 31, mentions: 64, sentiment: "neutral", totalCitations: 18, ownCitations: 2 },
+      { id: "di-5", topic: "AI 검색 최적화", source: "Google AI 모드", popularity: 64, visibilityScore: 31, mentions: 64, sentiment: "neutral", totalCitations: 18, ownCitations: 2 },
       { id: "di-6", topic: "CRM ERP API 연동", source: "Perplexity", popularity: 55, visibilityScore: 36, mentions: 71, sentiment: "neutral", totalCitations: 15, ownCitations: 1 },
     ],
     shareOfVoice: [

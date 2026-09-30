@@ -6,6 +6,7 @@ import type { CollectedRunFile } from "../collectionRunsTypes";
 import { extractMentionsFromRun } from "../processing/mentions";
 import { extractCitationsFromRun } from "../processing/citations";
 import { schema } from "./schema";
+import { normalizeSurfaces, type PromptSurface } from "../../promptSurfaces";
 
 export const normalize = (text: string) => text.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
 const now = () => new Date().toISOString();
@@ -267,6 +268,31 @@ export class PromptStore {
       WHERE tr.organization_id=$1 AND tr.status='active' AND ($2::text IS NULL OR tr.brand_id=$2) ORDER BY tr.added_at DESC,tr.id`,
       [orgId, brandId ?? null]);
     return rows.map(row => ({ ...row })) as unknown as PromptLibraryRow[];
+  }
+
+  /** 추적(트래킹 id)마다 켜진 수집 표면. 표면이 하나도 없는 추적은 맵에 키가 없다. */
+  async trackingSurfaces(orgId: string, trackingIds?: string[]): Promise<Map<string, PromptSurface[]>> {
+    const rows = await this.query<{ tracking_id: string; surface: string }>(
+      `SELECT s.tracking_id,s.surface FROM prompt_tracking_surfaces s JOIN prompt_tracking t ON t.id=s.tracking_id
+       WHERE t.organization_id=$1 AND ($2::text[] IS NULL OR s.tracking_id = ANY($2))`,
+      [orgId, trackingIds ?? null]
+    );
+    const bySurface = new Map<string, string[]>();
+    for (const row of rows) bySurface.set(row.tracking_id, [...(bySurface.get(row.tracking_id) ?? []), row.surface]);
+    return new Map([...bySurface].map(([trackingId, surfaces]) => [trackingId, normalizeSurfaces(surfaces)]));
+  }
+
+  /** 추적의 표면을 통째로 바꾼다. 이 조직의 추적이 아니면 false. */
+  async setTrackingSurfaces(orgId: string, trackingId: string, surfaces: PromptSurface[]): Promise<boolean> {
+    return this.transaction(async () => {
+      const row = await this.one<{ id: string }>("SELECT id FROM prompt_tracking WHERE organization_id=$1 AND id=$2", [orgId, trackingId]);
+      if (!row) return false;
+      const wanted = normalizeSurfaces(surfaces);
+      await this.run("DELETE FROM prompt_tracking_surfaces WHERE tracking_id=$1", [trackingId]);
+      const at = now();
+      for (const surface of wanted) await this.run("INSERT INTO prompt_tracking_surfaces VALUES ($1,$2,$3)", [trackingId, surface, at]);
+      return true;
+    });
   }
 
   async setTrackingStatus(orgId: string, trackingId: string, status: "active" | "paused" | "archived"): Promise<boolean> {
