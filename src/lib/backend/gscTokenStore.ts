@@ -1,5 +1,5 @@
 import { getPromptStore } from "./database";
-import { DEFAULT_ORG_ID } from "@/lib/db";
+import { getManagedBrandById } from "./brandsManagementStore";
 
 // 브랜드별 GSC refresh_token 저장소. 예전엔 .tmp/gsc-tokens/*.json 파일로
 // 뒀는데(수집 로그와 같은 패턴), Vercel의 읽기 전용 파일시스템에서
@@ -10,6 +10,7 @@ import { DEFAULT_ORG_ID } from "@/lib/db";
 const SCOPE = "gsc-tokens";
 
 export interface GscTokenRecord {
+  organizationId: string;
   brandId: string;
   refreshToken: string;
   accountEmail: string;
@@ -19,17 +20,22 @@ export interface GscTokenRecord {
 
 export async function saveGscToken(record: GscTokenRecord): Promise<void> {
   const store = await getPromptStore();
-  // 브랜드 id가 전역에서 유일해서 조직과 무관하게 기본 조직의 한 스코프에 둔다(키 = 브랜드 id).
-  await store.putBridge(DEFAULT_ORG_ID, SCOPE, { [record.brandId]: record });
+  await store.putBridge(record.organizationId, SCOPE, { [record.brandId]: record });
 }
 
 export async function getGscToken(brandId: string): Promise<GscTokenRecord | null> {
+  const brand = await getManagedBrandById(brandId);
+  if (!brand) return null;
   const store = await getPromptStore();
-  const entries = await store.bridgeScope<GscTokenRecord>(DEFAULT_ORG_ID, SCOPE);
-  return entries[brandId] ?? null;
+  const entries = await store.bridgeScope<GscTokenRecord>(brand.organizationId, SCOPE);
+  const record = entries[brandId] ?? null;
+  // 기존 레코드에 organizationId가 없어도 읽을 수 있게 한다.
+  return record ? { ...record, organizationId: record.organizationId ?? brand.organizationId } : null;
 }
 
 export async function deleteGscToken(brandId: string): Promise<void> {
+  const brand = await getManagedBrandById(brandId);
+  if (!brand) return;
   const store = await getPromptStore();
-  await store.query("DELETE FROM bridge_entries WHERE organization_id=$1 AND scope=$2 AND entry_key=$3", [DEFAULT_ORG_ID, SCOPE, brandId]);
+  await store.query("DELETE FROM bridge_entries WHERE organization_id=$1 AND scope=$2 AND entry_key=$3", [brand.organizationId, SCOPE, brandId]);
 }

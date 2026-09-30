@@ -75,7 +75,7 @@ export default async function BrandConnectionsPage({
       )}
       {query.gsc_error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          연결에 실패했습니다: {query.gsc_error === "no_refresh_token" ? "이미 연결된 적이 있어 재동의가 필요합니다. Google 계정 설정에서 이 앱의 액세스 권한을 제거한 뒤 다시 시도하세요." : query.gsc_error}
+          연결에 실패했습니다: {gscErrorMessage(query.gsc_error, brand.url)}
         </div>
       )}
 
@@ -94,4 +94,12 @@ export default async function BrandConnectionsPage({
       />
     </div>
   );
+}
+
+function gscErrorMessage(code: string, brandUrl: string): string {
+  if (code === "no_refresh_token") return "Google에서 장기 접근 토큰을 받지 못했습니다. Google 계정 설정에서 이 앱의 액세스 권한을 제거한 뒤 다시 시도하세요.";
+  if (code === "matching_property_not_found") return `선택한 Google 계정에서 ${brandUrl}와(과) 일치하는 Search Console 속성을 찾지 못했습니다. 해당 속성에 권한이 있는 계정으로 다시 연결하세요.`;
+  if (code === "access_denied") return "Google Search Console 접근 동의가 취소됐습니다.";
+  if (code === "brand_not_found") return "연결할 브랜드를 찾지 못했습니다.";
+  return "Google 인증 또는 Search Console 조회 중 문제가 발생했습니다. 잠시 후 다시 시도하세요.";
 }
