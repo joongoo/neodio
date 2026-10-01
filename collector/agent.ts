@@ -252,8 +252,8 @@ function killChild(child: ChildProcess) {
   else child.kill("SIGTERM");
 }
 
-function runScript(job: CollectorJob, engine: CollectorEngine, keyword: string, outDir: string): Promise<number> {
-  const args = [SCRIPTS[engine], "--query", keyword, "--out", outDir];
+function runScript(job: CollectorJob, engine: CollectorEngine, keyword: string, outDir: string, extraArgs: string[] = []): Promise<number> {
+  const args = [SCRIPTS[engine], "--query", keyword, "--out", outDir, ...extraArgs];
   // 네이버도 설치된 Chrome으로 — 배포본에 Playwright 브라우저를 따로 넣지 않는다.
   if (engine === "naver" || engine === "naver-overview") args.push("--browser-channel", "chrome");
   if (engine === "naver-overview") args.push("--mode", "overview");
@@ -436,7 +436,12 @@ async function runJob(job: CollectorJob) {
       const outDir = path.join(RESULTS_DIR, job.id, `${engine}-ai`);
       mkdirSync(outDir, { recursive: true });
       const before = new Set(jsonFiles(outDir));
-      const code = await runScript(job, engine, item.keyword, outDir);
+      let code = await runScript(job, engine, item.keyword, outDir);
+      // 네이버가 캡차를 띄우면(종료 코드 3) 화면이 보이는 Chrome으로 다시 열어 사용자가 풀 때까지 기다린다.
+      if (code === 3 && !running?.cancelled && engine !== "google") {
+        appendJobLog(job, "네이버 캡차 — Chrome 창을 띄웁니다. 창에서 캡차를 풀어 주세요(최대 5분).");
+        code = await runScript(job, engine, item.keyword, outDir, ["--headed", "--captcha-wait-ms", "300000"]);
+      }
       item.results += jsonFiles(outDir).filter((n) => !before.has(n)).length;
       if (code !== 0 && !running?.cancelled) failures.push(ENGINE_SHORT[engine]);
     }

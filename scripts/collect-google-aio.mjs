@@ -126,6 +126,8 @@ async function main() {
   const outputDir = argValue("out", ".tmp/google-aio");
   const timeoutMs = Number(argValue("timeout-ms", "40000"));
   const minWaitMs = Number(argValue("min-wait-ms", "8000"));
+  const keepOpen = process.argv.includes("--keep-open");
+  const captchaWaitMs = Number(argValue("captcha-wait-ms", "300000"));
   const collectedAt = new Date().toISOString();
   const searchUrl = buildAioSearchUrl(query, { country, language });
   const artifactId = `${collectedAt.replaceAll(":", "-")}-${device}`;
@@ -155,7 +157,21 @@ async function main() {
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
     await waitForAio(page, { timeoutMs, minWaitMs });
 
-    const extracted = await page.evaluate(extractAioInPage, {});
+    let extracted = await page.evaluate(extractAioInPage, {});
+    // 캡차는 이 창(실제 Chrome)에서 사람이 풀면 검색 결과로 돌아온다 — 풀 때까지 기다렸다가 이어서 수집한다.
+    if (extracted.state === "captcha") {
+      console.error(`Google 캡차가 떴습니다. 열린 Chrome 창에서 풀어 주세요 (최대 ${Math.round(captchaWaitMs / 1000)}초 대기).`);
+      const until = Date.now() + captchaWaitMs;
+      while (extracted.state === "captcha" && Date.now() < until) {
+        await page.waitForTimeout(2_000);
+        extracted = await page.evaluate(extractAioInPage, {}).catch(() => ({ state: "captcha" }));
+      }
+      if (extracted.state !== "captcha") {
+        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+        await waitForAio(page, { timeoutMs, minWaitMs });
+        extracted = await page.evaluate(extractAioInPage, {});
+      }
+    }
     const screenshotPath = path.join(outputDir, `google-aio-${artifactId}.png`);
     const htmlPath = path.join(outputDir, `google-aio-${artifactId}.html`);
     await writeFile(htmlPath, await page.content(), "utf8");
@@ -202,14 +218,18 @@ async function main() {
   } catch (error) {
     result = { ...base, finalUrl: page.url(), status: "failed", errorKind: "error", errorMessage: error instanceof Error ? error.message : String(error) };
   } finally {
-    await context.close().catch(() => {});
-    await browser.close().catch(() => {});
-    killOwnedChrome(ownedProcess, profileDir);
+    if (!keepOpen) {
+      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
+      killOwnedChrome(ownedProcess, profileDir);
+    }
   }
 
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
   console.log(JSON.stringify({ status: result.status, errorKind: result.errorKind, sources: result.sources?.length ?? 0, outputPath }));
   if (result.status === "failed") process.exitCode = 1;
+  // 검색 창을 남겨 둔 채 스크립트만 끝낸다(CDP 연결이 끊겨도 detached Chrome은 그대로 열려 있다).
+  if (keepOpen) process.exit(process.exitCode ?? 0);
 }
 
 main().catch((error) => {

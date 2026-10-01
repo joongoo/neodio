@@ -260,6 +260,15 @@ async function collectCitations(page, overview = false) {
   return citations.slice(0, 20);
 }
 
+const CAPTCHA_EXIT_CODE = 3;
+
+async function isNaverCaptcha(page) {
+  const url = page.url();
+  if (/captcha|nidlogin|\/nid\/|abuse/i.test(url)) return true;
+  const text = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+  return /자동입력 방지|보안 ?문자|비정상적인 (접근|검색|트래픽)|captcha/i.test(text.slice(0, 3000)) && text.length < 1500;
+}
+
 async function main() {
   const query = argValue("query", DEFAULT_QUERY);
   const urlArg = argValue("url");
@@ -268,7 +277,9 @@ async function main() {
   const marketId = argValue("market-id", DEFAULT_MARKET_ID);
   const overview = argValue("mode") === "overview";
   const outputDir = argValue("out", overview ? ".tmp/naver-overview" : ".tmp/naver-ai");
-  const headed = hasFlag("headed");
+  const keepOpen = hasFlag("keep-open");
+  const captchaWaitMs = Number(argValue("captcha-wait-ms", "0"));
+  const headed = hasFlag("headed") || keepOpen;
   const timeoutMs = Number(argValue("timeout-ms", "45000"));
   const minWaitMs = Number(argValue("min-wait-ms", "18000"));
   const userDataDir = argValue("user-data-dir");
@@ -324,6 +335,20 @@ async function main() {
     } else {
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      if (await isNaverCaptcha(page)) {
+        if (!headed) {
+          // 화면 없는 실행은 캡차를 풀 수 없다 — 결과를 남기지 않고 종료 코드 3으로 알려, 수집기가 창을 띄워 다시 시도하게 한다.
+          console.error("naver captcha: headless run cannot solve it");
+          await context.close().catch(() => {});
+          process.exit(CAPTCHA_EXIT_CODE);
+        }
+        console.error(`네이버 캡차가 떴습니다. 열린 Chrome 창에서 풀어 주세요 (최대 ${Math.round((captchaWaitMs || 300_000) / 1000)}초 대기).`);
+        const until = Date.now() + (captchaWaitMs || 300_000);
+        while ((await isNaverCaptcha(page)) && Date.now() < until) await page.waitForTimeout(2_000);
+        if (await isNaverCaptcha(page)) throw new Error("naver captcha not solved in time");
+        await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      }
       if (overview) {
         await waitForOverview(page, Math.min(timeoutMs, 15_000));
       } else {
@@ -426,7 +451,10 @@ async function main() {
     console.error(JSON.stringify({ status, outputPath, error: error instanceof Error ? error.message : String(error) }, null, 2));
     process.exitCode = 1;
   } finally {
-    if (browser) {
+    if (keepOpen && !browser) {
+      console.log("--keep-open: 브라우저 창을 닫을 때까지 종료하지 않습니다.");
+      await new Promise((resolve) => context.on("close", resolve));
+    } else if (browser) {
       await browser.close();
     } else {
       await context.close();
