@@ -28,6 +28,12 @@ export function resolveChromePath() {
 export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profilePrefix, missingChromeMessage }) {
   if (explicitEndpoint) return { endpoint: explicitEndpoint, ownedProcess: null, profileDir: null };
 
+  const liveEndpoint = `http://127.0.0.1:${port}`;
+  // 이전 --keep-open 실행이 남긴 창이 그 포트를 쥐고 있으면 새 Chrome은 포트를 못 잡는다 — 남은 창을 그대로 쓴다.
+  if (await fetch(`${liveEndpoint}/json/version`).then((res) => res.ok, () => false)) {
+    return { endpoint: liveEndpoint, ownedProcess: null, profileDir: null };
+  }
+
   const chromePath = resolveChromePath();
   if (!chromePath) throw new Error(missingChromeMessage);
 
@@ -87,4 +93,12 @@ export function killOwnedChrome(ownedProcess, profileDir = null) {
     }
     // best effort; a leftover profile only costs disk space
   }
+}
+
+// 수집 중 창·탭·브라우저가 닫힌 오류인지 — 수집기가 새 창으로 다시 시도할 수 있게 구분한다.
+export const BROWSER_CLOSED_EXIT_CODE = 4;
+export function isBrowserClosedError(error) {
+  return /Target page, context or browser has been closed|Browser has been closed|browser has disconnected|Target closed|Connection closed/i.test(
+    error instanceof Error ? error.message : String(error)
+  );
 }

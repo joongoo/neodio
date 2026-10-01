@@ -3,6 +3,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { BROWSER_CLOSED_EXIT_CODE, isBrowserClosedError } from "./lib/incognito-chrome.mjs";
 
 const DEFAULT_QUERY = "B2B 통합 마케팅 솔루션 추천";
 const DEFAULT_MARKET_ID = "market-kr";
@@ -93,6 +94,16 @@ async function waitForStableText(page, timeoutMs) {
     previous = normalized;
     await page.waitForTimeout(1_000);
   }
+}
+
+function attachCloseLogging(page, context) {
+  const t0 = Date.now();
+  const log = (message) => console.error(`[keep-open +${((Date.now() - t0) / 1000).toFixed(1)}s] ${message}`);
+  page.on("close", () => log("탭이 닫혔습니다"));
+  page.on("crash", () => log("탭이 크래시했습니다"));
+  page.on("popup", (popup) => log(`팝업 열림: ${popup.url()}`));
+  context.on("close", () => log("브라우저 컨텍스트가 닫혔습니다"));
+  context.browser()?.on("disconnected", () => log("브라우저 연결이 끊겼습니다(Chrome 종료)"));
 }
 
 async function waitForAiAnswer(page, timeoutMs, minWaitMs) {
@@ -326,6 +337,8 @@ async function main() {
       (await context.newPage())
     : await context.newPage();
 
+  if (keepOpen) attachCloseLogging(page, context);
+
   let status = "success";
   let errorMessage = null;
 
@@ -418,6 +431,12 @@ async function main() {
 
     console.log(JSON.stringify({ status, outputPath, answerTextLength: rawResponse.length, citations: citations.length }, null, 2));
   } catch (error) {
+    if (isBrowserClosedError(error)) {
+      // 창이 중간에 닫혔다 — 결과를 남기지 않고 종료 코드 4로 알려 수집기가 새 창으로 다시 시도하게 한다.
+      console.error("naver browser closed during collection");
+      await browser?.close().catch(() => {});
+      process.exit(BROWSER_CLOSED_EXIT_CODE);
+    }
     status = "failed";
     const outputPath = path.join(outputDir, `${filePrefix}-${runAt.replaceAll(":", "-")}.json`);
     await writeFile(

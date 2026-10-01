@@ -366,6 +366,16 @@ function jobAioResults(job: CollectorJob): CollectorAioResult[] {
   return results;
 }
 
+async function runAioScriptWithRetry(job: CollectorJob, spec: CollectorAioSpec, task: CollectorAioSpec["tasks"][number], outDir: string): Promise<number> {
+  let code = await runAioScript(job, spec, task, outDir);
+  for (let attempt = 2; attempt <= MAX_ATTEMPTS && code === BROWSER_CLOSED_EXIT_CODE && !running?.cancelled; attempt++) {
+    appendJobLog(job, `Chrome 창이 중간에 닫혀 새 창으로 다시 시도합니다 (${attempt}/${MAX_ATTEMPTS}).`);
+    await interruptibleSleep(5_000);
+    code = await runAioScript(job, spec, task, outDir);
+  }
+  return code;
+}
+
 async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   const state = (job.aioState ??= { waitUntil: null, captcha: false });
   log(`▶ AI Overview 수집 시작 ${job.id} — ${spec.tasks.length}건`);
@@ -387,7 +397,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     appendJobLog(job, `"${task.keyword}" (${task.device}) 검색`);
     const outDir = aioTaskDir(job, index);
     mkdirSync(outDir, { recursive: true });
-    const code = await runAioScript(job, spec, task, outDir);
+    const code = await runAioScriptWithRetry(job, spec, task, outDir);
     const written = jsonFiles(outDir).length > 0;
     if (running?.cancelled) item.status = "cancelled";
     else if (!written) {
@@ -407,6 +417,36 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     saveJob(job);
   }
 
+  // 앞에서 실패한 검색은 나머지를 다 끝낸 뒤 한 번 더 시도한다.
+  for (const [index, task] of spec.tasks.entries()) {
+    const item = job.items[index];
+    if (running?.cancelled || state.captcha || item.status !== "error") continue;
+    const delay = spec.minDelayMs + Math.floor(Math.random() * (spec.maxDelayMs - spec.minDelayMs + 1));
+    state.waitUntil = Date.now() + delay;
+    saveJob(job);
+    await interruptibleSleep(delay);
+    state.waitUntil = null;
+    if (running?.cancelled) break;
+    item.status = "running";
+    item.error = null;
+    saveJob(job);
+    appendJobLog(job, `"${task.keyword}" (${task.device}) 실패 건 다시 시도`);
+    const outDir = aioTaskDir(job, index);
+    mkdirSync(outDir, { recursive: true });
+    const code = await runAioScriptWithRetry(job, spec, task, outDir);
+    if (running?.cancelled) item.status = "cancelled";
+    else if (jsonFiles(outDir).length === 0) {
+      item.status = "error";
+      item.error = code === 0 ? "결과가 남지 않았습니다." : "검색에 실패했습니다.";
+    } else {
+      item.status = "done";
+      item.results = 1;
+      const result = jobAioResults(job).find((r) => r.index === index)?.result as { errorKind?: string } | undefined;
+      if (result?.errorKind === "captcha") state.captcha = true;
+    }
+    saveJob(job);
+  }
+
   const cancelled = !!running?.cancelled;
   for (const item of job.items) if (item.status === "pending") item.status = "cancelled";
   state.waitUntil = null;
@@ -414,6 +454,25 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   job.finishedAt = new Date().toISOString();
   saveJob(job);
   log(`■ AI Overview 수집 ${cancelled ? "중단" : state.captcha ? "멈춤(캡차)" : "완료"} ${job.id}`);
+}
+
+const BROWSER_CLOSED_EXIT_CODE = 4;
+const MAX_ATTEMPTS = 3;
+
+/** 캡차(3)·창 닫힘(4)이면 사용자가 볼 수 있는 Chrome 창으로 다시 시도한다 — 최대 MAX_ATTEMPTS번. */
+async function runScriptWithRetry(job: CollectorJob, engine: CollectorEngine, keyword: string, outDir: string): Promise<number> {
+  let code = await runScript(job, engine, keyword, outDir);
+  for (let attempt = 2; attempt <= MAX_ATTEMPTS && !running?.cancelled; attempt++) {
+    if (code === 3 && engine !== "google") {
+      appendJobLog(job, "네이버 캡차 — Chrome 창을 띄웁니다. 창에서 캡차를 풀어 주세요(최대 5분).");
+      code = await runScript(job, engine, keyword, outDir, ["--headed", "--captcha-wait-ms", "300000"]);
+    } else if (code === BROWSER_CLOSED_EXIT_CODE) {
+      appendJobLog(job, `Chrome 창이 중간에 닫혀 새 창으로 다시 시도합니다 (${attempt}/${MAX_ATTEMPTS}).`);
+      await interruptibleSleep(3_000);
+      code = await runScript(job, engine, keyword, outDir, engine === "google" ? [] : ["--headed", "--captcha-wait-ms", "300000"]);
+    } else break;
+  }
+  return code;
 }
 
 async function runJob(job: CollectorJob) {
@@ -436,12 +495,7 @@ async function runJob(job: CollectorJob) {
       const outDir = path.join(RESULTS_DIR, job.id, `${engine}-ai`);
       mkdirSync(outDir, { recursive: true });
       const before = new Set(jsonFiles(outDir));
-      let code = await runScript(job, engine, item.keyword, outDir);
-      // 네이버가 캡차를 띄우면(종료 코드 3) 화면이 보이는 Chrome으로 다시 열어 사용자가 풀 때까지 기다린다.
-      if (code === 3 && !running?.cancelled && engine !== "google") {
-        appendJobLog(job, "네이버 캡차 — Chrome 창을 띄웁니다. 창에서 캡차를 풀어 주세요(최대 5분).");
-        code = await runScript(job, engine, item.keyword, outDir, ["--headed", "--captcha-wait-ms", "300000"]);
-      }
+      const code = await runScriptWithRetry(job, engine, item.keyword, outDir);
       item.results += jsonFiles(outDir).filter((n) => !before.has(n)).length;
       if (code !== 0 && !running?.cancelled) failures.push(ENGINE_SHORT[engine]);
     }

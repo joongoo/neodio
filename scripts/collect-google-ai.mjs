@@ -3,7 +3,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
-import { ensureIncognitoCdpEndpoint, killOwnedChrome } from "./lib/incognito-chrome.mjs";
+import { BROWSER_CLOSED_EXIT_CODE, ensureIncognitoCdpEndpoint, isBrowserClosedError, killOwnedChrome } from "./lib/incognito-chrome.mjs";
 
 const DEFAULT_QUERY = "B2B 마케팅 솔루션 추천";
 const DEFAULT_MARKET_ID = "market-kr";
@@ -254,6 +254,11 @@ async function main() {
 
     console.log(JSON.stringify({ status, outputPath, answerTextLength: rawResponse.length, citations: citations.length }, null, 2));
   } catch (error) {
+    if (isBrowserClosedError(error)) {
+      console.error("google browser closed during collection");
+      killOwnedChrome(ownedProcess, profileDir);
+      process.exit(BROWSER_CLOSED_EXIT_CODE);
+    }
     status = "failed";
     const outputPath = path.join(outputDir, `google-ai-${runAt.replaceAll(":", "-")}.json`);
     await writeFile(

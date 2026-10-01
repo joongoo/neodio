@@ -13,7 +13,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
-import { ensureIncognitoCdpEndpoint, killOwnedChrome } from "./lib/incognito-chrome.mjs";
+import { BROWSER_CLOSED_EXIT_CODE, ensureIncognitoCdpEndpoint, isBrowserClosedError, killOwnedChrome } from "./lib/incognito-chrome.mjs";
 import { extractAioInPage } from "./lib/aio-extract.mjs";
 
 const DEVICE_PROFILES = {
@@ -116,6 +116,20 @@ function dedupeKey(url) {
   }
 }
 
+async function applyDeviceProfile(context, page, device, localeTag) {
+  const profile = DEVICE_PROFILES[device];
+  const session = await context.newCDPSession(page);
+  await session.send("Emulation.setDeviceMetricsOverride", {
+    width: profile.viewport.width,
+    height: profile.viewport.height,
+    deviceScaleFactor: profile.deviceScaleFactor ?? 1,
+    mobile: !!profile.isMobile,
+  });
+  if (profile.userAgent) await session.send("Emulation.setUserAgentOverride", { userAgent: profile.userAgent, acceptLanguage: localeTag });
+  if (profile.hasTouch) await session.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+  await session.send("Emulation.setLocaleOverride", { locale: localeTag }).catch(() => {});
+}
+
 async function main() {
   const query = argValue("query");
   if (!query) throw new Error("--query is required");
@@ -148,8 +162,18 @@ async function main() {
   });
   const browser = await chromium.connectOverCDP(endpoint);
   const localeTag = `${language}-${country.toUpperCase()}`;
-  const context = await browser.newContext({ ...DEVICE_PROFILES[device], locale: localeTag });
+  // CDP로 붙은 Chrome은 새 컨텍스트를 만들면 닫힘·미지원 문제가 생길 수 있어, 시크릿 창의 기본 컨텍스트를 쓰고 기기 모양은 탭에 직접 입힌다.
+  const context = browser.contexts()[0] || (await browser.newContext({ locale: localeTag }));
   const page = await context.newPage();
+  await applyDeviceProfile(context, page, device, localeTag);
+  if (keepOpen) {
+    const t0 = Date.now();
+    const log = (message) => console.error(`[keep-open +${((Date.now() - t0) / 1000).toFixed(1)}s] ${message}`);
+    page.on("close", () => log("탭이 닫혔습니다"));
+    page.on("crash", () => log("탭이 크래시했습니다"));
+    context.on("close", () => log("브라우저 컨텍스트가 닫혔습니다"));
+    browser.on("disconnected", () => log("브라우저 연결이 끊겼습니다(Chrome 종료)"));
+  }
 
   let result;
   try {
@@ -216,6 +240,12 @@ async function main() {
       };
     }
   } catch (error) {
+    if (isBrowserClosedError(error)) {
+      // 창이 중간에 닫혔다 — 결과를 남기지 않고 종료 코드 4로 알려 수집기가 새 창으로 다시 시도하게 한다.
+      console.error("google browser closed during collection");
+      if (!keepOpen) killOwnedChrome(ownedProcess, profileDir);
+      process.exit(BROWSER_CLOSED_EXIT_CODE);
+    }
     result = { ...base, finalUrl: page.url(), status: "failed", errorKind: "error", errorMessage: error instanceof Error ? error.message : String(error) };
   } finally {
     if (!keepOpen) {
