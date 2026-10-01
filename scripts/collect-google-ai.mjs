@@ -194,6 +194,20 @@ async function main() {
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     }
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    // 캡차는 이 창(실제 Chrome)에서 사람이 풀면 검색 화면으로 돌아온다 — 풀 때까지 기다렸다가 이어서 수집한다.
+    const isCaptcha = () =>
+      page
+        .evaluate(() => location.pathname.startsWith("/sorry") || /unusual traffic|비정상적인 트래픽|reCAPTCHA/i.test(document.body?.innerText || ""))
+        .catch(() => true);
+    if (await isCaptcha()) {
+      const captchaWaitMs = Number(argValue("captcha-wait-ms", "300000"));
+      console.error(`Google 캡차가 떴습니다. 열린 Chrome 창에서 풀어 주세요 (최대 ${Math.round(captchaWaitMs / 1000)}초 대기).`);
+      const until = Date.now() + captchaWaitMs;
+      while ((await isCaptcha()) && Date.now() < until) await page.waitForTimeout(2_000);
+      if (await isCaptcha()) throw new Error("google captcha not solved in time");
+      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    }
     await waitForAiModeAnswer(page, timeoutMs, minWaitMs);
 
     const rawResponse = normalizeMultiline(await pickAiModeAnswerText(page));
