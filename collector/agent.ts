@@ -11,6 +11,7 @@
 // 개발: npm run collector -- run  (scripts/의 수집 스크립트를 그대로 쓴다)
 // 배포: node collector/build.mjs → dist/collector/*.zip (docs/collector.md)
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -126,7 +127,20 @@ function argValues(name: string): string[] {
 
 const jobs = new Map<string, CollectorJob>();
 const queue: string[] = [];
-let running: { jobId: string; child: ChildProcess | null; cancelled: boolean } | null = null;
+// 플랫폼별 레인 — 구글이 캡차에 막혀 있어도 네이버 수집이 계속 돌도록 레인마다 따로 한 작업씩 돈다.
+// 같은 레인 안에서는 순서대로(같은 Chrome 프로필·IP를 쓰므로 동시에 돌리면 안 된다).
+type Lane = "google" | "naver" | "crawl";
+type RunCtx = { jobId: string; lane: Lane; child: ChildProcess | null; cancelled: boolean };
+const LANES: Lane[] = ["google", "naver", "crawl"];
+const runningByLane = new Map<Lane, RunCtx>();
+const runCtx = new AsyncLocalStorage<RunCtx>();
+const cur = () => runCtx.getStore() ?? null;
+function laneOf(job: CollectorJob): Lane {
+  if (job.kind === "sitemap-crawl") return "crawl";
+  if (job.kind === "aio-collect") return "google";
+  return job.engines.includes("google") ? "google" : "naver";
+}
+const runningCtxs = () => [...runningByLane.values()];
 
 function jobFile(id: string) {
   return path.join(JOBS_DIR, `${id}.json`);
@@ -263,7 +277,7 @@ function runScript(job: CollectorJob, engine: CollectorEngine, keyword: string, 
       env: { ...process.env, NEODIO_COLLECTION_JOB_ID: job.id },
       windowsHide: true,
     });
-    if (running) running.child = child;
+    { const r = cur(); if (r) r.child = child; }
     child.stdout?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
     child.stderr?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
     child.on("error", (error) => {
@@ -271,7 +285,7 @@ function runScript(job: CollectorJob, engine: CollectorEngine, keyword: string, 
       resolve(1);
     });
     child.on("close", (code) => {
-      if (running) running.child = null;
+      { const r = cur(); if (r) r.child = null; }
       resolve(code ?? 1);
     });
   });
@@ -284,7 +298,7 @@ function runCrawlScript(job: CollectorJob, spec: CollectorCrawlSpec, outDir: str
   else if (spec.sitemapUrl) args.push("--sitemap", spec.sitemapUrl);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, { cwd: WORK_DIR, env: { ...process.env }, windowsHide: true });
-    if (running) running.child = child;
+    { const r = cur(); if (r) r.child = child; }
     child.stdout?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
     child.stderr?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
     child.on("error", (error) => {
@@ -292,7 +306,7 @@ function runCrawlScript(job: CollectorJob, spec: CollectorCrawlSpec, outDir: str
       resolve(1);
     });
     child.on("close", (code) => {
-      if (running) running.child = null;
+      { const r = cur(); if (r) r.child = null; }
       resolve(code ?? 1);
     });
   });
@@ -309,12 +323,12 @@ async function runCrawlJob(job: CollectorJob, spec: CollectorCrawlSpec) {
   const code = await runCrawlScript(job, spec, outDir);
   const results = jobCrawlResults(job);
   item.results = results.reduce((sum, crawl) => sum + crawl.urls.length, 0);
-  if (running?.cancelled) item.status = "cancelled";
+  if (cur()?.cancelled) item.status = "cancelled";
   else if (code !== 0 || results.length === 0) {
     item.status = "error";
     item.error = "크롤에 실패했습니다. Chrome이 설치돼 있고 사이트에 접속되는지 확인하세요.";
   } else item.status = "done";
-  const cancelled = !!running?.cancelled;
+  const cancelled = !!cur()?.cancelled;
   job.status = cancelled ? "cancelled" : "done";
   job.finishedAt = new Date().toISOString();
   saveJob(job);
@@ -324,7 +338,7 @@ async function runCrawlJob(job: CollectorJob, spec: CollectorCrawlSpec) {
 /** 검색 사이에 쉰다 — 중단 요청을 1초 안에 알아채도록 잘게 나눠 잔다. */
 async function interruptibleSleep(ms: number) {
   const until = Date.now() + ms;
-  while (Date.now() < until && !running?.cancelled) await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())));
+  while (Date.now() < until && !cur()?.cancelled) await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())));
 }
 
 /** Google AI Overview 검색 한 건 — 설치된 Chrome을 시크릿으로 띄워 검색하고 결과 JSON을 outDir에 남긴다. */
@@ -332,7 +346,7 @@ function runAioScript(job: CollectorJob, spec: CollectorAioSpec, task: Collector
   const args = [AIO_SCRIPT, "--query", task.keyword, "--device", task.device, "--country", spec.country, "--language", spec.language, "--out", outDir];
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, { cwd: WORK_DIR, env: { ...process.env }, windowsHide: true });
-    if (running) running.child = child;
+    { const r = cur(); if (r) r.child = child; }
     child.stdout?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
     child.stderr?.on("data", (chunk) => appendJobLog(job, chunk.toString()));
     child.on("error", (error) => {
@@ -340,7 +354,7 @@ function runAioScript(job: CollectorJob, spec: CollectorAioSpec, task: Collector
       resolve(1);
     });
     child.on("close", (code) => {
-      if (running) running.child = null;
+      { const r = cur(); if (r) r.child = null; }
       resolve(code ?? 1);
     });
   });
@@ -368,7 +382,7 @@ function jobAioResults(job: CollectorJob): CollectorAioResult[] {
 
 async function runAioScriptWithRetry(job: CollectorJob, spec: CollectorAioSpec, task: CollectorAioSpec["tasks"][number], outDir: string): Promise<number> {
   let code = await runAioScript(job, spec, task, outDir);
-  for (let attempt = 2; attempt <= MAX_ATTEMPTS && code === BROWSER_CLOSED_EXIT_CODE && !running?.cancelled; attempt++) {
+  for (let attempt = 2; attempt <= MAX_ATTEMPTS && code === BROWSER_CLOSED_EXIT_CODE && !cur()?.cancelled; attempt++) {
     appendJobLog(job, `Chrome 창이 중간에 닫혀 새 창으로 다시 시도합니다 (${attempt}/${MAX_ATTEMPTS}).`);
     await interruptibleSleep(5_000);
     code = await runAioScript(job, spec, task, outDir);
@@ -382,7 +396,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   mkdirSync(WORK_DIR, { recursive: true });
 
   for (const [index, task] of spec.tasks.entries()) {
-    if (running?.cancelled) break;
+    if (cur()?.cancelled) break;
     const item = job.items[index];
     if (index > 0) {
       const delay = spec.minDelayMs + Math.floor(Math.random() * (spec.maxDelayMs - spec.minDelayMs + 1));
@@ -390,7 +404,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
       saveJob(job);
       await interruptibleSleep(delay);
       state.waitUntil = null;
-      if (running?.cancelled) break;
+      if (cur()?.cancelled) break;
     }
     if (googleCountToday() >= GOOGLE_DAILY_CAP) {
       item.status = "error";
@@ -406,7 +420,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     const code = await runAioScriptWithRetry(job, spec, task, outDir);
     addGoogleCount(1);
     const written = jsonFiles(outDir).length > 0;
-    if (running?.cancelled) item.status = "cancelled";
+    if (cur()?.cancelled) item.status = "cancelled";
     else if (!written) {
       item.status = "error";
       item.error = code === 0 ? "결과가 남지 않았습니다." : "검색에 실패했습니다.";
@@ -427,13 +441,13 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   // 앞에서 실패한 검색은 나머지를 다 끝낸 뒤 한 번 더 시도한다.
   for (const [index, task] of spec.tasks.entries()) {
     const item = job.items[index];
-    if (running?.cancelled || state.captcha || item.status !== "error" || googleCountToday() >= GOOGLE_DAILY_CAP) continue;
+    if (cur()?.cancelled || state.captcha || item.status !== "error" || googleCountToday() >= GOOGLE_DAILY_CAP) continue;
     const delay = spec.minDelayMs + Math.floor(Math.random() * (spec.maxDelayMs - spec.minDelayMs + 1));
     state.waitUntil = Date.now() + delay;
     saveJob(job);
     await interruptibleSleep(delay);
     state.waitUntil = null;
-    if (running?.cancelled) break;
+    if (cur()?.cancelled) break;
     item.status = "running";
     item.error = null;
     saveJob(job);
@@ -441,7 +455,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     const outDir = aioTaskDir(job, index);
     mkdirSync(outDir, { recursive: true });
     const code = await runAioScriptWithRetry(job, spec, task, outDir);
-    if (running?.cancelled) item.status = "cancelled";
+    if (cur()?.cancelled) item.status = "cancelled";
     else if (jsonFiles(outDir).length === 0) {
       item.status = "error";
       item.error = code === 0 ? "결과가 남지 않았습니다." : "검색에 실패했습니다.";
@@ -454,7 +468,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     saveJob(job);
   }
 
-  const cancelled = !!running?.cancelled;
+  const cancelled = !!cur()?.cancelled;
   for (const item of job.items) if (item.status === "pending") item.status = "cancelled";
   state.waitUntil = null;
   job.status = cancelled ? "cancelled" : "done";
@@ -493,7 +507,7 @@ const MAX_ATTEMPTS = 3;
 /** 캡차(3)·창 닫힘(4)이면 사용자가 볼 수 있는 Chrome 창으로 다시 시도한다 — 최대 MAX_ATTEMPTS번. */
 async function runScriptWithRetry(job: CollectorJob, engine: CollectorEngine, keyword: string, outDir: string): Promise<number> {
   let code = await runScript(job, engine, keyword, outDir);
-  for (let attempt = 2; attempt <= MAX_ATTEMPTS && !running?.cancelled; attempt++) {
+  for (let attempt = 2; attempt <= MAX_ATTEMPTS && !cur()?.cancelled; attempt++) {
     if (code === 3 && engine !== "google") {
       appendJobLog(job, "네이버 캡차 — Chrome 창을 띄웁니다. 창에서 캡차를 풀어 주세요(최대 5분).");
       code = await runScript(job, engine, keyword, outDir, ["--headed", "--captcha-wait-ms", "300000"]);
@@ -516,11 +530,11 @@ async function runJob(job: CollectorJob) {
   let hasRunSearch = false;
 
   for (const item of job.items) {
-    if (running?.cancelled) break;
+    if (cur()?.cancelled) break;
     item.status = "running";
     const failures: string[] = [];
     for (const engine of job.engines) {
-      if (running?.cancelled) break;
+      if (cur()?.cancelled) break;
       item.engine = engine;
       saveJob(job);
       appendJobLog(job, `"${item.keyword}" ${ENGINE_NAME[engine]} 수집`);
@@ -535,16 +549,16 @@ async function runJob(job: CollectorJob) {
       if (hasRunSearch) {
         const [min, max] = ENGINE_DELAY_MS[engine] ?? [0, 0];
         if (max > 0) await interruptibleSleep(min + Math.floor(Math.random() * (max - min + 1)));
-        if (running?.cancelled) break;
+        if (cur()?.cancelled) break;
       }
       hasRunSearch = true;
       const code = await runScriptWithRetry(job, engine, item.keyword, outDir);
       if (engine === "google") addGoogleCount(1);
       item.results += jsonFiles(outDir).filter((n) => !before.has(n)).length;
-      if (code !== 0 && !running?.cancelled) failures.push(ENGINE_SHORT[engine]);
+      if (code !== 0 && !cur()?.cancelled) failures.push(ENGINE_SHORT[engine]);
     }
     item.engine = null;
-    if (running?.cancelled) item.status = "cancelled";
+    if (cur()?.cancelled) item.status = "cancelled";
     else if (failures.length > 0) {
       item.status = "error";
       item.error = `${failures.join("·")} 수집 실패`;
@@ -552,7 +566,7 @@ async function runJob(job: CollectorJob) {
     saveJob(job);
   }
 
-  const cancelled = !!running?.cancelled;
+  const cancelled = !!cur()?.cancelled;
   for (const item of job.items) if (item.status === "pending") item.status = "cancelled";
   job.status = cancelled ? "cancelled" : "done";
   job.finishedAt = new Date().toISOString();
@@ -561,23 +575,30 @@ async function runJob(job: CollectorJob) {
 }
 
 async function processQueue() {
-  if (running) return;
-  const next = queue.shift();
-  if (!next) return;
-  const job = jobs.get(next);
-  if (!job || job.status !== "queued") return processQueue();
-  running = { jobId: job.id, child: null, cancelled: false };
-  try {
-    await runJob(job);
-  } catch (error) {
-    appendJobLog(job, `수집기 오류: ${error instanceof Error ? error.message : String(error)}`);
-    job.status = "cancelled";
-    job.finishedAt = new Date().toISOString();
-    saveJob(job);
-  } finally {
-    running = null;
+  for (const lane of LANES) {
+    if (runningByLane.has(lane)) continue;
+    const index = queue.findIndex((id) => {
+      const job = jobs.get(id);
+      return !!job && job.status === "queued" && laneOf(job) === lane;
+    });
+    if (index < 0) continue;
+    const job = jobs.get(queue.splice(index, 1)[0])!;
+    const ctx: RunCtx = { jobId: job.id, lane, child: null, cancelled: false };
+    runningByLane.set(lane, ctx);
+    void runCtx.run(ctx, async () => {
+      try {
+        await runJob(job);
+      } catch (error) {
+        appendJobLog(job, `수집기 오류: ${error instanceof Error ? error.message : String(error)}`);
+        job.status = "cancelled";
+        job.finishedAt = new Date().toISOString();
+        saveJob(job);
+      } finally {
+        runningByLane.delete(lane);
+      }
+      void processQueue();
+    });
   }
-  void processQueue();
 }
 
 function cancelJob(job: CollectorJob): boolean {
@@ -588,9 +609,10 @@ function cancelJob(job: CollectorJob): boolean {
     saveJob(job);
     return true;
   }
-  if (job.status === "running" && running?.jobId === job.id) {
-    running.cancelled = true;
-    if (running.child) killChild(running.child);
+  const ctx = runningCtxs().find((c) => c.jobId === job.id);
+  if (job.status === "running" && ctx) {
+    ctx.cancelled = true;
+    if (ctx.child) killChild(ctx.child);
     return true;
   }
   return false;
@@ -629,7 +651,7 @@ function jobCrawlResults(job: CollectorJob): CollectorCrawlResult[] {
 }
 
 function status(): CollectorAgentStatus {
-  return { app: "neodio-collector", version: COLLECTOR_VERSION, platform: platformId(), chrome: !!resolveChromePath(), runningJobId: running?.jobId ?? null };
+  return { app: "neodio-collector", version: COLLECTOR_VERSION, platform: platformId(), chrome: !!resolveChromePath(), runningJobId: runningCtxs()[0]?.jobId ?? null };
 }
 
 // ---------- HTTP (127.0.0.1 전용) ----------
@@ -774,7 +796,7 @@ async function run() {
   });
   shutdown = () => {
     log("종료 요청을 받았습니다.");
-    if (running) cancelJob(jobs.get(running.jobId)!);
+    for (const ctx of runningCtxs()) cancelJob(jobs.get(ctx.jobId)!);
     server.close();
     setTimeout(() => process.exit(0), 1500).unref();
   };

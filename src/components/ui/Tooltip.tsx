@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode, useId, useState } from "react";
+import { ReactNode, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -15,13 +16,26 @@ interface TooltipProps {
 export function Tooltip({ text, children, className }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const anchor = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // 표 등 overflow가 있는 부모 안에서도 잘리지 않게 body에 고정 위치로 그린다.
+  function show() {
+    const rect = anchor.current?.getBoundingClientRect();
+    if (rect) {
+      const half = 128;
+      setPos({ left: Math.min(Math.max(rect.left + rect.width / 2, half + 8), window.innerWidth - half - 8), top: rect.top });
+    }
+    setOpen(true);
+  }
 
   return (
     <span
+      ref={anchor}
       className={cn("relative inline-flex", className)}
-      onMouseEnter={() => setOpen(true)}
+      onMouseEnter={show}
       onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
+      onFocus={show}
       onBlur={() => setOpen(false)}
     >
       <button
@@ -31,17 +45,21 @@ export function Tooltip({ text, children, className }: TooltipProps) {
       >
         {children ?? <Info size={14} />}
       </button>
-      <span
-        role="tooltip"
-        id={id}
-        className={cn(
-          "pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 w-64 -translate-x-1/2 rounded-lg bg-slate-800 px-3 py-2 text-xs leading-relaxed text-white shadow-lg transition-opacity",
-          open ? "opacity-100" : "opacity-0"
+      {pos &&
+        createPortal(
+          <span
+            role="tooltip"
+            id={id}
+            style={{ left: pos.left, top: pos.top - 8 }}
+            className={cn(
+              "pointer-events-none fixed z-[100] w-64 -translate-x-1/2 -translate-y-full rounded-lg bg-slate-800 px-3 py-2 text-xs leading-relaxed text-white shadow-lg transition-opacity",
+              open ? "opacity-100" : "opacity-0"
+            )}
+          >
+            {text}
+          </span>,
+          document.body
         )}
-      >
-        {text}
-        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
-      </span>
     </span>
   );
 }

@@ -14,12 +14,11 @@ test("counts selected prompts per saved surface", () => {
   assert.deepEqual(countBySurface(rows), { "google-aio": 2, "google-ai-mode": 3, "naver-aio": 0, "naver-ai": 3, gemini: 0 });
 });
 
-test("steps follow each prompt's own surfaces: engine combinations are grouped, AIO goes last", () => {
+test("steps are lane-pure (naver / google AI mode / AIO) so they can run at the same time", () => {
   const all = new Set(["naver-ai", "google-ai-mode", "google-aio"] as const);
   assert.deepEqual(buildCollectSteps(rows, all), [
-    { kind: "ai", engines: ["naver", "google"], keywords: ["A", "E"] },
-    { kind: "ai", engines: ["naver"], keywords: ["B"] },
-    { kind: "ai", engines: ["google"], keywords: ["C"] },
+    { kind: "ai", engines: ["naver"], keywords: ["A", "B", "E"] },
+    { kind: "ai", engines: ["google"], keywords: ["A", "C", "E"] },
     { kind: "aio", promptIds: ["pc", "pd"] },
   ]);
 });

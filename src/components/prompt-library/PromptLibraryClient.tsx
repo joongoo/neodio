@@ -22,6 +22,7 @@ import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLi
 import { GeminiCollectModal } from "@/components/prompt-library/GeminiCollectModal";
 import { Modal } from "@/components/ui/Modal";
 import { BulkCollectionModal } from "@/components/prompt-library/BulkCollectionModal";
+import { ParallelCollectModal } from "./ParallelCollectModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
@@ -251,10 +252,11 @@ export function PromptLibraryClient({
 
   // 선택한 프롬프트 중 구글AIO가 켜진 것 — AIO 수집 대상.
   const selectedRows = rows.filter((r) => selected.has(r.id));
-  const step = queue[0];
+  const parallel = Boolean(collectionAgent && brandId);
+  const step = parallel ? undefined : queue[0];
   // 단계 창을 닫을 때: 끝까지 수집해 반영했으면 다음 단계로, 중간에 닫았으면 남은 단계를 모두 접는다.
   function finishStep() {
-    if (stepDoneRef.current && queue.length > 1) {
+    if (!parallel && stepDoneRef.current && queue.length > 1) {
       stepDoneRef.current = false;
       setQueue(queue.slice(1));
       return;
@@ -507,6 +509,18 @@ export function PromptLibraryClient({
             stepDoneRef.current = false;
             setQueue(buildCollectSteps(selectedRows, enabled));
           }}
+        />
+      )}
+      {parallel && collectionAgent && queue.length > 0 && (
+        <ParallelCollectModal
+          steps={queue}
+          orgName={collectionAgent.orgName}
+          brandId={brandId}
+          downloadPlatforms={collectionAgent.downloadPlatforms}
+          onDone={() => {
+            stepDoneRef.current = true;
+          }}
+          onClose={finishStep}
         />
       )}
       {step?.kind === "ai" &&
