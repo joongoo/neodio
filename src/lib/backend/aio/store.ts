@@ -46,6 +46,18 @@ export async function listAioKeywords(brandId: string): Promise<AioKeyword[]> {
   return rows.map((row) => ({ id: row.id, keyword: row.keyword, group: row.keyword_group, createdAt: row.created_at }));
 }
 
+// listAioKeywords와 달리 status 무관하게 전부 돈다 — 과거 수집 로그에 키워드
+// 텍스트를 붙이는 용도라, 이후 추적을 중단(archived)한 키워드의 지난 기록도
+// 텍스트가 비어 보이면 안 된다.
+export async function allAioKeywordTexts(brandId: string): Promise<Map<string, string>> {
+  const rows = await (await store()).query<{ id: string; keyword: string }>(
+    `SELECT k.id,coalesce(p.text,k.keyword) AS keyword FROM aio_keywords k
+     LEFT JOIN prompts p ON p.id=k.prompt_id WHERE k.brand_id=$1`,
+    [brandId]
+  );
+  return new Map(rows.map((row) => [row.id, row.keyword]));
+}
+
 /** 프롬프트 ID에 이어진 활성 AIO 수집 대상(키워드) ID — 프롬프트 라이브러리에서 고른 프롬프트를 AIO로 수집할 때 쓴다. */
 export async function aioKeywordIdsForPrompts(brandId: string, promptIds: string[]): Promise<string[]> {
   if (promptIds.length === 0) return [];

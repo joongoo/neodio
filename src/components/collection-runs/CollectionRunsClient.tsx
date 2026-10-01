@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { CollectionRunForm } from "@/components/collection-runs/CollectionRunForm";
 import { BrandSeed } from "@/lib/db";
 import { ProcessedPromptRuns } from "@/lib/backend/processing";
-import { CollectedRunFile, formatKst, isBotBlocked } from "@/lib/backend/collectionRunsTypes";
+import { AioLogRow, CollectedRunFile, formatKst, isBotBlocked } from "@/lib/backend/collectionRunsTypes";
 import { useRouter } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
 
@@ -42,21 +42,45 @@ function StatusBadge({ file }: { file: CollectedRunFile }) {
   return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
 }
 
-function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColumn<CollectedRunFile>[] {
+function AioStatusBadge({ row }: { row: AioLogRow }) {
+  if (row.status === "failed") {
+    return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
+  }
+  if (!row.aioPresent) {
+    return <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-bold text-neutral-500">AIO 미노출</span>;
+  }
+  return <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">성공</span>;
+}
+
+// 구글AIO(aio_observations)는 prompt_runs와 저장 구조가 달라서 같은 컬럼으로
+// 못 그린다 — "수집 실행 목록"에 섞어 보여주되, 행마다 어느 쪽인지 구분해서
+// 렌더링한다. 상세(원문/인용)는 CollectedRunFile만 있고, AIO는 'YouTube
+// AIO 인용' 화면으로 링크만 건다.
+type LogRow = { kind: "prompt"; file: CollectedRunFile } | { kind: "aio"; row: AioLogRow };
+
+function logRowId(row: LogRow): string {
+  return row.kind === "prompt" ? `${row.file.dir}/${row.file.filename}` : `aio/${row.row.id}`;
+}
+
+function logRowRunAt(row: LogRow): string {
+  return row.kind === "prompt" ? row.file.promptRun.runAt : row.row.runAt;
+}
+
+function runColumns(onAnalyze: (file: CollectedRunFile) => void, aioHref: (keywordId: string) => string): DataTableColumn<LogRow>[] {
   return [
     {
       key: "runAt",
       label: "수집 시각 (KST)",
       width: "w-[170px]",
-      render: (f) => <span className="text-neutral-700">{formatKst(f.promptRun.runAt)}</span>,
+      render: (r) => <span className="text-neutral-700">{formatKst(logRowRunAt(r))}</span>,
     },
     {
       key: "engine",
       label: "엔진",
       width: "w-[150px]",
-      render: (f) => (
+      render: (r) => (
         <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
-          {engineLabel(f.promptRun.rawMetadata)}
+          {r.kind === "aio" ? "구글AIO" : engineLabel(r.file.promptRun.rawMetadata)}
         </span>
       ),
     },
@@ -64,50 +88,66 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
       key: "query",
       label: "키워드",
       width: "w-[140px]",
-      render: (f) => <span className="font-medium text-neutral-800">{f.promptRun.rawMetadata.query}</span>,
+      render: (r) => <span className="font-medium text-neutral-800">{r.kind === "aio" ? r.row.keyword : r.file.promptRun.rawMetadata.query}</span>,
     },
-    { key: "status", label: "상태", width: "w-[110px]", render: (f) => <StatusBadge file={f} /> },
+    {
+      key: "status",
+      label: "상태",
+      width: "w-[110px]",
+      render: (r) => (r.kind === "aio" ? <AioStatusBadge row={r.row} /> : <StatusBadge file={r.file} />),
+    },
     {
       key: "length",
       label: "답변 길이",
       width: "w-[90px]",
-      render: (f) => f.promptRun.rawMetadata.answerTextLength ?? f.promptRun.rawResponse.length,
+      render: (r) => (r.kind === "aio" ? "—" : (r.file.promptRun.rawMetadata.answerTextLength ?? r.file.promptRun.rawResponse.length)),
     },
     {
       key: "citations",
       label: "인용 수",
       width: "w-[80px]",
-      render: (f) => f.promptRun.rawMetadata.citations?.length ?? 0,
+      render: (r) => (r.kind === "aio" ? "—" : (r.file.promptRun.rawMetadata.citations?.length ?? 0)),
     },
     {
       key: "category",
       label: "카테고리",
       width: "w-[130px]",
-      render: (f) =>
-        f.promptRun.rawMetadata.category ? (
+      render: (r) => {
+        if (r.kind === "aio") return <span className="text-[11px] text-neutral-400">—</span>;
+        return r.file.promptRun.rawMetadata.category ? (
           <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-            {f.promptRun.rawMetadata.category}
+            {r.file.promptRun.rawMetadata.category}
           </span>
         ) : (
           <span className="text-[11px] text-neutral-400">미분류</span>
-        ),
+        );
+      },
     },
     {
       key: "analyze",
       label: "",
-      width: "w-[80px]",
-      render: (f) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAnalyze(f);
-          }}
-          className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
-        >
-          분석
-        </button>
-      ),
+      width: "w-[90px]",
+      render: (r) =>
+        r.kind === "aio" ? (
+          <a
+            href={aioHref(r.row.keywordId)}
+            onClick={(e) => e.stopPropagation()}
+            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-50"
+          >
+            상세보기
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAnalyze(r.file);
+            }}
+            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+          >
+            분석
+          </button>
+        ),
     },
   ];
 }
@@ -147,11 +187,14 @@ function RunDetail({ file }: { file: CollectedRunFile }) {
 
 export function CollectionRunsClient({
   runFiles,
+  aioRows = [],
   processed,
   brands,
   categories,
 }: {
   runFiles: CollectedRunFile[];
+  /** 구글AIO 최근 실행 — 상세 저장 구조가 달라 가벼운 요약 행으로만 섞는다. */
+  aioRows?: AioLogRow[];
   processed: ProcessedPromptRuns;
   brands: BrandSeed[];
   categories: string[];
@@ -163,12 +206,21 @@ export function CollectionRunsClient({
   const ownBrand = brands.find((b) => b.isOwnBrand);
   const ownMentions = processed.mentions.filter((m) => m.brandId === ownBrand?.id && m.isPresent);
   const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
-  const columns = runColumns((file) => setAnalyzingFile(file));
+  const columns = runColumns(
+    (file) => setAnalyzingFile(file),
+    (keywordId) => `${tenantBase}/youtube-aio/${keywordId}`
+  );
 
-  const filteredRunFiles = runFiles.filter((f) => {
+  const allRows: LogRow[] = [
+    ...runFiles.map((file): LogRow => ({ kind: "prompt", file })),
+    ...aioRows.map((row): LogRow => ({ kind: "aio", row })),
+  ].sort((a, b) => logRowRunAt(b).localeCompare(logRowRunAt(a)));
+
+  const filteredRows = allRows.filter((r) => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
-    const { rawMetadata } = f.promptRun;
+    if (r.kind === "aio") return r.row.keyword.toLowerCase().includes(q) || "구글aio".includes(q);
+    const { rawMetadata } = r.file.promptRun;
     return (
       (rawMetadata.query ?? "").toLowerCase().includes(q) ||
       engineLabel(rawMetadata).toLowerCase().includes(q) ||
@@ -182,7 +234,7 @@ export function CollectionRunsClient({
       <div>
         <h1 className="text-2xl font-semibold text-neutral-900">수집 로그</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          네이버 AI검색·Google AI 모드 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai`)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다.
+          네이버 AI검색·Google AI 모드 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai`)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다. 구글AIO는 최근 실행만 요약으로 함께 보여주고, 상세는 &apos;YouTube AIO 인용&apos; 화면으로 연결됩니다.
         </p>
       </div>
 
@@ -190,14 +242,14 @@ export function CollectionRunsClient({
 
       <div className="h-px w-full bg-neutral-200" />
 
-      {runFiles.length === 0 ? (
+      {allRows.length === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
           아직 수집된 실행이 없습니다. 위에서 키워드를 입력해 수집을 시작해 보세요.
         </p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <SimpleStatCard label="수집 실행 수" value={runFiles.length} tooltip="지금까지 저장된 수집 실행 파일 수입니다." />
+            <SimpleStatCard label="수집 실행 수" value={allRows.length} tooltip="지금까지 저장된 수집 실행(구글AIO 포함) 수입니다." />
             <SimpleStatCard
               label="성공한 실행"
               value={runFiles.filter((f) => f.promptRun.status === "success" && !isBotBlocked(f.promptRun)).length}
@@ -209,21 +261,29 @@ export function CollectionRunsClient({
 
           <TablePanel
             title="수집 실행 목록"
-            description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
-            count={filteredRunFiles.length}
-            total={runFiles.length}
+            description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다. 구글AIO는 '상세보기'로 YouTube AIO 인용 화면에서 확인하세요."
+            count={filteredRows.length}
+            total={allRows.length}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="키워드/엔진/카테고리 검색"
           >
-            {filteredRunFiles.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p>
             ) : (
               <DataTable
                 columns={columns}
-                rows={filteredRunFiles}
-                getRowId={(f) => `${f.dir}/${f.filename}`}
-                renderExpanded={(f) => <RunDetail file={f} />}
+                rows={filteredRows}
+                getRowId={logRowId}
+                renderExpanded={(r) =>
+                  r.kind === "prompt" ? (
+                    <RunDetail file={r.file} />
+                  ) : (
+                    <p className="text-xs text-neutral-500">
+                      구글AIO는 인용·근거 문장을 &apos;YouTube AIO 인용&apos; 화면에서 확인할 수 있습니다 — 위 &apos;상세보기&apos;를 눌러주세요.
+                    </p>
+                  )
+                }
               />
             )}
           </TablePanel>

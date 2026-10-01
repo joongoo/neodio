@@ -58,3 +58,17 @@ export function formatKst(iso: string): string {
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
+
+// 구글AIO(aio_observations)는 prompt_runs와 저장 구조가 완전히 달라서
+// CollectedRunFile로 못 표현한다 — 수집 로그에 "섞어" 보여주기 위한
+// 가벼운 전용 행. 자세한 인용 정보는 여기 없고 'YouTube AIO 인용'
+// 화면의 키워드 상세로 링크만 건다.
+export interface AioLogRow {
+  id: string;
+  keywordId: string;
+  keyword: string;
+  runAt: string;
+  status: "success" | "failed";
+  /** AIO 자체가 떴는지 — status가 success여도 그 검색엔 AIO 블록이 안 떴을 수 있다. */
+  aioPresent: boolean;
+}
