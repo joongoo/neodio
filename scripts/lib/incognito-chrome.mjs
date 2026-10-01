@@ -25,7 +25,7 @@ export function resolveChromePath() {
 // Spawns a fresh, disposable incognito Chrome with a CDP debug port and
 // waits for it to come up. Returns the caller's own endpoint untouched when
 // one is given (an already-open debug session).
-export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profilePrefix, missingChromeMessage }) {
+export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profilePrefix, missingChromeMessage, proxy = null, persistentProfileDir = null }) {
   if (explicitEndpoint) return { endpoint: explicitEndpoint, ownedProcess: null, profileDir: null };
 
   const liveEndpoint = `http://127.0.0.1:${port}`;
@@ -39,12 +39,13 @@ export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profi
 
   // Absolute on purpose: Chrome on Windows doesn't resolve a relative
   // --user-data-dir against the spawning cwd, and never opens the debug port.
-  const profileDir = path.resolve(".tmp", `${profilePrefix}-${Date.now()}`);
+  // persistentProfileDir가 있으면 검색마다 지우지 않는 전용 프로필로 띄운다 — 캡차를 푼 쿠키가 남아 다음 검색에서 다시 걸리지 않는다.
+  const profileDir = persistentProfileDir ? path.resolve(persistentProfileDir) : path.resolve(".tmp", `${profilePrefix}-${Date.now()}`);
   mkdirSync(profileDir, { recursive: true });
 
   const child = spawn(
     chromePath,
-    ["--incognito", `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`, "about:blank"],
+    [...(persistentProfileDir ? ["--no-first-run", "--no-default-browser-check"] : ["--incognito"]), `--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`, ...(proxy ? [`--proxy-server=${proxy}`] : []), "about:blank"],
     { detached: true, stdio: "ignore" }
   );
   child.unref();
@@ -54,7 +55,7 @@ export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profi
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`${endpoint}/json/version`);
-      if (res.ok) return { endpoint, ownedProcess: child, profileDir };
+      if (res.ok) return { endpoint, ownedProcess: child, profileDir: persistentProfileDir ? null : profileDir };
     } catch {
       // Chrome still starting up
     }
@@ -101,4 +102,10 @@ export function isBrowserClosedError(error) {
   return /Target page, context or browser has been closed|Browser has been closed|browser has disconnected|Target closed|Connection closed/i.test(
     error instanceof Error ? error.message : String(error)
   );
+}
+
+// 기기별 전용 Chrome 프로필 위치 — 수집기 설치 폴더 아래에 둔다.
+export function chromeProfileDir(device) {
+  const home = process.env.NEODIO_COLLECTOR_HOME || path.join(process.env.HOME || process.env.USERPROFILE || ".", ".neodio-collector");
+  return path.join(home, `chrome-profile-${device}`);
 }

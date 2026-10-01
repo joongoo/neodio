@@ -111,6 +111,8 @@ export interface AioOverviewPageData {
   baseDate: string | null;
   totalKeywords: number;
   overview: AioOverview;
+  /** 설정된 기기마다의 현황 — 기기별 비교 카드용. */
+  deviceSummaries: { device: AioDevice; overview: AioOverview }[];
 }
 
 export async function loadAioOverviewPage(params: {
@@ -130,8 +132,11 @@ export async function loadAioOverviewPage(params: {
 
   const keywords = ctx.keywords.filter((k) => group === "all" || k.group === group);
   // 7일 변화 계산을 위해 기간보다 1주 더 읽는다.
-  const observations = (await ctx.loadObservations(addDays(ctx.today, -(weeks + 1) * 7))).filter((o) => o.device === device);
-  const overview = buildAioOverview({ keywords, observations, today: ctx.today, weeks, optimizationDate: baseDate });
+  const allObservations = await ctx.loadObservations(addDays(ctx.today, -(weeks + 1) * 7));
+  const overviewFor = (d: AioDevice) =>
+    buildAioOverview({ keywords, observations: allObservations.filter((o) => o.device === d), today: ctx.today, weeks, optimizationDate: baseDate });
+  const overview = overviewFor(device);
+  const deviceSummaries = ctx.settings.devices.map((d) => ({ device: d, overview: d === device ? overview : overviewFor(d) }));
   // 인용된 영상의 채널 이름은 영상 캐시에서 채운다 — 표에서 "어느 채널의 영상인지"를 보여 주려고.
   const citedIds = [...new Set(overview.rows.flatMap((row) => row.youtubeVideos.map((v) => v.videoId)))];
   const videos = citedIds.length > 0 ? await ctx.loadVideos(citedIds) : new Map<string, YoutubeVideoMeta>();
@@ -152,6 +157,7 @@ export async function loadAioOverviewPage(params: {
     baseDate,
     totalKeywords: ctx.keywords.length,
     overview,
+    deviceSummaries,
   };
 }
 

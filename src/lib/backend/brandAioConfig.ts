@@ -8,7 +8,7 @@ import { YoutubeChannelInfo } from "./youtube";
 export const DEFAULT_AIO_SETTINGS: BrandAioSettings = {
   country: "kr",
   language: "ko",
-  devices: ["mobile"],
+  devices: ["mobile", "desktop"],
   optimizationDate: null,
   saved: false,
 };

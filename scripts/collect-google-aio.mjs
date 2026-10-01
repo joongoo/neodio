@@ -13,7 +13,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
-import { BROWSER_CLOSED_EXIT_CODE, ensureIncognitoCdpEndpoint, isBrowserClosedError, killOwnedChrome } from "./lib/incognito-chrome.mjs";
+import { lookAround, proxyFromArgs, warmUp } from "./lib/human.mjs";
+import { BROWSER_CLOSED_EXIT_CODE, chromeProfileDir, ensureIncognitoCdpEndpoint, isBrowserClosedError, killOwnedChrome } from "./lib/incognito-chrome.mjs";
 import { extractAioInPage } from "./lib/aio-extract.mjs";
 
 const DEVICE_PROFILES = {
@@ -125,7 +126,28 @@ async function applyDeviceProfile(context, page, device, localeTag) {
     deviceScaleFactor: profile.deviceScaleFactor ?? 1,
     mobile: !!profile.isMobile,
   });
-  if (profile.userAgent) await session.send("Emulation.setUserAgentOverride", { userAgent: profile.userAgent, acceptLanguage: localeTag });
+  if (profile.userAgent) {
+    // UA만 바꾸면 sec-ch-ua·platform이 데스크톱으로 남아 서로 어긋난다 — 같은 기기처럼 맞춘다.
+    const major = profile.userAgent.match(/Chrome\/(\d+)/)?.[1] ?? "140";
+    await session.send("Emulation.setUserAgentOverride", {
+      userAgent: profile.userAgent,
+      acceptLanguage: localeTag,
+      platform: "Linux armv81",
+      userAgentMetadata: {
+        brands: [
+          { brand: "Chromium", version: major },
+          { brand: "Google Chrome", version: major },
+          { brand: "Not.A/Brand", version: "24" },
+        ],
+        fullVersion: `${major}.0.0.0`,
+        platform: "Android",
+        platformVersion: "14.0.0",
+        architecture: "",
+        model: "Pixel 8",
+        mobile: true,
+      },
+    });
+  }
   if (profile.hasTouch) await session.send("Emulation.setTouchEmulationEnabled", { enabled: true });
   await session.send("Emulation.setLocaleOverride", { locale: localeTag }).catch(() => {});
 }
@@ -152,6 +174,8 @@ async function main() {
 
   const { endpoint, ownedProcess, profileDir } = await ensureIncognitoCdpEndpoint(argValue("cdp-endpoint"), {
     port: 9224,
+    proxy: proxyFromArgs(argValue),
+    persistentProfileDir: chromeProfileDir(device),
     profilePrefix: "google-aio-auto-chrome",
     missingChromeMessage: `Google Chrome을 찾을 수 없습니다 (${process.platform}). AI Overview 수집은 실제 시크릿 Chrome이 반드시 필요합니다 — Chrome을 설치하거나, 이미 열려 있는 디버그 세션의 --cdp-endpoint를 넘겨주세요.`,
   });
@@ -177,8 +201,10 @@ async function main() {
 
   let result;
   try {
+    await warmUp(page, `https://www.google.com/?hl=${language}&gl=${country}`);
     await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    await lookAround(page);
     await waitForAio(page, { timeoutMs, minWaitMs });
 
     let extracted = await page.evaluate(extractAioInPage, {});

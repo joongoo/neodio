@@ -3,7 +3,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
-import { BROWSER_CLOSED_EXIT_CODE, ensureIncognitoCdpEndpoint, isBrowserClosedError, killOwnedChrome } from "./lib/incognito-chrome.mjs";
+import { proxyFromArgs, warmUp } from "./lib/human.mjs";
+import { BROWSER_CLOSED_EXIT_CODE, chromeProfileDir, ensureIncognitoCdpEndpoint, isBrowserClosedError, killOwnedChrome } from "./lib/incognito-chrome.mjs";
 
 const DEFAULT_QUERY = "B2B 마케팅 솔루션 추천";
 const DEFAULT_MARKET_ID = "market-kr";
@@ -176,7 +177,9 @@ async function main() {
   // Google must always be collected through a real, private Chrome session —
   // never Playwright's bundled headless chromium (see lib/incognito-chrome.mjs).
   const { endpoint: cdpEndpoint, ownedProcess, profileDir } = await ensureIncognitoCdpEndpoint(argValue("cdp-endpoint"), {
-    port: 9223,
+    port: 9224,
+    proxy: proxyFromArgs(argValue),
+    persistentProfileDir: chromeProfileDir("desktop"),
     profilePrefix: "google-ai-auto-chrome",
     missingChromeMessage: `Google Chrome을 찾을 수 없습니다 (${process.platform}). Google AI Mode 수집은 실제 시크릿 Chrome이 반드시 필요합니다 — Chrome을 설치하거나, 이미 열려 있는 디버그 세션의 --cdp-endpoint를 넘겨주세요.`,
   });
@@ -191,6 +194,7 @@ async function main() {
   try {
     const alreadyOnResultsPage = page.url().includes("google.com/search");
     if (!alreadyOnResultsPage) {
+      await warmUp(page, "https://www.google.com/?hl=ko&gl=kr");
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     }
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});

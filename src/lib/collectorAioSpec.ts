@@ -3,10 +3,10 @@ import type { CollectorAioSpec, CollectorAioTask } from "./collectorAgent";
 // AI Overview 수집 작업 입력의 검증 — 수집기(collector/agent.ts)가 브라우저 화면에서 받은 값을 믿지 않고 다시 만든다.
 // 검색 사이 간격은 수집기가 하한을 강제한다: 화면(또는 누군가)이 간격을 0으로 보내 Google 캡차를 부르지 못하게.
 export const MAX_AIO_TASKS = 200;
-export const MIN_AIO_DELAY_MS = 30_000;
+export const MIN_AIO_DELAY_MS = 20_000;
 export const MAX_AIO_DELAY_MS = 600_000;
-const DEFAULT_MIN_DELAY_MS = 60_000;
-const DEFAULT_MAX_DELAY_MS = 120_000;
+const DEFAULT_MIN_DELAY_MS = 30_000;
+const DEFAULT_MAX_DELAY_MS = 60_000;
 
 export function parseAioSpec(input: unknown): CollectorAioSpec | { error: string } {
   const body = (input ?? {}) as Record<string, unknown>;

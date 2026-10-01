@@ -310,6 +310,7 @@ async function main() {
   const browserOptions = {
     headless: !headed,
     ...(browserChannel ? { channel: browserChannel } : {}),
+    ...((argValue("proxy") || process.env.NEODIO_PROXY) ? { proxy: { server: argValue("proxy") || process.env.NEODIO_PROXY } } : {}),
   };
   const contextOptions = {
     locale: "ko-KR",

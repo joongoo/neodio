@@ -392,12 +392,19 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
       state.waitUntil = null;
       if (running?.cancelled) break;
     }
+    if (googleCountToday() >= GOOGLE_DAILY_CAP) {
+      item.status = "error";
+      item.error = `하루 수집 상한(${GOOGLE_DAILY_CAP}건)에 도달했습니다.`;
+      saveJob(job);
+      continue;
+    }
     item.status = "running";
     saveJob(job);
     appendJobLog(job, `"${task.keyword}" (${task.device}) 검색`);
     const outDir = aioTaskDir(job, index);
     mkdirSync(outDir, { recursive: true });
     const code = await runAioScriptWithRetry(job, spec, task, outDir);
+    addGoogleCount(1);
     const written = jsonFiles(outDir).length > 0;
     if (running?.cancelled) item.status = "cancelled";
     else if (!written) {
@@ -420,7 +427,7 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   // 앞에서 실패한 검색은 나머지를 다 끝낸 뒤 한 번 더 시도한다.
   for (const [index, task] of spec.tasks.entries()) {
     const item = job.items[index];
-    if (running?.cancelled || state.captcha || item.status !== "error") continue;
+    if (running?.cancelled || state.captcha || item.status !== "error" || googleCountToday() >= GOOGLE_DAILY_CAP) continue;
     const delay = spec.minDelayMs + Math.floor(Math.random() * (spec.maxDelayMs - spec.minDelayMs + 1));
     state.waitUntil = Date.now() + delay;
     saveJob(job);
@@ -456,6 +463,30 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   log(`■ AI Overview 수집 ${cancelled ? "중단" : state.captcha ? "멈춤(캡차)" : "완료"} ${job.id}`);
 }
 
+// 검색 사이를 사람처럼 띄운다 — 같은 IP에서 연달아 보내면 캡차가 먼저 뜬다.
+const ENGINE_DELAY_MS: Record<string, [number, number]> = { google: [20_000, 45_000], naver: [5_000, 12_000], "naver-overview": [5_000, 12_000] };
+
+// 구글 검색은 하루 상한까지만 — 넘기면 IP가 의심받는다. NEODIO_GOOGLE_DAILY_CAP으로 조정.
+const GOOGLE_DAILY_CAP = Number(process.env.NEODIO_GOOGLE_DAILY_CAP) || 150;
+const DAILY_FILE = path.join(HOME_DIR, "daily-count.json");
+
+function todayKey() {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date());
+}
+
+function googleCountToday(): number {
+  try {
+    const data = JSON.parse(readFileSync(DAILY_FILE, "utf8")) as { date: string; google: number };
+    return data.date === todayKey() ? data.google : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function addGoogleCount(n: number) {
+  writeFileSync(DAILY_FILE, JSON.stringify({ date: todayKey(), google: googleCountToday() + n }));
+}
+
 const BROWSER_CLOSED_EXIT_CODE = 4;
 const MAX_ATTEMPTS = 3;
 
@@ -482,6 +513,7 @@ async function runJob(job: CollectorJob) {
   if (job.kind === "aio-collect" && job.aio) return runAioJob(job, job.aio);
   log(`▶ 수집 시작 ${job.id} — ${job.items.length}개, ${job.engines.join(", ")}`);
   mkdirSync(WORK_DIR, { recursive: true });
+  let hasRunSearch = false;
 
   for (const item of job.items) {
     if (running?.cancelled) break;
@@ -495,7 +527,19 @@ async function runJob(job: CollectorJob) {
       const outDir = path.join(RESULTS_DIR, job.id, `${engine}-ai`);
       mkdirSync(outDir, { recursive: true });
       const before = new Set(jsonFiles(outDir));
+      if (engine === "google" && googleCountToday() >= GOOGLE_DAILY_CAP) {
+        appendJobLog(job, `구글 하루 수집 상한(${GOOGLE_DAILY_CAP}건)에 도달해 건너뜁니다. 내일 다시 시도해 주세요.`);
+        failures.push(ENGINE_SHORT[engine]);
+        continue;
+      }
+      if (hasRunSearch) {
+        const [min, max] = ENGINE_DELAY_MS[engine] ?? [0, 0];
+        if (max > 0) await interruptibleSleep(min + Math.floor(Math.random() * (max - min + 1)));
+        if (running?.cancelled) break;
+      }
+      hasRunSearch = true;
       const code = await runScriptWithRetry(job, engine, item.keyword, outDir);
+      if (engine === "google") addGoogleCount(1);
       item.results += jsonFiles(outDir).filter((n) => !before.has(n)).length;
       if (code !== 0 && !running?.cancelled) failures.push(ENGINE_SHORT[engine]);
     }

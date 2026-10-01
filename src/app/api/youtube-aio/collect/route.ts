@@ -12,8 +12,8 @@ import { planAioRun } from "@/lib/backend/aio/collector";
 // 돌려주고 사용자 PC의 설치형 수집기가 검색한다. 결과는 화면이 /api/youtube-aio/import로 올려 서버가 판정·저장한다
 // (src/lib/aioCollectClient.ts).
 // 검색 사이 간격: 정기 수집(3~8분)보다 짧게 잡되, Phase 0에서 캡차가 뜬 20~40초보다는 길게.
-const AGENT_MIN_DELAY_MS = 60_000;
-const AGENT_MAX_DELAY_MS = 120_000;
+const AGENT_MIN_DELAY_MS = 30_000;
+const AGENT_MAX_DELAY_MS = 60_000;
 
 export async function POST(request: NextRequest) {
   const tenant = await getCurrentTenant();

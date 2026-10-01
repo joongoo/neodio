@@ -159,6 +159,8 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
             />
           </div>
 
+          {data.deviceSummaries.length > 1 && <DeviceCompareCard summaries={data.deviceSummaries} selected={device} brandName={brandName} onSelect={(d) => setParam("device", d)} />}
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card className="flex flex-col gap-3 p-5 lg:col-span-2">
               <h2 className="text-base font-bold text-neutral-900">{overview.trendGranularity === "day" ? "일별 추이" : "주간 추이"}</h2>
@@ -384,3 +386,58 @@ function downloadCsv(brandName: string, rows: AioKeywordRow[]) {
   URL.revokeObjectURL(url);
 }
 
+
+
+function DeviceCompareCard({
+  summaries,
+  selected,
+  brandName,
+  onSelect,
+}: {
+  summaries: AioOverviewPageData["deviceSummaries"];
+  selected: string;
+  brandName: string;
+  onSelect: (device: string) => void;
+}) {
+  const rows: { label: string; value: (o: AioOverviewPageData["overview"]) => string }[] = [
+    { label: "측정 프롬프트", value: (o) => `${o.measuredKeywords} / ${o.trackedKeywords}개` },
+    { label: "AIO 노출률", value: (o) => formatRate(o.aioExposure) },
+    { label: "YouTube 인용률", value: (o) => formatRate(o.youtubeCitation) },
+    { label: `${brandName} 채널 인용률`, value: (o) => formatRate(o.ownCitation) },
+    { label: "인용된 우리 영상", value: (o) => (o.ownCitation.denominator === 0 ? "–" : `${o.citedOwnVideos}개`) },
+  ];
+  return (
+    <Card className="flex flex-col gap-3 p-5">
+      <h2 className="text-base font-bold text-neutral-900">기기별 현황</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[420px] text-sm">
+          <thead>
+            <tr className="text-left text-xs text-neutral-500">
+              <th className="py-1.5 font-medium">지표</th>
+              {summaries.map((s) => (
+                <th key={s.device} className="py-1.5 text-right font-medium">
+                  <button type="button" onClick={() => onSelect(s.device)} className={cn("rounded px-2 py-0.5 hover:bg-neutral-100", s.device === selected && "bg-neutral-100 font-bold text-neutral-900")}>
+                    {DEVICE_LABEL[s.device]}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-t border-neutral-100">
+                <td className="py-2 text-neutral-700">{row.label}</td>
+                {summaries.map((s) => (
+                  <td key={s.device} className="py-2 pr-2 text-right tabular-nums text-neutral-900">
+                    {row.value(s.overview)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-neutral-500">기기 이름을 누르면 아래 추이·표가 그 기기 기준으로 바뀝니다.</p>
+    </Card>
+  );
+}
