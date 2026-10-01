@@ -88,6 +88,12 @@ async function main() {
           [brandId, c.channel_id, c.handle, c.title, c.thumbnail_url, c.added_at]
         ));
       }
+      for (const v of await q("SELECT * FROM brand_videos WHERE brand_id=$1", [brand.id])) {
+        add("브랜드 영상", await exec(
+          "INSERT INTO brand_videos (brand_id,video_id,status,added_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+          [brandId, v.video_id, v.status, v.added_at]
+        ));
+      }
       for (const s of await q("SELECT * FROM brand_aio_settings WHERE brand_id=$1", [brand.id])) {
         add("AIO 설정", await exec(
           "INSERT INTO brand_aio_settings (brand_id,country,language,devices_json,optimization_date,updated_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",

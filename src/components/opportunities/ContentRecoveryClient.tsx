@@ -260,7 +260,7 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
           <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 수정 가이드</h2>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          아직 LLM API가 연동되지 않아, 아래 표에서 URL별 "가이드 등록" 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가
+          아직 LLM API가 연동되지 않아, 아래 표에서 URL별 &quot;가이드 등록&quot; 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가
           연동되면 이 버튼을 누르지 않아도 자동으로 채워집니다.
         </p>
       </section>
@@ -279,7 +279,7 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
         </div>
         <p className="mt-3 flex items-start gap-2 rounded-lg bg-blue-100/60 p-3 text-xs text-blue-900">
           <FileCheck2 size={14} className="mt-0.5 shrink-0" />
-          콘텐츠를 수정한 뒤 "수정 완료 확인"을 누르면 그 URL만 다시 크롤링해서 콘텐츠 가시성이 70% 이상인지 실측으로 검토합니다. 기준을 넘으면 자동으로 "수정 완료"로 이동하고, 못 넘으면 계속 "현재 제안"에 남습니다.
+          콘텐츠를 수정한 뒤 &quot;수정 완료 확인&quot;을 누르면 그 URL만 다시 크롤링해서 콘텐츠 가시성이 70% 이상인지 실측으로 검토합니다. 기준을 넘으면 자동으로 &quot;수정 완료&quot;로 이동하고, 못 넘으면 계속 &quot;현재 제안&quot;에 남습니다.
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-3 border-b border-neutral-200">

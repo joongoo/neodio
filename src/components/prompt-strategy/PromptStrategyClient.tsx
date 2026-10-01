@@ -98,6 +98,7 @@ export function PromptStrategyClient({
     if (!pendingScrollId) return;
     const el = document.getElementById(`prompt-strategy-group-${pendingScrollId}`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- DOM 스크롤 뒤 한 번만 비우는 신호
     setPendingScrollId(null);
   }, [pendingScrollId, filter]);
 
@@ -535,8 +536,8 @@ export function PromptStrategyClient({
                 {isEmpty ? (
                   <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-neutral-200 px-5 py-6 text-center text-xs text-neutral-400">
                     <p>
-                      아직 이 키워드로 만든 프롬프트가 없습니다. 위 "
-                      {s.source === "citation_attempt" ? "인용 테스트 분석" : "구글서치콘솔 분석"}" 버튼으로 한 번에 등록하세요.
+                      아직 이 키워드로 만든 프롬프트가 없습니다. 위 &quot;
+                      {s.source === "citation_attempt" ? "인용 테스트 분석" : "구글서치콘솔 분석"}&quot; 버튼으로 한 번에 등록하세요.
                     </p>
                   </div>
                 ) : (

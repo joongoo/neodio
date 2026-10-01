@@ -63,8 +63,7 @@ export function ParallelCollectModal({
     cancels.current[index] = fn;
   }, []);
 
-  const check = useCallback(async () => {
-    setGate("checking");
+  const run = useCallback(async () => {
     const status = await getAgentStatus();
     const needsOverview = steps.some((s) => s.kind === "ai" && s.engines.includes("naver-overview"));
     const problem: Problem | null = !status
@@ -76,10 +75,15 @@ export function ParallelCollectModal({
           : null;
     setGate(problem ? { problem, status } : "ready");
   }, [steps]);
+  const check = useCallback(() => {
+    setGate("checking");
+    return run();
+  }, [run]);
 
   useEffect(() => {
-    if (needsAgent) void check();
-  }, [needsAgent, check]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 수집기 확인은 외부(PC 수집기) 상태를 읽는 일
+    if (needsAgent) void run();
+  }, [needsAgent, run]);
 
   const allFinished = states.every((s) => s.phase !== "running");
   useEffect(() => {

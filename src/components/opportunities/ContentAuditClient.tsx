@@ -77,6 +77,7 @@ export function ContentAuditClient({
   // 체크박스는 "현재 제안" 탭에서만 의미가 있다 — 재크롤 대상이 되는 것도
   // 아직 수정하지 않은 URL뿐이라서, 탭을 바꾸면 선택도 초기화한다.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 탭을 바꾸면 선택 초기화
     setSelected(new Set());
   }, [tab]);
 
@@ -423,7 +424,7 @@ export function ContentAuditClient({
           <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 수정 가이드</h2>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          아직 LLM API가 연동되지 않아, 아래 표에서 URL별 "가이드 등록" 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가
+          아직 LLM API가 연동되지 않아, 아래 표에서 URL별 &quot;가이드 등록&quot; 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가
           연동되면 이 버튼을 누르지 않아도 자동으로 채워집니다.
         </p>
       </section>
@@ -442,7 +443,7 @@ export function ContentAuditClient({
         </div>
         <p className="mt-3 flex items-start gap-2 rounded-lg bg-blue-100/60 p-3 text-xs text-blue-900">
           <FileCheck2 size={14} className="mt-0.5 shrink-0" />
-          콘텐츠를 수정한 뒤 "수정 완료 확인"을 누르면 그 URL만 다시 크롤링해서 실측으로 기준 통과 여부를 검토합니다.
+          콘텐츠를 수정한 뒤 &quot;수정 완료 확인&quot;을 누르면 그 URL만 다시 크롤링해서 실측으로 기준 통과 여부를 검토합니다.
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-3 border-b border-neutral-200">

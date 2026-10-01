@@ -154,7 +154,7 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
           </button>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          아직 LLM API가 연동되지 않아, "가이드 등록" 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가 연동되면
+          아직 LLM API가 연동되지 않아, &quot;가이드 등록&quot; 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가 연동되면
           자동으로 채워집니다.
         </p>
       </section>

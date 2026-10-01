@@ -272,6 +272,7 @@ function CategorizeRunModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 선택한 수집 파일이 바뀌면 폼 초기화
     setCategory(file?.promptRun.rawMetadata.category ?? "");
     setTopic(file?.promptRun.rawMetadata.topic ?? "");
     setError(null);

@@ -38,7 +38,7 @@ export default async function HelpPage() {
           <h2 className="text-base font-bold text-neutral-900">앞으로 추가될 기능 (로드맵)</h2>
         </div>
         <p className="text-xs text-neutral-500">
-          아래 기능들은 지금은 준비 중이며, 명시된 외부 연동/구축이 끝나면 순서대로 열립니다. 데모에서 "이건 지금 안 되지만 이걸 붙이면 이렇게 됩니다"를 설명할 때 참고하세요.
+          아래 기능들은 지금은 준비 중이며, 명시된 외부 연동/구축이 끝나면 순서대로 열립니다. 데모에서 &quot;이건 지금 안 되지만 이걸 붙이면 이렇게 됩니다&quot;를 설명할 때 참고하세요.
         </p>
         <div className="flex flex-col gap-4">
           {roadmap.map((group) => (

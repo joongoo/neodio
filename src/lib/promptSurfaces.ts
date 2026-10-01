@@ -42,7 +42,7 @@ export function suggestSurfaces(text: string): PromptSurface[] {
 }
 
 /** AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있다(현실적으로 150~250건). 화면이 이 값을 기준으로 경고한다. */
-export const AIO_DAILY_CAP = 200;
+export const AIO_DAILY_CAP = 150;
 
 /** 플랫폼 설정으로 본 하루 AIO 수집량 — AIO가 켜진 프롬프트 수 × 디바이스 수. */
 export function aioDailyLoad(surfaceLists: (readonly PromptSurface[] | undefined)[], deviceCount: number) {
