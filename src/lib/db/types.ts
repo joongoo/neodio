@@ -75,12 +75,20 @@ export interface RawCitationMetadata {
   url: string;
   domain: string;
   isOwnDomain: boolean;
+  /** 구글AIO(aio_observations)에서 넘어온 인용에만 있는 부가 정보 —
+   *  문단별 출처 순번, 영상/채널 식별, 영상 내 타임스탬프 등. 다른
+   *  플랫폼은 이 필드들을 안 채운다. */
+  position?: number;
+  sourceType?: "own_video" | "other_youtube" | "own_web" | "competitor" | "other";
+  videoId?: string | null;
+  channelId?: string | null;
+  startSeconds?: number | null;
 }
 
 export interface PromptRunMetadata {
   collectionJobId?: string;
   locale?: string;
-  source: "seed" | "naver-ai-search" | "naver-overview" | "google-ai-overview" | "api" | "headless-browser";
+  source: "seed" | "naver-ai-search" | "naver-overview" | "google-ai-overview" | "google-aio" | "api" | "headless-browser";
   basedOn?: string[];
   collectedBy?: string;
   /** API 수집(source "api")에서 실제로 호출한 모델 이름 */
@@ -94,6 +102,7 @@ export interface PromptRunMetadata {
   finalUrl?: string;
   answerTextLength?: number;
   screenshotPath?: string;
+  htmlPath?: string;
   citations?: RawCitationMetadata[];
   errorMessage?: string | null;
   /** Set from "수집 로그"의 분석 모달 (Brand Management 카테고리와 동일 목록) —

@@ -4,9 +4,80 @@ import path from "node:path";
 import { getManagedBrandById } from "../brandsManagementStore";
 import { getBrandAioSettings, listBrandYoutubeChannels } from "../brandAioConfig";
 import { resolveYoutubeVideo } from "../youtube";
+import { getPromptStore } from "../database";
 import { buildJudgeContext, CollectedSource, judgeCitations } from "./judge";
-import { cacheVideo, collectedToday, getCachedVideos, listAioKeywords, saveAioObservation, seoulDate } from "./store";
-import { AioDevice, AioObservationStatus, AioParagraph, YoutubeVideoMeta } from "@/lib/db/types";
+import { cacheVideo, collectedToday, getCachedVideos, keywordPromptContext, listAioKeywords, saveAioObservation, seoulDate } from "./store";
+import { AioCitation, AioDevice, AioObservationStatus, AioParagraph, PromptRunSeed, RawCitationMetadata, YoutubeVideoMeta } from "@/lib/db/types";
+
+const GOOGLE_AIO_MODEL_ID = "model-google-aio";
+const DEFAULT_MARKET_ID = "market-kr";
+
+function toRawCitation(citation: AioCitation): RawCitationMetadata {
+  return {
+    title: citation.title,
+    url: citation.url,
+    domain: citation.domain,
+    isOwnDomain: citation.sourceType === "own_video" || citation.sourceType === "own_web",
+    position: citation.position,
+    sourceType: citation.sourceType,
+    videoId: citation.videoId,
+    channelId: citation.channelId,
+    startSeconds: citation.startSeconds,
+  };
+}
+
+// 구글AIO 결과를 다른 플랫폼(네이버AI/구글AI모드)과 같은 prompt_runs에도
+// 적재한다 — 수집 로그·가시성 개요·브랜드 가시성이 전부 prompt_runs만
+// 보고 계산하므로, 여기에 안 들어가면 AIO는 그 화면들에 영영 안 보인다.
+// aio_observations 저장은 그대로 유지한다 — YouTube AIO 전용 대시보드(영상
+// 소유 판정, 채널별 통계 등)는 아직 이 테이블을 직접 쓴다.
+async function syncAioRunToPromptRuns(params: {
+  keywordId: string;
+  device: AioDevice;
+  status: AioObservationStatus;
+  collectedAt: string;
+  aioText?: string | null;
+  citations: AioCitation[];
+  screenshotPath?: string | null;
+  htmlPath?: string | null;
+  errorMessage?: string | null;
+}) {
+  try {
+    const context = await keywordPromptContext(params.keywordId);
+    if (!context || !context.promptId) return;
+    const status: PromptRunSeed["status"] = params.status === "aio_present" ? "success" : "failed";
+    const errorMessage =
+      params.status === "aio_absent"
+        ? "empty_aio_answer: Google did not render an AI Overview panel for this query."
+        : params.status === "failed"
+          ? (params.errorMessage ?? "unknown_error")
+          : null;
+    const run: PromptRunSeed = {
+      id: `run-google-aio-${params.keywordId}-${params.device}-${Date.parse(params.collectedAt) || Date.now()}`,
+      promptId: context.promptId,
+      llmModelId: GOOGLE_AIO_MODEL_ID,
+      marketId: DEFAULT_MARKET_ID,
+      runAt: params.collectedAt,
+      status,
+      rawResponse: params.aioText ?? "",
+      rawMetadata: {
+        source: "google-aio",
+        collectedBy: "google-aio-collector",
+        locale: params.device,
+        query: context.keyword,
+        screenshotPath: params.screenshotPath ?? undefined,
+        htmlPath: params.htmlPath ?? undefined,
+        answerTextLength: params.aioText?.length,
+        citations: params.citations.map(toRawCitation),
+        errorMessage,
+      },
+    };
+    const store = await getPromptStore();
+    await store.importRun(context.organizationId, { dir: "aio-sync", filename: `${run.id}.json`, promptRun: run }, null);
+  } catch (error) {
+    console.error("[aio] prompt_runs 동기화 실패 — aio_observations 저장은 영향 없음:", error);
+  }
+}
 
 // YouTube AIO 수집 한 회차 — 정기 수집 CLI(scripts/collect-aio.ts)와
 // 화면의 "지금 수집" 버튼(aio/jobRunner.ts)이 같은 코드를 쓴다.
@@ -185,6 +256,17 @@ export async function saveCollectedResult(params: {
     screenshotPath: result.screenshotPath ?? null,
     htmlPath: result.htmlPath ?? null,
     errorMessage: result.errorMessage ?? null,
+  });
+  await syncAioRunToPromptRuns({
+    keywordId,
+    device,
+    status: result.status,
+    collectedAt: result.collectedAt,
+    aioText: result.aioText,
+    citations,
+    screenshotPath: result.screenshotPath,
+    htmlPath: result.htmlPath,
+    errorMessage: result.errorMessage,
   });
   return { citations, saved };
 }

@@ -46,16 +46,20 @@ export async function listAioKeywords(brandId: string): Promise<AioKeyword[]> {
   return rows.map((row) => ({ id: row.id, keyword: row.keyword, group: row.keyword_group, createdAt: row.created_at }));
 }
 
-// listAioKeywords와 달리 status 무관하게 전부 돈다 — 과거 수집 로그에 키워드
-// 텍스트를 붙이는 용도라, 이후 추적을 중단(archived)한 키워드의 지난 기록도
-// 텍스트가 비어 보이면 안 된다.
-export async function allAioKeywordTexts(brandId: string): Promise<Map<string, string>> {
-  const rows = await (await store()).query<{ id: string; keyword: string }>(
-    `SELECT k.id,coalesce(p.text,k.keyword) AS keyword FROM aio_keywords k
-     LEFT JOIN prompts p ON p.id=k.prompt_id WHERE k.brand_id=$1`,
-    [brandId]
+// 수집 결과 한 건을 prompt_runs에도 같이 적재할 때 필요한 최소 정보 —
+// linkAioKeyword가 이미 만들어 둔 prompt_id/조직 ID를 그대로 쓴다. 아직
+// (설정이 꺼져있는 등으로) 프롬프트에 연결 안 된 키워드는 promptId가
+// null이라 그 경우엔 호출부가 prompt_runs 적재를 건너뛴다.
+export async function keywordPromptContext(
+  keywordId: string
+): Promise<{ keyword: string; promptId: string | null; organizationId: string } | null> {
+  const rows = await (await store()).query<{ keyword: string; prompt_id: string | null; organization_id: string }>(
+    `SELECT coalesce(p.text,k.keyword) AS keyword,k.prompt_id,b.organization_id FROM aio_keywords k
+     JOIN brands b ON b.id=k.brand_id LEFT JOIN prompts p ON p.id=k.prompt_id WHERE k.id=$1`,
+    [keywordId]
   );
-  return new Map(rows.map((row) => [row.id, row.keyword]));
+  const row = rows[0];
+  return row ? { keyword: row.keyword, promptId: row.prompt_id, organizationId: row.organization_id } : null;
 }
 
 /** 프롬프트 ID에 이어진 활성 AIO 수집 대상(키워드) ID — 프롬프트 라이브러리에서 고른 프롬프트를 AIO로 수집할 때 쓴다. */
