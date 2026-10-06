@@ -989,6 +989,8 @@ export interface CollectionQualityRow {
 
 export interface BrandPresenceData {
   modelTopicMatrix?: ModelTopicMatrix;
+  /** 엔진별(+전체) 노출 위치 — 언급 순서·답변 내 위치·인용 순서. */
+  placement?: import("@/lib/placement").PlacementSummary[];
   collectionQuality?: CollectionQualityRow[];
   allCompetitors: string[];
   defaultSelectedCompetitors: string[];

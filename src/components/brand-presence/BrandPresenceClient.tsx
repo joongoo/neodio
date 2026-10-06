@@ -16,6 +16,7 @@ import { usePagedRows } from "@/lib/usePagedRows";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MultiLineChart } from "@/components/charts/MultiLineChart";
 import { ModelTopicHeatmap } from "@/components/brand-presence/ModelTopicHeatmap";
+import { PlacementCard } from "@/components/brand-presence/PlacementCard";
 import { CollectionQualityCard } from "@/components/brand-presence/CollectionQualityCard";
 import { BrandPresenceDetailsModal } from "@/components/brand-presence/BrandPresenceDetailsModal";
 import { downloadCsv } from "@/lib/csv";
@@ -293,6 +294,7 @@ export function BrandPresenceClient({
         </ChartPanel>
       </div>
 
+      {data.placement && <PlacementCard rows={data.placement} />}
       {data.modelTopicMatrix && <ModelTopicHeatmap matrix={data.modelTopicMatrix} />}
       {data.collectionQuality && <CollectionQualityCard rows={data.collectionQuality} />}
 

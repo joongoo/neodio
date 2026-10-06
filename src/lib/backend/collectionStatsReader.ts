@@ -4,6 +4,7 @@ import { getRunOutcome } from "./collectionRunsTypes";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { brandPatterns } from "./processing/text";
+import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from "@/lib/placement";
 import { brandQueryKeywords, queryScopeOf, type QueryScope } from "@/lib/queryScope";
 import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "@/lib/visibilityStats";
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
@@ -1066,6 +1067,34 @@ export async function getRealCollectionQuality(): Promise<CollectionQualityRow[]
     byModel.set(model, row);
   }
   return [...byModel.values()].sort((a, b) => b.attempted - a.attempted);
+}
+
+// 자사가 답변 안에서 "얼마나 눈에 띄게" 나오는지 — 엔진별 + 전체. 전체 기간 집계.
+export async function getRealPlacementStats(): Promise<PlacementSummary[] | null> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (promptRuns.length === 0) return null;
+
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
+  const citationsByRun = new Map<string, { isOwnDomain: boolean }[]>();
+  for (const c of processed.citations) {
+    const list = citationsByRun.get(c.promptRunId) ?? [];
+    list.push({ isOwnDomain: c.isOwnDomain });
+    citationsByRun.set(c.promptRunId, list);
+  }
+
+  const byModel = new Map<string, ReturnType<typeof analyzeRunPlacement>[]>();
+  const all: ReturnType<typeof analyzeRunPlacement>[] = [];
+  for (const run of promptRuns) {
+    const placement = analyzeRunPlacement(run.rawResponse, brands, OWN_BRAND_ID, citationsByRun.get(run.id) ?? []);
+    const model = seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId;
+    byModel.set(model, [...(byModel.get(model) ?? []), placement]);
+    all.push(placement);
+  }
+  const rows = [...byModel.entries()].sort((a, b) => b[1].length - a[1].length).map(([model, list]) => summarizePlacements(model, list));
+  return [summarizePlacements("전체", all), ...rows];
 }
 
 const SENTIMENT_RANK: Record<Sentiment, number> = { negative: 0, neutral: 1, positive: 2 };

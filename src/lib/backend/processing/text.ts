@@ -21,7 +21,7 @@ function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizeText(value: string) {
+export function normalizeText(value: string) {
   return value.toLocaleLowerCase("ko-KR").replace(/\s+/g, " ").trim();
 }
 
