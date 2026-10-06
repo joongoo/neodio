@@ -43,6 +43,7 @@ export function VisibilityOverviewClient({
   mentionsByMarket,
   categories,
   topicsByCategory,
+  sourceOpportunityDomains,
   brandContext,
 }: {
   org: Organization;
@@ -52,6 +53,8 @@ export function VisibilityOverviewClient({
   mentionsByMarket: Record<string, RankedRow[]>;
   categories: TopicCategory[];
   topicsByCategory: Record<string, VisibilityTableRow[]>;
+  /** 있으면 "소스 기회" 행은 "인용된 소스" 행에서 이 도메인 순서대로 다시 만든다(같은 행을 두 번 보내지 않으려고). */
+  sourceOpportunityDomains?: string[];
   /** 브랜드 최적화(AI 브랜드 정리)가 쓰는 자사·등록 경쟁사 정보. 브랜드가 없으면 null. */
   brandContext: BrandOptimizationContext | null;
 }) {
@@ -60,7 +63,12 @@ export function VisibilityOverviewClient({
 
   const filteredTopicsByCategory = useMemo(() => {
     const result: Record<string, VisibilityTableRow[]> = {};
-    for (const [categoryId, rows] of Object.entries(topicsByCategory)) {
+    const resolved: Record<string, VisibilityTableRow[]> = { ...topicsByCategory };
+    if (sourceOpportunityDomains) {
+      const byDomain = new Map((topicsByCategory["cited-sources"] ?? []).map((row) => [(row as { domain: string }).domain, row]));
+      resolved["source-opportunities"] = sourceOpportunityDomains.flatMap((domain) => byDomain.get(domain) ?? []);
+    }
+    for (const [categoryId, rows] of Object.entries(resolved)) {
       result[categoryId] = rows.filter((row) => {
         const marketOk = market === "전체" || !hasMarket(row) || row.market === market;
         const modelOk = model === "전체" || !hasPrompts(row) || row.prompts.some((p) => p.model === model);
@@ -68,7 +76,7 @@ export function VisibilityOverviewClient({
       });
     }
     return result;
-  }, [topicsByCategory, market, model]);
+  }, [topicsByCategory, sourceOpportunityDomains, market, model]);
 
   const filteredCategories = categories.map((c) => ({
     ...c,

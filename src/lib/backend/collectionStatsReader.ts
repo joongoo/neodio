@@ -1431,17 +1431,6 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
     const run = runsById.get(runId);
     return seedMarkets.find((m) => m.id === run?.marketId)?.code ?? "GLOBAL";
   };
-  const queryOf = (runId: string) => runsById.get(runId)?.rawMetadata.query?.trim();
-  const promptTitlesOf = (runIds: Set<string>) => [...new Set([...runIds].map(queryOf).filter((q): q is string => !!q))];
-  const citedRunsOf = (runIds: Set<string>): CitedPromptRun[] =>
-    [...runIds]
-      .flatMap((runId) => {
-        const run = runsById.get(runId);
-        const prompt = queryOf(runId);
-        if (!run || !prompt) return [];
-        return [{ prompt, runAt: run.runAt, model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId, market: marketOf(runId) }];
-      })
-      .sort((a, b) => b.runAt.localeCompare(a.runAt));
 
   interface UrlAgg {
     isOwnDomain: boolean;
@@ -1482,8 +1471,9 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
         url,
         citations: agg.citations,
         citedPrompts: agg.promptRunIds.size,
-        citedPromptTitles: promptTitlesOf(agg.promptRunIds),
-        citedPromptRuns: citedRunsOf(agg.promptRunIds),
+        // 프롬프트별 실행 목록은 payload의 절반 가까이를 차지해 싣지 않고, 펼칠 때 불러온다.
+        citedPromptTitles: [],
+        lazyDetail: true,
         contentVisibility: null,
         category: "미분류",
         market: topMarket(agg),
@@ -1495,8 +1485,8 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
         contentType: "미분류",
         citations: agg.citations,
         citedPrompts: agg.promptRunIds.size,
-        citedPromptTitles: promptTitlesOf(agg.promptRunIds),
-        citedPromptRuns: citedRunsOf(agg.promptRunIds),
+        citedPromptTitles: [],
+        lazyDetail: true,
         category: "미분류",
         market: topMarket(agg),
       });
@@ -1543,6 +1533,30 @@ export async function getRealUrlInspectorData(filters: RealDataFilters = {}): Pr
     thirdPartyUrls,
     citedDomains,
   };
+}
+
+// URL 인스펙터에서 행을 펼칠 때 — 그 URL을 인용한 프롬프트별 실행(최신순). 목록 payload에는 싣지 않는다.
+export async function getRealUrlCitedPrompts(url: string): Promise<CitedPromptRun[]> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const promptRuns = (await listCollectedRuns(ORG_ID)).map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (promptRuns.length === 0) return [];
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
+
+  const runsById = new Map(promptRuns.map((r) => [r.id, r]));
+  const runIds = new Set(processed.citations.filter((c) => c.pageUrl === url).map((c) => c.promptRunId));
+  return [...runIds]
+    .flatMap((runId) => {
+      const run = runsById.get(runId);
+      const prompt = run?.rawMetadata.query?.trim();
+      if (!run || !prompt) return [];
+      return [{
+        prompt,
+        runAt: run.runAt,
+        model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId,
+        market: seedMarkets.find((m) => m.id === run.marketId)?.code ?? "GLOBAL",
+      }];
+    })
+    .sort((a, b) => b.runAt.localeCompare(a.runAt));
 }
 
 // 가시성 개요의 "최신 상위 브랜드" — 브랜드가 언급된 "답변 수" 기준 랭킹(mentions).

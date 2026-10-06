@@ -115,7 +115,13 @@ export default async function VisibilityOverviewPage({
   if (realCitedSources) {
     topicsByCategory["cited-sources"] = realCitedSources.map((row) => ({ ...row, ...sourceRecommendations[row.domain] }));
   }
-  if (realSourceOpportunities) {
+  // 소스 기회는 "인용된 소스"의 부분집합이라 행을 한 번 더 보내지 않고 도메인 목록만 보낸다 —
+  // 화면(VisibilityOverviewClient)이 인용된 소스 행에서 다시 만든다.
+  let sourceOpportunityDomains: string[] | undefined;
+  if (realSourceOpportunities && realCitedSources) {
+    sourceOpportunityDomains = realSourceOpportunities.map((row) => row.domain);
+    topicsByCategory["source-opportunities"] = [];
+  } else if (realSourceOpportunities) {
     topicsByCategory["source-opportunities"] = realSourceOpportunities.map((row) => ({
       ...row,
       ...sourceRecommendations[row.domain],
@@ -136,6 +142,7 @@ export default async function VisibilityOverviewPage({
       mentionsByMarket={mentionsByMarket}
       categories={topicCategories}
       topicsByCategory={topicsByCategory}
+      sourceOpportunityDomains={sourceOpportunityDomains}
       brandContext={
         ownBrand
           ? {

@@ -2,7 +2,7 @@
 
 import { CitationFeaturesCard } from "@/components/url-inspector/CitationFeaturesCard";
 import type { CitationFeatureAnalysis } from "@/lib/citationFeatures";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
@@ -42,8 +42,28 @@ function UrlLink({ url }: { url: string }) {
 
 // 행을 펼치면 이 URL을 인용한 프롬프트를 실행일·모델·마켓과 함께 보여 준다 — 가시성 개요의 확장형 표와 같은 모양.
 // 실측 데이터가 없는 행(목업)은 프롬프트 제목만 보여 준다.
-function CitedPromptsExpanded({ runs, titles }: { runs?: CitedPromptRun[]; titles: string[] }) {
-  const rows: CitedPromptRun[] = runs ?? titles.map((prompt) => ({ prompt, runAt: "", model: "", market: "" }));
+function CitedPromptsExpanded({ row }: { row: { url: string; lazyDetail?: boolean; citedPromptRuns?: CitedPromptRun[]; citedPromptTitles: string[] } }) {
+  const [loaded, setLoaded] = useState<{ runs?: CitedPromptRun[]; error?: boolean } | null>(null);
+
+  // 실측 행은 프롬프트 목록을 싣지 않고 펼칠 때 불러온다(payload 절약).
+  useEffect(() => {
+    if (!row.lazyDetail) return;
+    let cancelled = false;
+    fetch(`/api/url-inspector/citations?url=${encodeURIComponent(row.url)}`)
+      .then(async (res) => (res.ok ? { runs: (await res.json()) as CitedPromptRun[] } : { error: true }))
+      .catch(() => ({ error: true }))
+      .then((result) => {
+        if (!cancelled) setLoaded(result);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [row.lazyDetail, row.url]);
+
+  if (row.lazyDetail && !loaded) return <p className="text-xs text-neutral-400">불러오는 중…</p>;
+  if (row.lazyDetail && loaded?.error) return <p className="text-xs text-red-600">프롬프트 목록을 불러오지 못했습니다.</p>;
+  const runs = row.lazyDetail ? loaded?.runs : row.citedPromptRuns;
+  const rows: CitedPromptRun[] = runs ?? row.citedPromptTitles.map((prompt) => ({ prompt, runAt: "", model: "", market: "" }));
   if (rows.length === 0) return <p className="text-xs text-neutral-400">아직 이 URL을 인용한 프롬프트가 없습니다.</p>;
   const detailed = rows.some((r) => r.runAt);
   return (
@@ -272,7 +292,7 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
           columns={own.filtered}
           rows={ownPaged.pageRows}
           getRowId={(r) => r.id}
-          renderExpanded={(r) => <CitedPromptsExpanded runs={r.citedPromptRuns} titles={r.citedPromptTitles} />}
+          renderExpanded={(r) => <CitedPromptsExpanded row={r} />}
         />
         <div className="mt-3">
           <Pagination
@@ -301,7 +321,7 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
           columns={thirdParty.filtered}
           rows={thirdPartyPaged.pageRows}
           getRowId={(r) => r.id}
-          renderExpanded={(r) => <CitedPromptsExpanded runs={r.citedPromptRuns} titles={r.citedPromptTitles} />}
+          renderExpanded={(r) => <CitedPromptsExpanded row={r} />}
         />
         <div className="mt-3">
           <Pagination

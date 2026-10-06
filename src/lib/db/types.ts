@@ -1179,6 +1179,8 @@ export interface OwnCitedUrlRow {
   citedPromptTitles: string[];
   /** 실측 인용의 프롬프트별 실행 정보(실행일 최신순). 목업 데이터에는 없다. */
   citedPromptRuns?: CitedPromptRun[];
+  /** true면 citedPromptTitles/citedPromptRuns를 싣지 않았다 — 행을 펼칠 때 /api/url-inspector/citations로 불러온다. */
+  lazyDetail?: boolean;
   /** null when there's no real source for this yet (실 인용 집계엔 없고 사이트맵 크롤과 별도 매칭이 필요) */
   contentVisibility: number | null;
   category: string;
@@ -1195,6 +1197,8 @@ export interface ThirdPartyUrlRow {
   citedPromptTitles: string[];
   /** 실측 인용의 프롬프트별 실행 정보(실행일 최신순). 목업 데이터에는 없다. */
   citedPromptRuns?: CitedPromptRun[];
+  /** true면 citedPromptTitles/citedPromptRuns를 싣지 않았다 — 행을 펼칠 때 /api/url-inspector/citations로 불러온다. */
+  lazyDetail?: boolean;
   category: string;
   market: string;
 }
