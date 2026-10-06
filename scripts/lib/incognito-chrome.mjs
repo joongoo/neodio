@@ -22,6 +22,43 @@ export function resolveChromePath() {
   return candidates.find((candidate) => candidate && existsSync(candidate)) ?? null;
 }
 
+// 디버그 포트의 Chrome이 살아 있는지 — 빈 탭을 하나 열었다 닫아 본다.
+async function isDebugChromeHealthy(endpoint) {
+  try {
+    const res = await fetch(`${endpoint}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(4_000) });
+    if (!res.ok) return false;
+    const tab = await res.json();
+    await fetch(`${endpoint}/json/close/${tab.id}`, { signal: AbortSignal.timeout(2_000) }).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 응답 없는 이전 Chrome을 CDP Browser.close로 종료하고 포트가 비워질 때까지 기다린다.
+async function closeStaleDebugChrome(webSocketUrl, endpoint) {
+  if (webSocketUrl && typeof WebSocket !== "undefined") {
+    await new Promise((resolve) => {
+      const done = () => resolve();
+      try {
+        const ws = new WebSocket(webSocketUrl);
+        ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+        ws.onclose = done;
+        ws.onerror = done;
+        setTimeout(done, 3_000);
+      } catch {
+        done();
+      }
+    });
+  }
+  const deadline = Date.now() + 6_000;
+  while (Date.now() < deadline) {
+    if (!(await fetch(`${endpoint}/json/version`, { signal: AbortSignal.timeout(1_000) }).then((res) => res.ok, () => false))) return;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(`이전에 남은 수집용 Chrome이 응답하지 않고 종료되지 않습니다. 열려 있는 Chrome 창을 모두 닫고(작업 관리자/활동 모니터에서 Chrome 종료) 다시 시도해 주세요.`);
+}
+
 // Spawns a fresh, disposable incognito Chrome with a CDP debug port and
 // waits for it to come up. Returns the caller's own endpoint untouched when
 // one is given (an already-open debug session).
@@ -30,8 +67,11 @@ export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profi
 
   const liveEndpoint = `http://127.0.0.1:${port}`;
   // 이전 --keep-open 실행이 남긴 창이 그 포트를 쥐고 있으면 새 Chrome은 포트를 못 잡는다 — 남은 창을 그대로 쓴다.
-  if (await fetch(`${liveEndpoint}/json/version`).then((res) => res.ok, () => false)) {
-    return { endpoint: liveEndpoint, ownedProcess: null, profileDir: null };
+  // 단, 멈춘 창(about:blank에서 굳은 Chrome 등)을 재사용하면 재시도해도 계속 실패하므로 새 탭이 실제로 열리는지 확인하고, 아니면 닫고 새로 띄운다.
+  const live = await fetch(`${liveEndpoint}/json/version`).then((res) => (res.ok ? res.json() : null), () => null);
+  if (live) {
+    if (await isDebugChromeHealthy(liveEndpoint)) return { endpoint: liveEndpoint, ownedProcess: null, profileDir: null };
+    await closeStaleDebugChrome(live.webSocketDebuggerUrl, liveEndpoint);
   }
 
   const chromePath = resolveChromePath();
@@ -61,7 +101,7 @@ export async function ensureIncognitoCdpEndpoint(explicitEndpoint, { port, profi
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  throw new Error("Timed out waiting for the incognito Chrome debug port to become ready.");
+  throw new Error("수집용 Chrome이 시작되지 않습니다(디버그 포트 응답 없음). 같은 프로필을 쓰는 Chrome이 이미 떠 있으면 모두 종료한 뒤 다시 시도해 주세요.");
 }
 
 // Kills the Chrome we spawned and deletes its throwaway profile. Negative-pid

@@ -203,6 +203,8 @@ async function main() {
   try {
     await warmUp(page, `https://www.google.com/?hl=${language}&gl=${country}`);
     await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    // 이동이 조용히 실패하면 about:blank에 머문다 — 원인을 모른 채 빈 결과로 끝나지 않게 바로 실패로 알린다.
+    if (page.url() === "about:blank") throw new Error("Google 검색 페이지로 이동하지 못했습니다(about:blank에 머묾). 네트워크·프록시 상태를 확인해 주세요.");
     await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
     await lookAround(page);
     await waitForAio(page, { timeoutMs, minWaitMs });
