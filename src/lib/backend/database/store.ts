@@ -152,7 +152,7 @@ export class PromptStore {
     return this.transaction(async () => {
       const [{ n }] = await this.query<{ n: number }>("SELECT count(*)::int AS n FROM brands WHERE organization_id=$1", [orgId]);
       if (n > 0) return false;
-      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids", "sitemap_crawls", "change_log", "config_versions"];
+      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids", "sitemap_crawls", "change_log", "config_versions", "membership_brands", "memberships", "audit_log"];
       for (const table of scoped) await this.run(`DELETE FROM ${table} WHERE organization_id=$1`, [orgId]);
       await this.run("DELETE FROM tracking_events WHERE tracking_id IN (SELECT id FROM prompt_tracking WHERE organization_id=$1)", [orgId]);
       await this.run("DELETE FROM prompt_tracking WHERE organization_id=$1", [orgId]);

@@ -224,4 +224,39 @@ CREATE TABLE IF NOT EXISTS config_versions (
   created_by TEXT REFERENCES actors(id), created_at TEXT NOT NULL, content_json JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS config_versions_org ON config_versions(organization_id,brand_id,version DESC);
+-- 회원·권한(docs/auth-and-roles.md) — 이메일 인증 없이 이메일+비밀번호로 가입하고, 오너·직원이 역할·브랜드를 할당해야 접근한다.
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL,
+  must_change_password BOOLEAN NOT NULL DEFAULT false,
+  platform_role TEXT NOT NULL DEFAULT 'none' CHECK(platform_role IN ('none','staff')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
+  created_at TEXT NOT NULL, last_login_at TEXT, deleted_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(lower(email));
+-- 세션 토큰은 해시로만 저장한다(DB가 새도 쿠키 값을 알 수 없다).
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL, expires_at TEXT NOT NULL, user_agent TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+-- role은 admin|viewer. 오너는 organizations.owner_user_id로 지정하고 반드시 admin이어야 한다(코드에서 검증).
+CREATE TABLE IF NOT EXISTS memberships (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, organization_id TEXT NOT NULL REFERENCES organizations(id),
+  role TEXT NOT NULL CHECK(role IN ('admin','viewer')), created_at TEXT NOT NULL, created_by TEXT,
+  PRIMARY KEY(user_id,organization_id)
+);
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS owner_user_id TEXT REFERENCES users(id);
+-- admin·viewer가 접근할 수 있는 브랜드(오너·직원은 이 표와 무관하게 전체). 지정은 오너만 한다.
+CREATE TABLE IF NOT EXISTS membership_brands (
+  user_id TEXT NOT NULL, organization_id TEXT NOT NULL, brand_id TEXT NOT NULL,
+  granted_by TEXT, granted_at TEXT NOT NULL,
+  PRIMARY KEY(user_id,organization_id,brand_id),
+  FOREIGN KEY(user_id,organization_id) REFERENCES memberships(user_id,organization_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY, organization_id TEXT, actor_user_id TEXT, action TEXT NOT NULL,
+  target_type TEXT, target_id TEXT, detail_json JSONB, at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS audit_log_org_at ON audit_log(organization_id,at DESC);
+ALTER TABLE actors ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id);
 `;
