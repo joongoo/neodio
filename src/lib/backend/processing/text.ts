@@ -55,18 +55,24 @@ export function findBrandMentions(text: string, brands: BrandSeed[]) {
     });
 }
 
-export function classifySentiment(text: string, brand: BrandSeed): { sentiment: Sentiment; score: number } {
+/** 감성 판정의 근거 — 브랜드 주변 구간(앞 180자·뒤 360자)에서 찾은 긍정/부정 키워드. */
+export function sentimentEvidence(text: string, brand: BrandSeed) {
   const normalized = normalizeText(text);
   const brandIndex = findBrandMentions(text, [brand])[0]?.index;
-  const windowText =
-    brandIndex === null || brandIndex === undefined
-      ? normalized
-      : normalized.slice(Math.max(0, brandIndex - 180), brandIndex + 360);
+  const start = brandIndex === null || brandIndex === undefined ? 0 : Math.max(0, brandIndex - 180);
+  const end = brandIndex === null || brandIndex === undefined ? normalized.length : brandIndex + 360;
+  const windowText = normalized.slice(start, end);
+  return {
+    windowText,
+    positiveTerms: positiveTerms.filter((term) => windowText.includes(term)),
+    negativeTerms: negativeTerms.filter((term) => windowText.includes(term)),
+  };
+}
 
-  const positiveHits = positiveTerms.filter((term) => windowText.includes(term)).length;
-  const negativeHits = negativeTerms.filter((term) => windowText.includes(term)).length;
+export function classifySentiment(text: string, brand: BrandSeed): { sentiment: Sentiment; score: number } {
+  const { positiveTerms: positiveHits, negativeTerms: negativeHits } = sentimentEvidence(text, brand);
 
-  if (negativeHits > positiveHits) return { sentiment: "negative", score: 0.25 };
-  if (positiveHits > negativeHits) return { sentiment: "positive", score: 0.78 };
+  if (negativeHits.length > positiveHits.length) return { sentiment: "negative", score: 0.25 };
+  if (positiveHits.length > negativeHits.length) return { sentiment: "positive", score: 0.78 };
   return { sentiment: "neutral", score: 0.55 };
 }

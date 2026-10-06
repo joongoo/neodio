@@ -3,7 +3,7 @@ import { listCollectedRuns } from "./collectionRuns";
 import { getRunOutcome } from "./collectionRunsTypes";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
-import { brandPatterns } from "./processing/text";
+import { brandPatterns, classifySentiment, sentimentEvidence } from "./processing/text";
 import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from "@/lib/placement";
 import { brandQueryKeywords, queryScopeOf, type QueryScope } from "@/lib/queryScope";
 import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "@/lib/visibilityStats";
@@ -17,6 +17,7 @@ import {
   BrandWeeklyPoint,
   CitedDomainRow,
   CollectionQualityRow,
+  SentimentEvidence,
   ModelTopicMatrix,
   CitedPageRow,
   CitedSourceRow,
@@ -1097,6 +1098,52 @@ export async function getRealPlacementStats(): Promise<PlacementSummary[] | null
   }
   const rows = [...byModel.entries()].sort((a, b) => b[1].length - a[1].length).map(([model, list]) => summarizePlacements(model, list));
   return [summarizePlacements("전체", all), ...rows];
+}
+
+// 감성 판정의 근거 — 키워드 방식(긍정·부정 단어 개수)이라 맞는지 눈으로 검수할 수 있게
+// 자사가 언급된 답변의 발췌문과 판정에 쓰인 키워드를 감성별로 보여준다. 전체 기간.
+export async function getRealSentimentEvidence(perSentiment = 6): Promise<SentimentEvidence | null> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (promptRuns.length === 0) return null;
+  const own = (await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID)).find((b) => b.id === OWN_BRAND_ID);
+  if (!own) return null;
+
+  const patterns = [...new Set(brandPatterns(own).map((p) => p.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (patterns.length === 0) return null;
+  const regex = new RegExp(patterns.map(escapeRegex).join("|"), "i");
+
+  const counts: Record<Sentiment, number> = { positive: 0, neutral: 0, negative: 0 };
+  let weak = 0;
+  const rows: SentimentEvidence["rows"] = [];
+  for (const run of promptRuns) {
+    const match = regex.exec(run.rawResponse);
+    if (!match) continue;
+    const { sentiment } = classifySentiment(run.rawResponse, own);
+    const { positiveTerms, negativeTerms } = sentimentEvidence(run.rawResponse, own);
+    counts[sentiment] += 1;
+    // 키워드 하나 차이로 갈린 판정은 근거가 약하다.
+    if (sentiment !== "neutral" && Math.abs(positiveTerms.length - negativeTerms.length) === 1) weak += 1;
+    rows.push({
+      id: run.id,
+      query: run.rawMetadata.query?.trim() ?? "",
+      model: seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId,
+      sentiment,
+      excerpt: contextAround(run.rawResponse, match.index, match[0].length),
+      positiveTerms,
+      negativeTerms,
+    });
+  }
+  const total = counts.positive + counts.neutral + counts.negative;
+  if (total === 0) return null;
+
+  // 감성별로 근거가 센 순(판정 키워드 수 차이)으로 상위 N개.
+  const strength = (r: SentimentEvidence["rows"][number]) => Math.abs(r.positiveTerms.length - r.negativeTerms.length);
+  const picked = (["negative", "positive", "neutral"] as Sentiment[]).flatMap((s) =>
+    rows.filter((r) => r.sentiment === s).sort((a, b) => strength(b) - strength(a)).slice(0, perSentiment)
+  );
+  return { counts, total, weakShare: Math.round((weak / Math.max(1, counts.positive + counts.negative)) * 100), rows: picked };
 }
 
 const SENTIMENT_RANK: Record<Sentiment, number> = { negative: 0, neutral: 1, positive: 2 };

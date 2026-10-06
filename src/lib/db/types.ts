@@ -975,6 +975,15 @@ export interface ShareOfVoiceRow {
   topBrands: { brand: string; share: number }[];
 }
 
+/** 감성 판정 근거 — 키워드 방식 판정을 검수할 수 있게 발췌문과 판정 키워드를 보여준다. */
+export interface SentimentEvidence {
+  counts: Record<Sentiment, number>;
+  total: number;
+  /** 긍정·부정 판정 중 키워드 1개 차이로 갈린(근거가 약한) 비율(%). */
+  weakShare: number;
+  rows: { id: string; query: string; model: string; sentiment: Sentiment; excerpt: string; positiveTerms: string[]; negativeTerms: string[] }[];
+}
+
 /** 엔진(모델) × 질의 가시성 — 셀은 그 조합에서 자사가 언급된 실행 수 / 전체 실행 수. */
 export interface ModelTopicMatrix {
   models: string[];
@@ -995,6 +1004,7 @@ export interface CollectionQualityRow {
 
 export interface BrandPresenceData {
   modelTopicMatrix?: ModelTopicMatrix;
+  sentimentEvidence?: SentimentEvidence;
   /** 엔진별(+전체) 노출 위치 — 언급 순서·답변 내 위치·인용 순서. */
   placement?: import("@/lib/placement").PlacementSummary[];
   collectionQuality?: CollectionQualityRow[];
