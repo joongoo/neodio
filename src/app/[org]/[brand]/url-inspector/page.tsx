@@ -4,6 +4,8 @@ import { getRealUrlInspectorData } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getRegisteredUrls } from "@/lib/backend/registeredUrls";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { getLatestSitemapCrawl } from "@/lib/backend/sitemapCrawlReader";
+import { buildCitationFeatureAnalysis } from "@/lib/citationFeatures";
 import { EMPTY_URL_INSPECTOR } from "@/lib/db/data/emptyOrg";
 
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다.
@@ -37,5 +39,12 @@ export default async function UrlInspectorPage() {
       market: "—",
     }));
 
-  return <UrlInspectorClient data={{ ...merged, ownUrls: [...merged.ownUrls, ...extraRows] }} />;
+  // 크롤한 페이지 속성 × 실제 인용 — 실 데이터(인용·크롤)가 모두 있을 때만.
+  const org = await tenant.org;
+  const latestCrawl = demo || !real ? null : await getLatestSitemapCrawl(org.domain).catch(() => null);
+  const featureAnalysis = latestCrawl
+    ? buildCitationFeatureAnalysis(latestCrawl.urls, real!.ownUrls.filter((u) => u.citations > 0).map((u) => u.url))
+    : null;
+
+  return <UrlInspectorClient data={{ ...merged, ownUrls: [...merged.ownUrls, ...extraRows] }} featureAnalysis={featureAnalysis} />;
 }

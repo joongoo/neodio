@@ -1,5 +1,7 @@
 "use client";
 
+import { CitationFeaturesCard } from "@/components/url-inspector/CitationFeaturesCard";
+import type { CitationFeatureAnalysis } from "@/lib/citationFeatures";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -159,7 +161,7 @@ const domainOptional: ColumnOption[] = [
   { key: "contentType", label: "콘텐츠 유형" },
 ];
 
-export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
+export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspectorData; featureAnalysis?: CitationFeatureAnalysis | null }) {
   const router = useRouter();
   const [market, setMarket] = useState(MARKET_OPTIONS[0]);
   const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
@@ -236,6 +238,8 @@ export function UrlInspectorClient({ data }: { data: UrlInspectorData }) {
         <SimpleStatCard label="고유 인용 URL 수" value={data.uniqueCitedUrls} />
         <SimpleStatCard label="총 인용 횟수" value={data.totalCitations} />
       </div>
+
+      {featureAnalysis && <CitationFeaturesCard analysis={featureAnalysis} />}
 
       <TablePanel
         title="자사 인용 URL"
