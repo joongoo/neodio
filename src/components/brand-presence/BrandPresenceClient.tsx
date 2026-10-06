@@ -280,7 +280,7 @@ export function BrandPresenceClient({
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartPanel title="감성 분포" description="긍정/중립/부정 감성 비율 분석">
+        <ChartPanel title="감성 분포" description="긍정/중립/부정 감성 비율이에요. 키워드 기반 판정이라 참고용이고, 가시성 점수에는 반영하지 않아요.">
           <SentimentChart data={data.sentimentByWeek} />
         </ChartPanel>
         <ChartPanel title="프롬프트 지표" description="시간 경과에 따른 전체 프롬프트 수와 감성이 감지된 프롬프트 수">

@@ -432,7 +432,7 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
     visibilityScore: {
       value: currentVis,
       description:
-        "수집한 모든 답변을 기준으로 언급(35%)·인용(15%)·노출 위치(30%)·감성(20%)을 합산한 0~100 점수예요. 네 항목 모두 언급되지 않은 답변은 0으로 세기 때문에 언급이 적으면 점수도 낮고, 수집한 프롬프트 수가 늘어도 같은 성과면 같은 점수예요. 노출 위치는 경쟁사와 함께 나온 답변에서는 언급 순서와 본문 내 위치를, 혼자 나온 답변에서는 본문 내 위치만 봐요. 주차·모델·마켓 그룹은 실행 수로 가중 평균해요.",
+        "수집한 모든 답변을 기준으로 언급(45%)·인용(20%)·노출 위치(35%)를 합산한 0~100 점수예요. 감성은 판정 정확도가 낮아 점수에서 빼고 별도로 보여줘요. 언급되지 않은 답변은 위치도 0으로 세기 때문에 언급이 적으면 점수도 낮고, 수집한 프롬프트 수가 늘어도 같은 성과면 같은 점수예요. 노출 위치는 경쟁사와 함께 나온 답변에서는 언급 순서와 본문 내 위치를, 혼자 나온 답변에서는 본문 내 위치만 봐요. 주차·모델·마켓 그룹은 실행 수로 가중 평균해요.",
       trend: trend(currentVis, previousWeeks.length ? previousVis : undefined),
       caption: `실행 ${currentRuns.toLocaleString("ko-KR")}개 가중 평균${currentRuns < MIN_RELIABLE_RUNS ? " · 표본 적음" : ""}`,
       sparkline: currentWeeks.map((w) => ({ week: formatWeekLabel(w), value: weightedAverage(visibilityByWeek.get(w) ?? []) })),

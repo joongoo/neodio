@@ -255,7 +255,7 @@ export default async function OverviewPage({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartPanel
           title="감성 분포"
-          description={`${RANGE_TEXT[range]}간 AI 답변에 나타난 브랜드 언급의 감성을 우호적·중립·비우호적으로 나눠 보여줘요.`}
+          description={`${RANGE_TEXT[range]}간 AI 답변에 나타난 브랜드 언급의 감성을 우호적·중립·비우호적으로 나눠 보여줘요. 키워드 기반 판정이라 참고용이고 가시성 점수에는 반영하지 않아요.`}
           actionLabel="자세히보기"
           actionHref={`${tenant.base}/brand-presence`}
         >

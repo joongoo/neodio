@@ -26,18 +26,24 @@ export function mentionProminence(mention: Pick<MentionSeed, "position" | "offse
   return positionValue(mention.position) * 0.5 + early * 0.5;
 }
 
+/**
+ * 총점 = 언급 45% + 인용 20% + 노출 위치 35%.
+ * 감성은 점수에서 뺀다 — 지금 감성 판정은 브랜드 주변의 긍정·부정 단어 개수를 세는 방식이라
+ * 일반 문장의 단어("문제", "제공" 등)에 흔들려 신뢰할 수 없다. 감성은 별도 지표로만 보여주고,
+ * 신뢰할 수 있는 분류(LLM 등)가 연동되면 다시 점수에 넣는다.
+ */
+export const VISIBILITY_WEIGHTS = { mentions: 0.45, citations: 0.2, position: 0.35 } as const;
+
 export function calculateVisibilityTotal(scores: {
   mentionsScore: number;
   citationsScore: number;
   positionScore: number;
-  sentimentScore: number;
 }) {
   return Number(
     (
-      scores.mentionsScore * 0.35 +
-      scores.citationsScore * 0.15 +
-      scores.positionScore * 0.3 +
-      scores.sentimentScore * 0.2
+      scores.mentionsScore * VISIBILITY_WEIGHTS.mentions +
+      scores.citationsScore * VISIBILITY_WEIGHTS.citations +
+      scores.positionScore * VISIBILITY_WEIGHTS.position
     ).toFixed(1)
   );
 }
@@ -90,7 +96,7 @@ export function buildVisibilityScores(params: {
       citationsScore,
       positionScore,
       sentimentScore,
-      totalScore: calculateVisibilityTotal({ mentionsScore, citationsScore, positionScore, sentimentScore }),
+      totalScore: calculateVisibilityTotal({ mentionsScore, citationsScore, positionScore }),
     };
   });
 }

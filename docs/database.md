@@ -186,8 +186,10 @@ the application's data unchanged.
 
 ## Visibility score (v2)
 
-`totalScore = 0.35·mentions + 0.15·citations + 0.30·position + 0.20·sentiment`,
-every component taken over **all runs** of the week/model/market group (runs
+`totalScore = 0.45·mentions + 0.20·citations + 0.35·position`. Sentiment is
+stored (`sentimentScore`) but **excluded from the total**: the keyword
+classifier counts positive/negative words near the brand and misfires on
+generic words ("문제", "제공"); re-add it with a reliable classifier. Components are taken over **all runs** of the week/model/market group (runs
 without a brand mention contribute 0 to position and sentiment too — averaging
 over mentioned runs only let a 1% mention rate score ~45). `citations` is the
 share of runs with at least one own-domain citation. `position` per mention is

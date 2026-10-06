@@ -147,7 +147,8 @@ export interface CitationSeed {
 }
 
 /** 네 항목(mentions/citations/position/sentiment)은 모두 "그 주·모델·마켓의 전체 실행" 대비 0~100.
- *  언급되지 않은 실행은 위치·감성도 0으로 센다. */
+ *  언급되지 않은 실행은 위치·감성도 0으로 센다. totalScore에는 mentions/citations/position만 쓰고
+ *  sentimentScore는 참고용이다(감성 판정이 키워드 방식이라 점수에서 제외). */
 export interface VisibilityScoreSeed {
   id: string;
   organizationId: string;

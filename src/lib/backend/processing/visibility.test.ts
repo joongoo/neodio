@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildVisibilityScores, mentionProminence } from "./visibility";
+import { buildVisibilityScores, calculateVisibilityTotal, mentionProminence } from "./visibility";
 import type { BrandSeed, MentionSeed, PromptRunSeed } from "@/lib/db/types";
 
 const brand: BrandSeed = { id: "own", organizationId: "o", name: "자사", domain: "own.com", isOwnBrand: true, status: "active", category: "", aliases: [] };
@@ -27,7 +27,17 @@ test("100개 중 1개만 언급되면 점수가 낮다(조건부 평균으로 �
   assert.ok(score.totalScore < 3, `총점 ${score.totalScore}`);
 });
 
-test("모든 답변에서 맨 앞에 긍정적으로 언급되면 높다", () => {
+test("총점은 언급 45%·인용 20%·위치 35%이고 감성은 반영하지 않는다", () => {
+  const runs = Array.from({ length: 10 }, (_, i) => run(i));
+  const base = runs.map((_, i) => mention(i, { sentiment: "positive", sentimentScore: 0.78 }));
+  const negative = runs.map((_, i) => mention(i, { sentiment: "negative", sentimentScore: 0.25 }));
+  const [a] = buildVisibilityScores({ organizationId: "o", brand, runs, mentions: base, citations: [] });
+  const [b] = buildVisibilityScores({ organizationId: "o", brand, runs, mentions: negative, citations: [] });
+  assert.equal(a.totalScore, b.totalScore);
+  assert.equal(calculateVisibilityTotal({ mentionsScore: 100, citationsScore: 100, positionScore: 100 }), 100);
+});
+
+test("모든 답변에서 맨 앞에 언급되면 높다", () => {
   const runs = Array.from({ length: 10 }, (_, i) => run(i));
   const mentions = runs.map((_, i) => mention(i));
   const [score] = buildVisibilityScores({ organizationId: "o", brand, runs, mentions, citations: [] });
