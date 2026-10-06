@@ -286,7 +286,7 @@ function Pill({ tone, children }: { tone: "own" | "youtube" | "off"; children: R
   return (
     <span
       className={cn(
-        "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium",
         tone === "own" && "bg-blue-50 text-blue-700",
         tone === "youtube" && "bg-orange-50 text-orange-700",
         tone === "off" && "bg-neutral-100 text-neutral-500"
@@ -342,7 +342,7 @@ function PromptRow({ row, href }: { row: AioKeywordRow; href: string }) {
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   title={videoSummary(video)}
-                  className={cn("min-w-0 max-w-[520px] truncate hover:underline", video.own ? "font-medium text-neutral-900" : "text-neutral-700")}
+                  className={cn("min-w-0 max-w-[280px] truncate hover:underline", video.own ? "font-medium text-neutral-900" : "text-neutral-700")}
                 >
                   {video.title}
                 </a>
