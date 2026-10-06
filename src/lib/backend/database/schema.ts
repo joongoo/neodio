@@ -259,4 +259,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_log_org_at ON audit_log(organization_id,at DESC);
 ALTER TABLE actors ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id);
+-- 로그인·가입 시도 제한 — 키(이메일·IP·사용자)별 실패 횟수와 잠금 시각. 서버리스에서는 메모리가 공유되지 않아 DB에 둔다.
+CREATE TABLE IF NOT EXISTS auth_throttle (
+  key TEXT PRIMARY KEY, fail_count INTEGER NOT NULL, window_start BIGINT NOT NULL, locked_until BIGINT NOT NULL, updated_at TEXT NOT NULL
+);
 `;
