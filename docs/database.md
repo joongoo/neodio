@@ -73,7 +73,9 @@ organizations
 
 ## Sentiment and metrics
 
-The current analyzer is explicitly `keyword-heuristic-v1`, not an LLM sentiment
+The current analyzer is explicitly `keyword-heuristic-v2` (v2 adds each
+mention's in-text offset and co-mentioned brand count for the position score;
+bumping the version re-analyzes stored runs lazily on next read), not an LLM sentiment
 model. Persisted sentiment scores are -1..1: positive 0.56, neutral 0, negative
 -0.5 (adapted from existing 0..1 heuristic outputs). Unmentioned brands have
 NULL sentiment/score/position. Evidence is a nearby response excerpt; no confidence
@@ -181,3 +183,15 @@ Store tests cover normalized deduplication, tenant constraints, tracking lifecyc
 taxonomy, transactional rollback, source/intent retention, question snapshots,
 analysis reuse, and NULL sentiment. API tests use a temporary database, leaving
 the application's data unchanged.
+
+## Visibility score (v2)
+
+`totalScore = 0.35·mentions + 0.15·citations + 0.30·position + 0.20·sentiment`,
+every component taken over **all runs** of the week/model/market group (runs
+without a brand mention contribute 0 to position and sentiment too — averaging
+over mentioned runs only let a 1% mention rate score ~45). `citations` is the
+share of runs with at least one own-domain citation. `position` per mention is
+half order-among-tracked-brands, half earliness in the answer; when no other
+tracked brand is present the order carries no information and only earliness is
+used. Groups are averaged weighted by run count. Scores computed before v2 are
+not comparable.

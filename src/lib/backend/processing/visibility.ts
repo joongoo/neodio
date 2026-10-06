@@ -13,6 +13,19 @@ function positionValue(position: number | null) {
   return 0.35;
 }
 
+/**
+ * 언급 하나가 답변 안에서 얼마나 눈에 띄는가(0~1).
+ * - 경쟁사와 함께 나온 답변: 언급 순서와 답변 내 위치(앞일수록 높음)를 반반.
+ * - 혼자 나온 답변: 순서는 "1번째"가 당연해 정보가 없으므로 답변 내 위치만 본다.
+ * - 위치 정보가 없는 예전 분석: 순서만(기존 방식).
+ */
+export function mentionProminence(mention: Pick<MentionSeed, "position" | "offsetRatio" | "othersPresent">): number {
+  if (mention.offsetRatio === null || mention.offsetRatio === undefined) return positionValue(mention.position);
+  const early = 1 - Math.max(0, Math.min(1, mention.offsetRatio));
+  if (!mention.othersPresent) return early;
+  return positionValue(mention.position) * 0.5 + early * 0.5;
+}
+
 export function calculateVisibilityTotal(scores: {
   mentionsScore: number;
   citationsScore: number;
@@ -58,16 +71,13 @@ export function buildVisibilityScores(params: {
     );
     const presentMentions = brandMentions.filter((mention) => mention.isPresent);
 
-    const mentionsScore = scorePercent(presentMentions.length / Math.max(1, runs.length));
-    const citationsScore = scorePercent(ownCitedRunIds.size / Math.max(1, runs.length));
-    const positionScore = scorePercent(
-      presentMentions.reduce((total, mention) => total + positionValue(mention.position), 0) /
-        Math.max(1, presentMentions.length)
-    );
-    const sentimentScore = scorePercent(
-      presentMentions.reduce((total, mention) => total + mention.sentimentScore, 0) /
-        Math.max(1, presentMentions.length)
-    );
+    // 네 항목 모두 "전체 실행" 대비 — 언급되지 않은 실행은 위치·감성도 0으로 센다.
+    // (언급된 답변만 평균내면 1%만 언급돼도 위치·감성이 만점에 가까워 총점이 부풀려진다.)
+    const runCount = Math.max(1, runs.length);
+    const mentionsScore = scorePercent(presentMentions.length / runCount);
+    const citationsScore = scorePercent(ownCitedRunIds.size / runCount);
+    const positionScore = scorePercent(presentMentions.reduce((total, mention) => total + mentionProminence(mention), 0) / runCount);
+    const sentimentScore = scorePercent(presentMentions.reduce((total, mention) => total + mention.sentimentScore, 0) / runCount);
 
     return {
       id: `score-${params.brand.id}-${weekStart}-${llmModelId}-${marketId}`,

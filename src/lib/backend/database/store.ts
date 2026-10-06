@@ -14,7 +14,7 @@ const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${randomUUID()}`;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const label = (value?: string) => value && value.trim() !== "—" ? value.trim() : "";
-export const ANALYSIS_VERSION = "keyword-heuristic-v1";
+export const ANALYSIS_VERSION = "keyword-heuristic-v2";
 
 export interface PromptInput {
   text: string;

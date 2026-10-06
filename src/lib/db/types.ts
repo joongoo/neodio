@@ -128,6 +128,10 @@ export interface MentionSeed {
   brandId: string;
   isPresent: boolean;
   position: number | null;
+  /** 답변 본문에서 처음 나온 위치(0 = 맨 앞, 1 = 맨 끝). 분석 v2부터 채워진다. */
+  offsetRatio?: number | null;
+  /** 이 브랜드 외에 함께 언급된 추적 브랜드 수 — 0이면 "순서"가 정보가 없다(혼자라 1번째). */
+  othersPresent?: number;
   sentiment: Sentiment;
   sentimentScore: number;
 }
@@ -142,6 +146,8 @@ export interface CitationSeed {
   isOwnDomain: boolean;
 }
 
+/** 네 항목(mentions/citations/position/sentiment)은 모두 "그 주·모델·마켓의 전체 실행" 대비 0~100.
+ *  언급되지 않은 실행은 위치·감성도 0으로 센다. */
 export interface VisibilityScoreSeed {
   id: string;
   organizationId: string;
