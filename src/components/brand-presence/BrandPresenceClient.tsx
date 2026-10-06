@@ -17,6 +17,7 @@ import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MultiLineChart } from "@/components/charts/MultiLineChart";
 import { ModelTopicHeatmap } from "@/components/brand-presence/ModelTopicHeatmap";
 import { SentimentEvidenceCard } from "@/components/brand-presence/SentimentEvidenceCard";
+import { ConsistencyCard } from "@/components/brand-presence/ConsistencyCard";
 import { PlacementCard } from "@/components/brand-presence/PlacementCard";
 import { CollectionQualityCard } from "@/components/brand-presence/CollectionQualityCard";
 import { BrandPresenceDetailsModal } from "@/components/brand-presence/BrandPresenceDetailsModal";
@@ -296,6 +297,7 @@ export function BrandPresenceClient({
       </div>
 
       {data.placement && <PlacementCard rows={data.placement} />}
+      {data.consistency && <ConsistencyCard data={data.consistency} />}
       {data.sentimentEvidence && <SentimentEvidenceCard evidence={data.sentimentEvidence} />}
       {data.modelTopicMatrix && <ModelTopicHeatmap matrix={data.modelTopicMatrix} />}
       {data.collectionQuality && <CollectionQualityCard rows={data.collectionQuality} />}

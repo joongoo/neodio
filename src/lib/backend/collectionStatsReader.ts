@@ -18,6 +18,7 @@ import {
   CitedDomainRow,
   CollectionQualityRow,
   SentimentEvidence,
+  ConsistencySummary,
   ModelTopicMatrix,
   CitedPageRow,
   CitedSourceRow,
@@ -1144,6 +1145,49 @@ export async function getRealSentimentEvidence(perSentiment = 6): Promise<Sentim
     rows.filter((r) => r.sentiment === s).sort((a, b) => strength(b) - strength(a)).slice(0, perSentiment)
   );
   return { counts, total, weakShare: Math.round((weak / Math.max(1, counts.positive + counts.negative)) * 100), rows: picked };
+}
+
+// 답변 일관성 — 같은 질의를 같은 엔진에 여러 번 물었을 때 자사가 매번 나오는지. AI 답변은 매번
+// 달라서 한 번의 수집으로 "언급됨/안 됨"을 단정하면 틀릴 수 있다. 전체 기간.
+export async function getRealConsistency(maxFlaky = 10): Promise<ConsistencySummary | null> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (promptRuns.length === 0) return null;
+
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
+  const mentioned = new Set(processed.mentions.filter((m) => m.brandId === OWN_BRAND_ID && m.isPresent).map((m) => m.promptRunId));
+
+  const pairs = new Map<string, { query: string; model: string; hit: number; total: number }>();
+  for (const run of promptRuns) {
+    const query = run.rawMetadata.query?.trim();
+    if (!query) continue;
+    const model = seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId;
+    const key = `${query}__${model}`;
+    const pair = pairs.get(key) ?? { query, model, hit: 0, total: 0 };
+    pair.total += 1;
+    if (mentioned.has(run.id)) pair.hit += 1;
+    pairs.set(key, pair);
+  }
+  if (pairs.size === 0) return null;
+
+  const all = [...pairs.values()];
+  const repeated = all.filter((p) => p.total >= 2);
+  const always = repeated.filter((p) => p.hit === p.total).length;
+  const never = repeated.filter((p) => p.hit === 0).length;
+  const sometimes = repeated.length - always - never;
+  return {
+    pairs: all.length,
+    singleRunPairs: all.length - repeated.length,
+    repeatedPairs: repeated.length,
+    always,
+    sometimes,
+    never,
+    flaky: repeated
+      .filter((p) => p.hit > 0 && p.hit < p.total)
+      .sort((a, b) => b.total - a.total || Math.abs(a.hit / a.total - 0.5) - Math.abs(b.hit / b.total - 0.5))
+      .slice(0, maxFlaky),
+  };
 }
 
 const SENTIMENT_RANK: Record<Sentiment, number> = { negative: 0, neutral: 1, positive: 2 };

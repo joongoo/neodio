@@ -976,6 +976,22 @@ export interface ShareOfVoiceRow {
   topBrands: { brand: string; share: number }[];
 }
 
+/** 답변 일관성 — 같은 질의를 같은 엔진에 반복 수집했을 때 자사 언급이 안정적인지. */
+export interface ConsistencySummary {
+  /** (질의, 엔진) 조합 수. */
+  pairs: number;
+  /** 한 번만 수집돼 일관성을 알 수 없는 조합 수. */
+  singleRunPairs: number;
+  /** 2번 이상 수집된 조합 수. */
+  repeatedPairs: number;
+  /** 반복 수집된 조합 중 매번 언급 / 가끔 언급 / 한 번도 언급 안 됨. */
+  always: number;
+  sometimes: number;
+  never: number;
+  /** 가끔만 언급되는(불안정한) 조합. */
+  flaky: { query: string; model: string; hit: number; total: number }[];
+}
+
 /** 감성 판정 근거 — 키워드 방식 판정을 검수할 수 있게 발췌문과 판정 키워드를 보여준다. */
 export interface SentimentEvidence {
   counts: Record<Sentiment, number>;
@@ -1006,6 +1022,7 @@ export interface CollectionQualityRow {
 export interface BrandPresenceData {
   modelTopicMatrix?: ModelTopicMatrix;
   sentimentEvidence?: SentimentEvidence;
+  consistency?: ConsistencySummary;
   /** 엔진별(+전체) 노출 위치 — 언급 순서·답변 내 위치·인용 순서. */
   placement?: import("@/lib/placement").PlacementSummary[];
   collectionQuality?: CollectionQualityRow[];
