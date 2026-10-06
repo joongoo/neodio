@@ -208,4 +208,20 @@ CREATE INDEX IF NOT EXISTS aio_keywords_prompt ON aio_keywords(prompt_id);
 CREATE INDEX IF NOT EXISTS aio_citations_video ON aio_citations(video_id);
 CREATE INDEX IF NOT EXISTS aio_work_logs_video ON aio_video_work_logs(brand_id,video_id,work_date);
 CREATE INDEX IF NOT EXISTS detected_brand_decisions_status ON detected_brand_decisions(organization_id,brand_id,status);
+-- 설정 변경 이력(프롬프트 세트·토픽 묶음·브랜드 설정) — 쓰기 직전·직후 값을 그대로 남겨 "언제 무엇이 어떻게 바뀌었는지"를 볼 수 있게 한다.
+-- 수집된 답변(prompt_runs)은 바뀌지 않는 원본이라 여기 담지 않는다. 이력은 소급해서 만들 수 없어 먼저 쌓기 시작한다.
+CREATE TABLE IF NOT EXISTS change_log (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), brand_id TEXT,
+  entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, op TEXT NOT NULL CHECK(op IN ('create','update','delete')),
+  summary TEXT NOT NULL, before_json JSONB, after_json JSONB,
+  actor_id TEXT REFERENCES actors(id), at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS change_log_org_at ON change_log(organization_id,at DESC);
+-- 이름 붙인 설정 버전 — 저장 시점의 설정 전체를 함께 보관해 나중에 비교·복원할 수 있다.
+CREATE TABLE IF NOT EXISTS config_versions (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), brand_id TEXT,
+  version INTEGER NOT NULL, label TEXT NOT NULL, note TEXT,
+  created_by TEXT REFERENCES actors(id), created_at TEXT NOT NULL, content_json JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS config_versions_org ON config_versions(organization_id,brand_id,version DESC);
 `;

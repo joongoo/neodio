@@ -3,6 +3,19 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { BrandSeed, ManagedBrand, PromptLibraryRow, PromptRunSeed, PromptTopicGroup, SitemapCrawlResult } from "../../db/types";
 import type { CollectedRunFile } from "../collectionRunsTypes";
+import {
+  brandChangeSummary,
+  diffFields,
+  groupsEqual,
+  promptSummary,
+  promptUpdateDetail,
+  trackingStatusLabel,
+  type ChangeEntity,
+  type ChangeEntry,
+  type ChangeOp,
+  type ConfigSnapshot,
+  type ConfigVersion,
+} from "../../changeLog";
 import { extractMentionsFromRun } from "../processing/mentions";
 import { extractCitationsFromRun } from "../processing/citations";
 import { schema } from "./schema";
@@ -139,7 +152,7 @@ export class PromptStore {
     return this.transaction(async () => {
       const [{ n }] = await this.query<{ n: number }>("SELECT count(*)::int AS n FROM brands WHERE organization_id=$1", [orgId]);
       if (n > 0) return false;
-      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids", "sitemap_crawls"];
+      const scoped = ["detected_brand_decisions", "bridge_entries", "legacy_library_ids", "sitemap_crawls", "change_log", "config_versions"];
       for (const table of scoped) await this.run(`DELETE FROM ${table} WHERE organization_id=$1`, [orgId]);
       await this.run("DELETE FROM tracking_events WHERE tracking_id IN (SELECT id FROM prompt_tracking WHERE organization_id=$1)", [orgId]);
       await this.run("DELETE FROM prompt_tracking WHERE organization_id=$1", [orgId]);
@@ -236,6 +249,100 @@ export class PromptStore {
       [topicId, topicId ? null : categoryId, now(), orgId, promptId]);
   }
 
+  // ---- 설정 변경 이력 ----
+
+  /** 같은 트랜잭션 안에서 변경을 기록한다 — 쓰기가 롤백되면 이력도 함께 사라진다. */
+  private async logChange(orgId: string, entry: {
+    brandId?: string | null; entityType: ChangeEntity; entityId: string; op: ChangeOp;
+    summary: string; before?: unknown; after?: unknown; actorId?: string | null;
+  }): Promise<void> {
+    await this.run("INSERT INTO change_log VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", [
+      id("change"), orgId, entry.brandId ?? null, entry.entityType, entry.entityId, entry.op, entry.summary,
+      entry.before === undefined ? null : JSON.stringify(entry.before), entry.after === undefined ? null : JSON.stringify(entry.after),
+      entry.actorId ?? null, now()]);
+  }
+
+  async listChanges(orgId: string, options: { brandId?: string; limit?: number; before?: string } = {}): Promise<ChangeEntry[]> {
+    const rows = await this.query<Record<string, unknown>>(
+      `SELECT c.*,a.display_name AS actor_name FROM change_log c LEFT JOIN actors a ON a.id=c.actor_id
+       WHERE c.organization_id=$1 AND ($2::text IS NULL OR c.brand_id=$2 OR c.brand_id IS NULL) AND ($3::text IS NULL OR c.at<$3)
+       ORDER BY c.at DESC,c.id LIMIT $4`,
+      [orgId, options.brandId ?? null, options.before ?? null, Math.min(options.limit ?? 50, 200)]);
+    return rows.map((row) => ({
+      id: row.id as string, organizationId: row.organization_id as string, brandId: (row.brand_id as string | null) ?? null,
+      entityType: row.entity_type as ChangeEntity, entityId: row.entity_id as string, op: row.op as ChangeOp,
+      summary: row.summary as string, before: row.before_json, after: row.after_json,
+      actorId: (row.actor_id as string | null) ?? null, actorName: (row.actor_name as string | null) ?? null, at: row.at as string,
+    }));
+  }
+
+  /** 지금 설정 전체 — 이름 붙인 버전에 함께 저장한다. */
+  async configSnapshot(orgId: string, brandId?: string): Promise<ConfigSnapshot> {
+    // 보관(archived)한 프롬프트는 빼고, 일시중지한 프롬프트는 설정의 일부라 함께 담는다(library()는 활성만 반환).
+    const rows = await this.query<{ id: string; prompt: string; category: string; topic: string; status: string }>(
+      `SELECT tr.id,p.text AS prompt,coalesce(c.name,'') AS category,coalesce(t.name,'—') AS topic,tr.status
+       FROM prompt_tracking tr JOIN prompts p ON p.id=tr.prompt_id
+       LEFT JOIN topics t ON t.id=p.topic_id LEFT JOIN categories c ON c.id=coalesce(t.category_id,p.uncategorized_category_id)
+       WHERE tr.organization_id=$1 AND tr.status IN ('active','paused') AND ($2::text IS NULL OR tr.brand_id=$2) ORDER BY tr.added_at,tr.id`,
+      [orgId, brandId ?? null]);
+    const surfaces = await this.trackingSurfaces(orgId, rows.map((row) => row.id));
+    const brand = brandId ? await this.getBrand(orgId, brandId) : null;
+    return {
+      prompts: rows.map((row) => ({
+        text: row.prompt, category: row.category, topic: row.topic, status: row.status, surfaces: surfaces.get(row.id) ?? [],
+      })),
+      topicGroups: await this.groups(orgId),
+      brand: brand ? (brand as unknown as Record<string, unknown>) : null,
+    };
+  }
+
+  async createConfigVersion(orgId: string, input: { brandId?: string; label: string; note?: string; actorId?: string | null }): Promise<ConfigVersion> {
+    const label = input.label.trim();
+    if (!label) throw new Error("버전 이름을 입력해주세요.");
+    return this.transaction(async () => {
+      await this.ensureOrg(orgId);
+      const [last] = await this.query<{ version: number }>(
+        "SELECT max(version) AS version FROM config_versions WHERE organization_id=$1 AND ($2::text IS NULL AND brand_id IS NULL OR brand_id=$2)", [orgId, input.brandId ?? null]);
+      const version = (last?.version ?? 0) + 1;
+      const content = await this.configSnapshot(orgId, input.brandId);
+      const versionId = id("version");
+      await this.run("INSERT INTO config_versions VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", [
+        versionId, orgId, input.brandId ?? null, version, label, input.note?.trim() || null, input.actorId ?? null, now(), JSON.stringify(content)]);
+      return (await this.getConfigVersion(orgId, versionId, true))!;
+    });
+  }
+
+  private toConfigVersion(row: Record<string, unknown>, withContent: boolean): ConfigVersion {
+    const content = row.content_json as ConfigSnapshot;
+    return {
+      id: row.id as string, organizationId: row.organization_id as string, brandId: (row.brand_id as string | null) ?? null,
+      version: Number(row.version), label: row.label as string, note: (row.note as string | null) ?? null,
+      createdBy: (row.created_by as string | null) ?? null, createdByName: (row.actor_name as string | null) ?? null, createdAt: row.created_at as string,
+      stats: { prompts: content.prompts.length, topics: content.topicGroups.length },
+      ...(withContent ? { content } : {}),
+    };
+  }
+
+  async getConfigVersion(orgId: string, versionId: string, withContent = false): Promise<ConfigVersion | null> {
+    const row = await this.one(`SELECT v.*,a.display_name AS actor_name FROM config_versions v LEFT JOIN actors a ON a.id=v.created_by
+      WHERE v.organization_id=$1 AND v.id=$2`, [orgId, versionId]);
+    return row ? this.toConfigVersion(row, withContent) : null;
+  }
+
+  async listConfigVersions(orgId: string, brandId?: string): Promise<ConfigVersion[]> {
+    const rows = await this.query(`SELECT v.*,a.display_name AS actor_name FROM config_versions v LEFT JOIN actors a ON a.id=v.created_by
+      WHERE v.organization_id=$1 AND ($2::text IS NULL OR v.brand_id=$2 OR v.brand_id IS NULL) ORDER BY v.created_at DESC`, [orgId, brandId ?? null]);
+    return rows.map((row) => this.toConfigVersion(row, false));
+  }
+
+  private async promptState(orgId: string, trackingId: string) {
+    return this.one<{ prompt: string; category: string; topic: string; status: string; brand_id: string; prompt_id: string }>(
+      `SELECT p.text AS prompt,coalesce(c.name,'') AS category,coalesce(t.name,'—') AS topic,tr.status,tr.brand_id,tr.prompt_id
+       FROM prompt_tracking tr JOIN prompts p ON p.id=tr.prompt_id
+       LEFT JOIN topics t ON t.id=p.topic_id LEFT JOIN categories c ON c.id=coalesce(t.category_id,p.uncategorized_category_id)
+       WHERE tr.organization_id=$1 AND tr.id=$2`, [orgId, trackingId]);
+  }
+
   async track(orgId: string, input: PromptInput, options: {
     brandId: string; origin: PromptLibraryRow["origin"]; legacyId?: string; addedAt?: string;
     /** 플랫폼 — 새 추적의 기본값은 지금까지 라이브러리가 수집하던 플랫폼(네이버 AI·Google AI 모드). 이미 있는 추적에 넘기면 그 값으로 바꾼다. */
@@ -254,6 +361,15 @@ export class PromptStore {
         await this.run("UPDATE prompt_tracking SET status='active',paused_at=NULL,archived_at=NULL,updated_at=$1 WHERE id=$2", [at, trackingId]);
       }
       if (!existing || existing.status !== "active") await this.run("INSERT INTO tracking_events VALUES ($1,$2,'active',$3,$4)", [id("event"), trackingId, input.actorId ?? null, at]);
+      // 사용자가 프롬프트를 추가·재개한 것만 기록 — 예전 데이터 이관(legacyId)은 이력 대상이 아니다.
+      if (!options.legacyId && (!existing || existing.status !== "active")) {
+        await this.logChange(orgId, {
+          brandId: options.brandId, entityType: "prompt", entityId: trackingId, op: existing ? "update" : "create", actorId: input.actorId,
+          summary: existing ? promptSummary("status", input.text, "재개") : promptSummary("create", input.text),
+          before: existing ? { status: existing.status } : undefined,
+          after: { prompt: input.text.trim(), category: input.category ?? "", topic: input.topic ?? "", status: "active", origin: options.origin },
+        });
+      }
       if (options.legacyId) await this.run("INSERT INTO legacy_library_ids VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [orgId, options.legacyId, trackingId]);
       if (options.surfaces) await this.setTrackingSurfaces(orgId, trackingId, options.surfaces);
       else if (!existing) await this.setTrackingSurfaces(orgId, trackingId, AI_ANSWER_SURFACES);
@@ -407,11 +523,18 @@ export class PromptStore {
       const row = await this.one<{ id: string }>(`SELECT id FROM prompt_tracking WHERE organization_id=$1 AND
         (id=$2 OR id IN (SELECT tracking_id FROM legacy_library_ids WHERE organization_id=$1 AND legacy_id=$2))`, [orgId, trackingId]);
       if (!row) return false;
+      const before = await this.promptState(orgId, row.id);
       const at = now();
       await this.run("UPDATE prompt_tracking SET status=$1,paused_at=$2,archived_at=$3,updated_at=$4 WHERE id=$5",
         [status, status === "paused" ? at : null, status === "archived" ? at : null, at, row.id]);
       await this.run("INSERT INTO tracking_events VALUES ($1,$2,$3,NULL,$4)", [id("event"), row.id, status, at]);
       await this.syncAioKeyword(row.id);
+      if (before && before.status !== status) {
+        await this.logChange(orgId, {
+          brandId: before.brand_id, entityType: "tracking", entityId: row.id, op: "update",
+          summary: promptSummary("status", before.prompt, trackingStatusLabel(status)), before: { status: before.status }, after: { status },
+        });
+      }
       return true;
     });
   }
@@ -420,12 +543,25 @@ export class PromptStore {
     return this.transaction(async () => {
       const tracking = await this.one<{ prompt_id: string }>("SELECT prompt_id FROM prompt_tracking WHERE organization_id=$1 AND id=$2", [orgId, trackingId]);
       if (!tracking) return null;
+      const beforeState = await this.promptState(orgId, trackingId);
       if (!normalize(patch.prompt)) throw new Error("Prompt text is required");
       const duplicate = await this.one<{ id: string }>("SELECT id FROM prompts WHERE organization_id=$1 AND normalized_text=$2 AND id<>$3",
         [orgId, normalize(patch.prompt), tracking.prompt_id]);
       if (duplicate) throw new Error("An identical prompt already exists");
       await this.run("UPDATE prompts SET text=$1,normalized_text=$2,updated_at=$3 WHERE id=$4", [patch.prompt.trim(), normalize(patch.prompt), now(), tracking.prompt_id]);
       await this.classify(orgId, tracking.prompt_id, patch.category, patch.topic);
+      const afterState = await this.promptState(orgId, trackingId);
+      if (beforeState && afterState) {
+        const detail = promptUpdateDetail(beforeState, afterState);
+        if (detail) {
+          await this.logChange(orgId, {
+            brandId: afterState.brand_id, entityType: "prompt", entityId: trackingId, op: "update",
+            summary: promptSummary("update", afterState.prompt, detail),
+            before: { prompt: beforeState.prompt, category: beforeState.category, topic: beforeState.topic },
+            after: { prompt: afterState.prompt, category: afterState.category, topic: afterState.topic },
+          });
+        }
+      }
       const rows = await this.library(orgId);
       return rows.find(row => row.id === trackingId) ?? null;
     });
@@ -446,6 +582,7 @@ export class PromptStore {
 
   async replaceGroups(orgId: string, groups: PromptTopicGroup[]): Promise<void> {
     await this.transaction(async () => {
+      const beforeGroups = await this.groups(orgId);
       const seen = new Set<string>();
       for (const group of groups) for (const text of group.prompts) {
         if (seen.has(normalize(text))) throw new Error("A prompt cannot belong to multiple topic groups");
@@ -455,6 +592,12 @@ export class PromptStore {
       await this.run(`UPDATE prompts SET uncategorized_category_id=(SELECT category_id FROM topics WHERE id=prompts.topic_id),
         topic_id=NULL,updated_at=$1 WHERE organization_id=$2 AND topic_id IS NOT NULL`, [now(), orgId]);
       for (const group of groups) for (const text of group.prompts) await this.upsertPrompt(orgId, { text, category: group.category, topic: group.topic }, true);
+      if (!groupsEqual(beforeGroups, groups)) {
+        await this.logChange(orgId, {
+          entityType: "topic_groups", entityId: orgId, op: "update",
+          summary: `토픽 묶음 변경 — ${beforeGroups.length}개 → ${groups.length}개`, before: beforeGroups, after: groups,
+        });
+      }
     });
   }
 
@@ -635,7 +778,9 @@ export class PromptStore {
         JSON.stringify(brand.markets), JSON.stringify(brand.aliases), JSON.stringify(brand.otherBrands),
         JSON.stringify(brand.urls), JSON.stringify(brand.socialAccounts), JSON.stringify(brand.earnedContentSources),
         brand.cdnConnected, brand.gscConnected, brand.analyticsConnected, at, at]);
-      return (await this.getBrand(orgId, newId))!;
+      const created = (await this.getBrand(orgId, newId))!;
+      await this.logChange(orgId, { brandId: newId, entityType: "brand", entityId: newId, op: "create", summary: `브랜드 추가 — ${brand.name}`, after: { name: brand.name, url: brand.url } });
+      return created;
     });
   }
 
@@ -651,6 +796,10 @@ export class PromptStore {
         JSON.stringify(merged.markets), JSON.stringify(merged.aliases), JSON.stringify(merged.otherBrands),
         JSON.stringify(merged.urls), JSON.stringify(merged.socialAccounts), JSON.stringify(merged.earnedContentSources),
         merged.cdnConnected, merged.gscConnected, merged.analyticsConnected, now(), orgId, brandId]);
+      const diff = diffFields(existing as unknown as Record<string, unknown>, merged as unknown as Record<string, unknown>);
+      if (diff) {
+        await this.logChange(orgId, { brandId, entityType: "brand", entityId: brandId, op: "update", summary: brandChangeSummary(diff.changed), before: diff.before, after: diff.after });
+      }
       return this.getBrand(orgId, brandId);
     });
   }
@@ -659,8 +808,13 @@ export class PromptStore {
     // detected_brand_decisions는 brands를 ON DELETE CASCADE 없이 참조하므로 먼저 지운다 — 안 그러면 브랜드 최적화·제외 기록이
     // 있는 브랜드는 FK 위반(500)으로 삭제되지 않는다.
     return this.transaction(async () => {
+      const existing = await this.getBrand(orgId, brandId);
       await this.run("DELETE FROM detected_brand_decisions WHERE organization_id=$1 AND brand_id=$2", [orgId, brandId]);
-      return (await this.run("DELETE FROM brands WHERE organization_id=$1 AND id=$2", [orgId, brandId])) > 0;
+      const deleted = (await this.run("DELETE FROM brands WHERE organization_id=$1 AND id=$2", [orgId, brandId])) > 0;
+      if (deleted && existing) {
+        await this.logChange(orgId, { brandId: null, entityType: "brand", entityId: brandId, op: "delete", summary: `브랜드 삭제 — ${existing.name}`, before: existing });
+      }
+      return deleted;
     });
   }
 

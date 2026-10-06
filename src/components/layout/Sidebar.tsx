@@ -86,6 +86,7 @@ const NAV: NavGroup[] = [
     children: [
       { label: "조직 관리", href: "/organizations" },
       { label: "브랜드 설정", href: "/brands-management" },
+      { label: "변경 이력", href: "/change-history" },
     ],
   },
   { label: "도움말 및 학습", href: "/help", icon: HelpCircle },
