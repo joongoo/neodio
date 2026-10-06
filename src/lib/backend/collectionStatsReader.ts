@@ -4,6 +4,7 @@ import { getRunOutcome } from "./collectionRunsTypes";
 import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { brandPatterns } from "./processing/text";
+import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage } from "@/lib/visibilityStats";
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
 import { getPromptTopicGroups } from "./promptTopics";
 import { seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
@@ -104,6 +105,12 @@ export interface RealMetric {
   value: number;
   trend: StatCard["trend"];
   sparkline: StatCard["sparkline"];
+  label?: string;
+  description?: string;
+  decimals?: number;
+  suffix?: string;
+  trendUnit?: StatCard["trendUnit"];
+  caption?: string;
 }
 
 export interface RealStatSeries {
@@ -318,54 +325,90 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
   const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks, previousWeeks } = result;
+  const { processed, weekOfRun, currentWeeks, previousWeeks, runsById } = result;
 
   const allWeeks = Array.from(new Set([...currentWeeks, ...previousWeeks]));
-  const mentionsByWeek = new Map(allWeeks.map((w) => [w, 0]));
-  const citationsByWeek = new Map(allWeeks.map((w) => [w, 0]));
-  const visibilityByWeek = new Map<string, number[]>(allWeeks.map((w) => [w, []]));
+  const mentionedRunsByWeek = new Map<string, Set<string>>(allWeeks.map((w) => [w, new Set()]));
+  const citedRunsByWeek = new Map<string, Set<string>>(allWeeks.map((w) => [w, new Set()]));
+  const runsByWeek = new Map<string, number>(allWeeks.map((w) => [w, 0]));
+  // 가시성 점수 가중치 — 주차·모델·마켓 그룹별 성공 실행 수.
+  const runsByGroup = new Map<string, number>();
+
+  for (const [runId, week] of weekOfRun) {
+    if (!runsByWeek.has(week)) continue;
+    runsByWeek.set(week, (runsByWeek.get(week) ?? 0) + 1);
+    const run = runsById.get(runId);
+    if (run) {
+      const key = `${week}:${run.llmModelId}:${run.marketId}`;
+      runsByGroup.set(key, (runsByGroup.get(key) ?? 0) + 1);
+    }
+  }
 
   for (const mention of processed.mentions) {
     if (mention.brandId !== OWN_BRAND_ID || !mention.isPresent) continue;
     const week = weekOfRun.get(mention.promptRunId);
-    if (week) mentionsByWeek.set(week, (mentionsByWeek.get(week) ?? 0) + 1);
+    if (week) mentionedRunsByWeek.get(week)?.add(mention.promptRunId);
   }
 
   for (const citation of processed.citations) {
     if (!citation.isOwnDomain) continue;
     const week = weekOfRun.get(citation.promptRunId);
-    if (week) citationsByWeek.set(week, (citationsByWeek.get(week) ?? 0) + 1);
+    if (week) citedRunsByWeek.get(week)?.add(citation.promptRunId);
   }
 
+  const visibilityByWeek = new Map<string, { value: number; weight: number }[]>(allWeeks.map((w) => [w, []]));
   for (const score of processed.visibilityScores) {
-    visibilityByWeek.get(score.weekStart)?.push(score.totalScore);
+    const weight = runsByGroup.get(`${score.weekStart}:${score.llmModelId}:${score.marketId}`) ?? 1;
+    visibilityByWeek.get(score.weekStart)?.push({ value: score.totalScore, weight });
   }
 
-  const sum = (list: string[], map: Map<string, number>) => list.reduce((s, w) => s + (map.get(w) ?? 0), 0);
-  const sparkline = (list: string[], map: Map<string, number>) =>
-    list.map((w) => ({ week: formatWeekLabel(w), value: map.get(w) ?? 0 }));
+  // 주 목록 → (적중 실행 수, 전체 실행 수) — 프롬프트를 늘려도 비율은 그대로.
+  const parts = (weeks: string[], hits: Map<string, Set<string>>) =>
+    weeks.map((w) => ({ hit: hits.get(w)?.size ?? 0, total: runsByWeek.get(w) ?? 0 }));
+  const sumOf = (list: { hit: number; total: number }[], key: "hit" | "total") => list.reduce((s, p) => s + p[key], 0);
+  const rateMetric = (hits: Map<string, Set<string>>, label: string, description: string, unitLabel: string): RealMetric => {
+    const current = parts(currentWeeks, hits);
+    const previous = parts(previousWeeks, hits);
+    const value = pooledRate(current);
+    const total = sumOf(current, "total");
+    const low = total < MIN_RELIABLE_RUNS;
+    return {
+      label,
+      description,
+      value,
+      decimals: 1,
+      suffix: "%",
+      trendUnit: "%p",
+      caption: `${unitLabel} ${sumOf(current, "hit").toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")}개 실행${low ? " · 표본 적음" : ""}`,
+      trend: pointTrend(value, previousWeeks.length ? pooledRate(previous) : undefined),
+      sparkline: currentWeeks.map((w, i) => ({ week: formatWeekLabel(w), value: pooledRate([current[i]]) })),
+    };
+  };
 
-  const currentVis = average(currentWeeks.flatMap((w) => visibilityByWeek.get(w) ?? []));
-  const previousVis = average(previousWeeks.flatMap((w) => visibilityByWeek.get(w) ?? []));
-  const currentMentions = sum(currentWeeks, mentionsByWeek);
-  const currentCitations = sum(currentWeeks, citationsByWeek);
+  const weightedOf = (weeks: string[]) => weightedAverage(weeks.flatMap((w) => visibilityByWeek.get(w) ?? []));
+  const currentVis = weightedOf(currentWeeks);
+  const previousVis = weightedOf(previousWeeks);
+  const currentRuns = currentWeeks.reduce((s, w) => s + (runsByWeek.get(w) ?? 0), 0);
 
   return {
     visibilityScore: {
       value: currentVis,
       trend: trend(currentVis, previousWeeks.length ? previousVis : undefined),
-      sparkline: currentWeeks.map((w) => ({ week: formatWeekLabel(w), value: average(visibilityByWeek.get(w) ?? []) })),
+      caption: `실행 ${currentRuns.toLocaleString("ko-KR")}개 가중 평균${currentRuns < MIN_RELIABLE_RUNS ? " · 표본 적음" : ""}`,
+      sparkline: currentWeeks.map((w) => ({ week: formatWeekLabel(w), value: weightedAverage(visibilityByWeek.get(w) ?? []) })),
     },
-    brandMentions: {
-      value: currentMentions,
-      trend: trend(currentMentions, previousWeeks.length ? sum(previousWeeks, mentionsByWeek) : undefined),
-      sparkline: sparkline(currentWeeks, mentionsByWeek),
-    },
-    citations: {
-      value: currentCitations,
-      trend: trend(currentCitations, previousWeeks.length ? sum(previousWeeks, citationsByWeek) : undefined),
-      sparkline: sparkline(currentWeeks, citationsByWeek),
-    },
+    brandMentions: rateMetric(
+      mentionedRunsByWeek,
+      "브랜드 언급률",
+      "선택 기간에 수집한 AI 답변 중 우리 브랜드가 언급된 답변의 비율이에요. 수집한 프롬프트 수가 늘어도 비율은 그대로라 기간·수집량이 달라도 비교할 수 있어요. 그래프는 주별 언급률이에요.",
+      "언급"
+    ),
+    citations: rateMetric(
+      citedRunsByWeek,
+      "인용률",
+      "선택 기간에 수집한 AI 답변 중 우리 도메인이 출처로 인용된 답변의 비율이에요. 한 답변에 여러 번 인용돼도 1건으로 세요. 그래프는 주별 인용률이에요.",
+      "인용"
+    ),
   };
 }
 

@@ -207,6 +207,12 @@ export interface StatCard {
   decimals?: number;
   trend: { direction: "up" | "down" | "flat"; percent: number };
   sparkline: SparklinePoint[];
+  /** 값 뒤에 붙는 단위 (예: "%"). */
+  suffix?: string;
+  /** 증감 단위 — 비율 지표는 "%p", 기본은 상대 "%". */
+  trendUnit?: "%" | "%p";
+  /** 값 아래 보조 문구 (예: "12/40개 실행 · 표본 적음"). */
+  caption?: string;
 }
 
 export interface SentimentWeek {

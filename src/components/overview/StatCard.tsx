@@ -15,7 +15,9 @@ export function StatCard({ stat }: { stat: StatCardData }) {
       </span>
       <span className="text-2xl font-bold tabular-nums text-neutral-900">
         {stat.decimals ? stat.value.toFixed(stat.decimals) : stat.value.toLocaleString("ko-KR")}
+        {stat.suffix}
       </span>
+      {stat.caption && <span className="-mt-1.5 text-[11px] text-neutral-400">{stat.caption}</span>}
       <div className="flex items-center justify-between">
         <span
           className={cn(
@@ -27,7 +29,8 @@ export function StatCard({ stat }: { stat: StatCardData }) {
         >
           {stat.trend.direction === "up" && "▲ "}
           {stat.trend.direction === "down" && "▼ "}
-          지난주 대비 {stat.trend.percent}%
+          지난주 대비 {stat.trend.percent}
+          {stat.trendUnit ?? "%"}
         </span>
         <Sparkline data={stat.sparkline} />
       </div>

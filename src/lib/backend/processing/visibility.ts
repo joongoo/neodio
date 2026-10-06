@@ -51,13 +51,15 @@ export function buildVisibilityScores(params: {
     const brandMentions = params.mentions.filter(
       (mention) => mention.brandId === params.brand.id && runIds.has(mention.promptRunId)
     );
-    const ownCitations = params.citations.filter(
-      (citation) => citation.isOwnDomain && runIds.has(citation.promptRunId)
+    // 한 답변에 자사 인용이 여러 개여도 1로 센다 — "인용된 답변 비율"이어야
+    // 100%를 넘지 않고 인용이 많은 답변 하나에 점수가 끌려가지 않는다.
+    const ownCitedRunIds = new Set(
+      params.citations.filter((citation) => citation.isOwnDomain && runIds.has(citation.promptRunId)).map((c) => c.promptRunId)
     );
     const presentMentions = brandMentions.filter((mention) => mention.isPresent);
 
     const mentionsScore = scorePercent(presentMentions.length / Math.max(1, runs.length));
-    const citationsScore = scorePercent(ownCitations.length / Math.max(1, runs.length));
+    const citationsScore = scorePercent(ownCitedRunIds.size / Math.max(1, runs.length));
     const positionScore = scorePercent(
       presentMentions.reduce((total, mention) => total + positionValue(mention.position), 0) /
         Math.max(1, presentMentions.length)
