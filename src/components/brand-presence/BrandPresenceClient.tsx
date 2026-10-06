@@ -263,14 +263,14 @@ export function BrandPresenceClient({
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div>
-            <h3 className="text-sm font-semibold text-neutral-900">브랜드 언급 수</h3>
-            <p className="text-xs text-neutral-500">주간 언급 수 비교</p>
-            <MultiLineChart data={data.mentionsByWeek} series={selectedCompetitors} />
+            <h3 className="text-sm font-semibold text-neutral-900">{data.weeklyTrackingIsRate ? "브랜드 언급률" : "브랜드 언급 수"}</h3>
+            <p className="text-xs text-neutral-500">{data.weeklyTrackingIsRate ? "주간 답변 중 브랜드가 언급된 비율 비교" : "주간 언급 수 비교"}</p>
+            <MultiLineChart data={data.mentionsByWeek} series={selectedCompetitors} unit={data.weeklyTrackingIsRate ? "%" : undefined} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-neutral-900">브랜드 인용 수</h3>
-            <p className="text-xs text-neutral-500">주간 인용 수 비교</p>
-            <MultiLineChart data={data.citationsByWeek} series={selectedCompetitors} />
+            <h3 className="text-sm font-semibold text-neutral-900">{data.weeklyTrackingIsRate ? "브랜드 인용률" : "브랜드 인용 수"}</h3>
+            <p className="text-xs text-neutral-500">{data.weeklyTrackingIsRate ? "주간 답변 중 브랜드 도메인이 인용된 비율 비교" : "주간 인용 수 비교"}</p>
+            <MultiLineChart data={data.citationsByWeek} series={selectedCompetitors} unit={data.weeklyTrackingIsRate ? "%" : undefined} />
           </div>
         </div>
       </Card>

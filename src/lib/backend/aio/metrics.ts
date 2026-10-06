@@ -158,7 +158,9 @@ export function buildAioOverview({ keywords, observations, today, weeks, optimiz
       ? Array.from({ length: weeks * 7 }, (_, i) => addDays(today, -(weeks * 7 - 1 - i))).map((d) => ({ start: d, end: d }))
       : Array.from({ length: weeks }, (_, i) => addDays(toUtcSundayWeekStart(today), -7 * (weeks - 1 - i))).map((w) => ({ start: w, end: addDays(w, 6) }));
   for (const { start, end } of buckets) {
-    const f = funnel(obs.filter((o) => o.collectedDate >= start && o.collectedDate <= end));
+    // 같은 키워드를 구간 안에서 여러 번 수집했어도 키워드당 최신 1건만 — 수집 빈도가
+    // 높은 키워드가 비율을 끌고 가지 않게 한다.
+    const f = funnel([...latestByKeyword(obs.filter((o) => o.collectedDate >= start && o.collectedDate <= end)).values()]);
     trend.push({
       start,
       label: shortLabel(start),

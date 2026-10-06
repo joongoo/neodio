@@ -398,6 +398,8 @@ export interface BrandRankRow {
   brand: string;
   /** 이 브랜드가 언급된 답변 수(한 답변에서 여러 번 나와도 1). */
   mentions: number;
+  /** 이 순위를 계산한 전체 답변 수 — mentions의 분모(언급률 표시용). */
+  totalAnswers?: number;
   /** 답변 안에서 이름이 나온 총 횟수 — 동률 정렬용 보조값. */
   occurrences?: number;
   /** 자사 브랜드 행(순위에는 넣되 등록·제외 같은 경쟁사 액션 대상이 아니다). */
@@ -969,6 +971,8 @@ export interface BrandPresenceData {
   defaultSelectedCompetitors: string[];
   mentionsByWeek: BrandWeeklyPoint[];
   citationsByWeek: BrandWeeklyPoint[];
+  /** true면 mentionsByWeek/citationsByWeek 값이 개수가 아니라 주별 언급률·인용률(%). */
+  weeklyTrackingIsRate?: boolean;
   sentimentByWeek: { week: string; positive: number; neutral: number; negative: number }[];
   promptMetricsByWeek: PromptMetricsPoint[];
   topMovers: SentimentMoverRow[];

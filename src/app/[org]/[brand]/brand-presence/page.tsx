@@ -70,6 +70,7 @@ export default async function BrandPresencePage() {
         sentimentByWeek: realSentiment ?? data.sentimentByWeek,
         mentionsByWeek: realWeeklyTracking?.mentionsByWeek ?? data.mentionsByWeek,
         citationsByWeek: realWeeklyTracking?.citationsByWeek ?? data.citationsByWeek,
+        weeklyTrackingIsRate: realWeeklyTracking ? true : undefined,
         promptMetricsByWeek: realPromptMetrics ?? data.promptMetricsByWeek,
         dataInsights: realDataInsights ?? data.dataInsights,
         shareOfVoice: realShareOfVoice ?? data.shareOfVoice,

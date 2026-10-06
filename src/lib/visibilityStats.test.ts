@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pointTrend, pooledRate, weightedAverage } from "./visibilityStats";
+import { pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "./visibilityStats";
 
 test("pooledRate는 프롬프트 수가 늘어도 같은 적중률이면 같은 값", () => {
   assert.equal(pooledRate([{ hit: 3, total: 10 }]), 30);
@@ -18,4 +18,11 @@ test("pointTrend는 %p 차이를 계산한다", () => {
   assert.deepEqual(pointTrend(35, 30), { direction: "up", percent: 5 });
   assert.deepEqual(pointTrend(25.5, 30), { direction: "down", percent: 4.5 });
   assert.deepEqual(pointTrend(30, undefined), { direction: "flat", percent: 0 });
+});
+
+test("wilsonLowerBound는 같은 비율이면 표본이 큰 쪽을 더 높게 본다", () => {
+  assert.ok(wilsonLowerBound(1, 1) < wilsonLowerBound(8, 10));
+  assert.ok(wilsonLowerBound(8, 10) < wilsonLowerBound(80, 100));
+  assert.equal(wilsonLowerBound(0, 0), 0);
+  assert.ok(wilsonLowerBound(0, 5) >= 0);
 });

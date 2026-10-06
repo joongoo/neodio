@@ -64,7 +64,7 @@ function BrandTick({ x, y, payload }: { x?: number; y?: number; payload?: { valu
   );
 }
 
-export function MarketComparisonChart({ data }: { data: MarketComparisonRow[] }) {
+export function MarketComparisonChart({ data, asRate = false }: { data: MarketComparisonRow[]; asRate?: boolean }) {
   const { ref, isVisible } = useInViewOnce<HTMLDivElement>();
 
   return (
@@ -73,7 +73,13 @@ export function MarketComparisonChart({ data }: { data: MarketComparisonRow[] })
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
             <CartesianGrid horizontal={false} stroke="#f1f5f9" />
-            <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
+            <XAxis
+              type="number"
+              tickLine={false}
+              axisLine={false}
+              fontSize={12}
+              tickFormatter={asRate ? (v) => `${v}%` : undefined}
+            />
             <YAxis
               type="category"
               dataKey="brand"
@@ -82,10 +88,10 @@ export function MarketComparisonChart({ data }: { data: MarketComparisonRow[] })
               width={LABEL_AREA_WIDTH}
               tick={<BrandTick />}
             />
-            <Tooltip formatter={(value) => Number(value).toLocaleString("ko-KR")} />
+            <Tooltip formatter={(value) => (asRate ? `${Number(value)}%` : Number(value).toLocaleString("ko-KR"))} />
             <Legend verticalAlign="bottom" height={32} />
-            <Bar dataKey="mentions" name="언급 수" stackId="m" fill="#3b82f6" barSize={28} />
-            <Bar dataKey="citations" name="인용 수" stackId="m" fill="#fa7317" barSize={28} />
+            <Bar dataKey="mentions" name={asRate ? "언급률" : "언급 수"} stackId={asRate ? undefined : "m"} fill="#3b82f6" barSize={asRate ? 14 : 28} />
+            <Bar dataKey="citations" name={asRate ? "인용률" : "인용 수"} stackId={asRate ? undefined : "m"} fill="#fa7317" barSize={asRate ? 14 : 28} />
           </BarChart>
         </ResponsiveContainer>
       )}

@@ -12,9 +12,12 @@ const COLORS = ["#1e293b", "#3b82f6", "#fa7317", "#22c55e", "#a855f7", "#e02699"
 export function MultiLineChart({
   data,
   series,
+  unit,
 }: {
   data: Record<string, number | string>[];
   series: string[];
+  /** 축·툴팁 값 뒤에 붙는 단위 (예: "%"). */
+  unit?: string;
 }) {
   const { ref, isVisible } = useInViewOnce<HTMLDivElement>();
 
@@ -25,8 +28,8 @@ export function MultiLineChart({
           <LineChart data={data}>
             <CartesianGrid vertical={false} stroke="#f1f5f9" />
             <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis tickLine={false} axisLine={false} fontSize={12} width={36} />
-            <Tooltip />
+            <YAxis tickLine={false} axisLine={false} fontSize={12} width={unit ? 44 : 36} tickFormatter={unit ? (v) => `${v}${unit}` : undefined} />
+            <Tooltip formatter={unit ? (v) => `${v}${unit}` : undefined} />
             <Legend verticalAlign="bottom" height={32} />
             {series.map((key, i) => (
               <Line

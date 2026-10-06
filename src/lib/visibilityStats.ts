@@ -25,3 +25,16 @@ export function pointTrend(current: number, previous: number | undefined): { dir
   const diff = Number((current - previous).toFixed(1));
   return { direction: diff === 0 ? "flat" : diff > 0 ? "up" : "down", percent: Math.abs(diff) };
 }
+
+/**
+ * Wilson 신뢰구간 하한(0~1). "적중 비율"로 순위를 매길 때 표본이 작은 행이
+ * 우연히 100%라서 1위가 되는 것을 막는다 — 같은 비율이면 표본이 큰 쪽이 위.
+ */
+export function wilsonLowerBound(hit: number, total: number, z = 1.28): number {
+  if (total <= 0) return 0;
+  const p = hit / total;
+  const z2 = z * z;
+  const center = p + z2 / (2 * total);
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total);
+  return Math.max(0, (center - margin) / (1 + z2 / total));
+}

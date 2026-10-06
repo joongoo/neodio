@@ -86,6 +86,7 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
   topic: [
     { key: "mentions", label: "언급 수" },
     { key: "visibility", label: "가시성" },
+    { key: "runs", label: "실행 수" },
     { key: "market", label: "마켓" },
   ],
   brand: [{ key: "mentions", label: "언급 답변 수" }],
@@ -156,6 +157,7 @@ function buildTopicColumns(
     },
     { key: "mentions", label: "언급 수", width: "w-[100px]", render: (r) => r.mentions },
     { key: "visibility", label: "가시성", width: "w-[100px]", render: (r) => `${r.visibility}%` },
+    { key: "runs", label: "실행 수", width: "w-[90px]", render: (r) => r.prompts.length },
     {
       key: "trend",
       label: "추이",
@@ -313,7 +315,11 @@ function buildBrandColumns(opts: {
         );
       },
     },
-    { key: "mentions", label: "언급 답변 수", width: "w-[110px]", render: (r) => r.mentions.toLocaleString("ko-KR") },
+    { key: "mentions", label: "언급 답변 수", width: "w-[110px]", render: (r) =>
+        r.totalAnswers
+          ? `${r.mentions.toLocaleString("ko-KR")} / ${r.totalAnswers.toLocaleString("ko-KR")} (${Math.round((r.mentions / r.totalAnswers) * 100)}%)`
+          : r.mentions.toLocaleString("ko-KR"),
+    },
   ];
 }
 
@@ -539,7 +545,7 @@ export function TopicsTableSection({
       ),
     [trackedIds, isTopicOpportunities, range, tenantBase]
   );
-  const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "market"].includes(c.key) || visible.has(c.key));
+  const visibleTopicColumns = topicColumns.filter((c) => !["mentions", "visibility", "runs", "market"].includes(c.key) || visible.has(c.key));
   // 역할·등급 변경(행 하나 또는 선택한 여러 개) — 서버가 등록·제외까지 처리한다. 끝나면 서버 데이터를 다시 불러온다.
   const applyRoleChanges = useCallback(
     async (targets: BrandRankRow[], choice: RoleChoice, tier?: CompetitorTier | null) => {

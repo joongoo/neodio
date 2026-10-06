@@ -40,12 +40,14 @@ function normalizeHostname(hostname: string) {
 export const dynamic = "force-dynamic";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
+// 자사 브랜드명이 들어간 질의는 언급되기 쉬워 가시성을 부풀리므로 따로 볼 수 있게 한다.
+const SCOPE_BY_LABEL: Record<string, "brand" | "nonbrand"> = { "브랜드 질의": "brand", "일반 질의": "nonbrand" };
 const RANGE_TEXT: Record<DateRange, string> = { "1w": "최근 1주", "2w": "최근 2주", "4w": "최근 4주" };
 
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; domain?: string; platform?: string; category?: string; market?: string }>;
+  searchParams: Promise<{ range?: string; domain?: string; platform?: string; category?: string; market?: string; scope?: string }>;
 }) {
   const tenant = await getCurrentTenant();
   const orgId = tenant.orgId;
@@ -129,6 +131,7 @@ export default async function OverviewPage({
     ...(selectedLlmModelId ? { llmModelId: selectedLlmModelId } : {}),
     ...(params.category ? { category: params.category } : {}),
     ...(selectedMarketId ? { marketId: selectedMarketId } : {}),
+    ...(params.scope && SCOPE_BY_LABEL[params.scope] ? { queryScope: SCOPE_BY_LABEL[params.scope] } : {}),
   };
 
   // Real collected-run data (mentions/citations/visibility score, sentiment,
@@ -219,6 +222,7 @@ export default async function OverviewPage({
             <FilterDropdown label="플랫폼" paramKey="platform" value={params.platform ?? "전체"} options={platformOptions} />
             <FilterDropdown label="카테고리" paramKey="category" value={params.category ?? "전체"} options={categoryOptions} />
             <FilterDropdown label="마켓" paramKey="market" value={params.market ?? "전체"} options={marketOptions} />
+            <FilterDropdown label="질의" paramKey="scope" value={params.scope ?? "전체"} options={["전체", ...Object.keys(SCOPE_BY_LABEL)]} />
           </div>
         </div>
         {/* 공유/PDF 내보내기는 onClick이 없는 placeholder라 실제 기능이 생기기 전까지 숨김 */}
@@ -249,11 +253,11 @@ export default async function OverviewPage({
         </ChartPanel>
         <ChartPanel
           title="마켓 비교"
-          description={`브랜드를 주요 마켓 브랜드와 비교해요. ${RANGE_TEXT[range]}간 집계된 주간 언급 수와 인용 수예요.`}
+          description={`브랜드를 주요 마켓 브랜드와 비교해요. ${RANGE_TEXT[range]}간 ${realMarket !== null ? "수집한 답변 중 브랜드가 언급·인용된 답변의 비율이에요." : "집계된 주간 언급 수와 인용 수예요."}`}
           actionLabel="자세히보기"
           actionHref={`${tenant.base}/brand-presence`}
         >
-          <MarketComparisonChart data={marketData} />
+          <MarketComparisonChart data={marketData} asRate={realMarket !== null} />
         </ChartPanel>
       </div>
 
