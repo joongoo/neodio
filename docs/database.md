@@ -197,3 +197,15 @@ half order-among-tracked-brands, half earliness in the answer; when no other
 tracked brand is present the order carries no information and only earliness is
 used. Groups are averaged weighted by run count. Scores computed before v2 are
 not comparable.
+
+## Observations (repeat collapsing)
+
+Rate metrics (overview cards, visibility score, market comparison/tracking, the
+per-engine visibility tab, topic and data-insight visibility) count
+**observations**, not runs: runs sharing the same prompt, model, market and
+UTC-Sunday week are one observation, and each run carries weight
+`1 / (runs in that group)` (`src/lib/observations.ts`). Non-identical answers are
+not discarded — their mention share becomes the observation's value (2 of 3
+runs mention → 0.67). Stored runs are untouched; collapsing happens at read time.
+Raw-count views stay run-based on purpose: the "mentions / total runs" tabs,
+the model×query heatmap, the answer-consistency card and the placement card.

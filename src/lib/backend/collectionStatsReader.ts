@@ -5,6 +5,8 @@ import { processStoredPromptRuns as processPromptRuns } from "./database/analysi
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { brandPatterns, classifySentiment, sentimentEvidence } from "./processing/text";
 import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from "@/lib/placement";
+import { formatObservationCount, observationWeights, sumWeights } from "@/lib/observations";
+import { buildVisibilityScores } from "./processing/visibility";
 import { brandQueryKeywords, queryScopeOf, type QueryScope } from "@/lib/queryScope";
 import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "@/lib/visibilityStats";
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
@@ -214,6 +216,13 @@ export interface RealDataFilters {
   queryScope?: QueryScope;
 }
 
+// 같은 주·프롬프트·엔진·마켓의 반복 실행을 관측 1건으로 합치는 가중치(전체 기간 집계용).
+function weightsForRuns(runs: PromptRunSeed[]) {
+  return observationWeights(
+    runs.map((run) => ({ id: run.id, promptId: run.promptId, llmModelId: run.llmModelId, marketId: run.marketId, week: toUtcSundayWeekStart(run.runAt) }))
+  );
+}
+
 function ownBrandKeywords(brands: { isOwnBrand: boolean; name: string; domain: string; aliases: string[] }[]) {
   const own = brands.find((b) => b.isOwnBrand);
   return own ? brandQueryKeywords(own) : [];
@@ -242,13 +251,38 @@ const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFi
     .filter((run) => !filters.queryScope || queryScopeOf(run.rawMetadata.query, brandKeywords) === filters.queryScope);
   if (promptRuns.length === 0) return null;
 
-  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
+  const processedRaw = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
 
   const weekOfRun = new Map<string, string>();
   for (const run of promptRuns) {
     if (run.status !== "success") continue;
     weekOfRun.set(run.id, toUtcSundayWeekStart(run.runAt));
   }
+
+  // 같은 주·프롬프트·엔진·마켓의 반복 실행은 관측 1건으로 합친다(실행마다 1/묶음 크기 가중치).
+  const weightOfRun = observationWeights(
+    promptRuns.filter((run) => weekOfRun.has(run.id)).map((run) => ({
+      id: run.id,
+      promptId: run.promptId,
+      llmModelId: run.llmModelId,
+      marketId: run.marketId,
+      week: weekOfRun.get(run.id)!,
+    }))
+  );
+  const ownBrand = brands.find((b) => b.id === OWN_BRAND_ID);
+  const processed = ownBrand
+    ? {
+        ...processedRaw,
+        visibilityScores: buildVisibilityScores({
+          organizationId: ORG_ID,
+          brand: ownBrand,
+          runs: promptRuns.filter((run) => run.status === "success"),
+          mentions: processedRaw.mentions,
+          citations: processedRaw.citations,
+          runWeights: weightOfRun,
+        }),
+      }
+    : processedRaw;
 
   const weeks = Array.from(new Set(weekOfRun.values())).sort();
   if (weeks.length === 0) return null;
@@ -257,7 +291,7 @@ const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFi
   const currentWeeks = weeks.slice(-windowSize);
   const previousWeeks = weeks.slice(-windowSize * 2, -windowSize);
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
-  return { processed, weekOfRun, currentWeeks, previousWeeks, runsById, brands, brandKeywords };
+  return { processed, weekOfRun, weightOfRun, currentWeeks, previousWeeks, runsById, brands, brandKeywords };
 });
 
 // Same "우리 브랜드가 언급된 프롬프트 실행의 감성" the mentions pipeline
@@ -299,13 +333,13 @@ export async function getRealSentimentSeries(range: DateRange, filters: RealData
 export async function getRealMarketComparison(range: DateRange, filters: RealDataFilters = {}): Promise<MarketComparisonRow[] | null> {
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks, brands } = result;
+  const { processed, weekOfRun, weightOfRun, currentWeeks, brands } = result;
   const currentWeekSet = new Set(currentWeeks);
 
-  // 개수가 아니라 "기간 내 성공 실행 중 그 브랜드가 언급(인용)된 실행의 비율(%)" —
-  // 수집량이 달라도 브랜드끼리·기간끼리 비교할 수 있고, 한 답변에서 여러 번 나와도 1로 센다.
+  // 개수가 아니라 "기간 내 관측 중 그 브랜드가 언급(인용)된 비율(%)" — 같은 주·프롬프트·엔진·마켓의
+  // 반복 실행은 관측 1건으로 합치고, 한 답변에서 여러 번 나와도 1로 센다.
   let totalRuns = 0;
-  for (const week of weekOfRun.values()) if (currentWeekSet.has(week)) totalRuns += 1;
+  for (const [runId, week] of weekOfRun) if (currentWeekSet.has(week)) totalRuns += weightOfRun.get(runId) ?? 1;
   if (totalRuns === 0) return null;
 
   const byBrand = new Map<string, { brand: string; isSelf: boolean; mentionRuns: Set<string>; citationRuns: Set<string> }>();
@@ -332,8 +366,8 @@ export async function getRealMarketComparison(range: DateRange, filters: RealDat
     .map((row) => ({
       brand: row.brand,
       isSelf: row.isSelf,
-      mentions: pooledRate([{ hit: row.mentionRuns.size, total: totalRuns }]),
-      citations: pooledRate([{ hit: row.citationRuns.size, total: totalRuns }]),
+      mentions: pooledRate([{ hit: sumWeights(row.mentionRuns, weightOfRun), total: totalRuns }]),
+      citations: pooledRate([{ hit: sumWeights(row.citationRuns, weightOfRun), total: totalRuns }]),
     }))
     .sort((a, b) => b.mentions - a.mentions || b.citations - a.citations);
 }
@@ -348,22 +382,26 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
   const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks, previousWeeks, runsById, brandKeywords } = result;
+  const { processed, weekOfRun, weightOfRun, currentWeeks, previousWeeks, runsById, brandKeywords } = result;
 
   const allWeeks = Array.from(new Set([...currentWeeks, ...previousWeeks]));
   const mentionedRunsByWeek = new Map<string, Set<string>>(allWeeks.map((w) => [w, new Set()]));
   const citedRunsByWeek = new Map<string, Set<string>>(allWeeks.map((w) => [w, new Set()]));
+  // 분모 = 관측 수(같은 주·프롬프트·엔진·마켓의 반복 실행은 1건), 실행 수는 caption용으로 따로 센다.
   const runsByWeek = new Map<string, number>(allWeeks.map((w) => [w, 0]));
-  // 가시성 점수 가중치 — 주차·모델·마켓 그룹별 성공 실행 수.
+  const rawRunsByWeek = new Map<string, number>(allWeeks.map((w) => [w, 0]));
+  // 가시성 점수 가중치 — 주차·모델·마켓 그룹별 관측 수.
   const runsByGroup = new Map<string, number>();
 
   for (const [runId, week] of weekOfRun) {
     if (!runsByWeek.has(week)) continue;
-    runsByWeek.set(week, (runsByWeek.get(week) ?? 0) + 1);
+    const weight = weightOfRun.get(runId) ?? 1;
+    runsByWeek.set(week, (runsByWeek.get(week) ?? 0) + weight);
+    rawRunsByWeek.set(week, (rawRunsByWeek.get(week) ?? 0) + 1);
     const run = runsById.get(runId);
     if (run) {
       const key = `${week}:${run.llmModelId}:${run.marketId}`;
-      runsByGroup.set(key, (runsByGroup.get(key) ?? 0) + 1);
+      runsByGroup.set(key, (runsByGroup.get(key) ?? 0) + weight);
     }
   }
 
@@ -387,7 +425,7 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
 
   // 주 목록 → (적중 실행 수, 전체 실행 수) — 프롬프트를 늘려도 비율은 그대로.
   const parts = (weeks: string[], hits: Map<string, Set<string>>) =>
-    weeks.map((w) => ({ hit: hits.get(w)?.size ?? 0, total: runsByWeek.get(w) ?? 0 }));
+    weeks.map((w) => ({ hit: sumWeights(hits.get(w) ?? [], weightOfRun), total: runsByWeek.get(w) ?? 0 }));
   const sumOf = (list: { hit: number; total: number }[], key: "hit" | "total") => list.reduce((s, p) => s + p[key], 0);
   // 브랜드 질의/일반 질의로 나눈 비율 — 이미 한쪽으로 필터한 화면에서는 생략.
   const scopeSplit = (hits: Map<string, Set<string>>): string => {
@@ -398,8 +436,9 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
         if (week !== w) continue;
         const scope = queryScopeOf(runsById.get(runId)?.rawMetadata.query, brandKeywords);
         if (!scope) continue;
-        tally[scope].total += 1;
-        if (hits.get(w)?.has(runId)) tally[scope].hit += 1;
+        const weight = weightOfRun.get(runId) ?? 1;
+        tally[scope].total += weight;
+        if (hits.get(w)?.has(runId)) tally[scope].hit += weight;
       }
     }
     if (tally.brand.total === 0 || tally.nonbrand.total === 0) return "";
@@ -411,6 +450,7 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
     const value = pooledRate(current);
     const total = sumOf(current, "total");
     const low = total < MIN_RELIABLE_RUNS;
+    const rawRuns = currentWeeks.reduce((s, w) => s + (rawRunsByWeek.get(w) ?? 0), 0);
     return {
       label,
       description,
@@ -418,7 +458,7 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
       decimals: 1,
       suffix: "%",
       trendUnit: "%p",
-      caption: `${unitLabel} ${sumOf(current, "hit").toLocaleString("ko-KR")}/${total.toLocaleString("ko-KR")}개 실행${low ? " · 표본 적음" : ""}${scopeSplit(hits)}`,
+      caption: `${unitLabel} ${formatObservationCount(Number(sumOf(current, "hit").toFixed(1)))}/${formatObservationCount(Number(total.toFixed(1)))}개 관측(실행 ${rawRuns.toLocaleString("ko-KR")}건)${low ? " · 표본 적음" : ""}${scopeSplit(hits)}`,
       trend: pointTrend(value, previousWeeks.length ? pooledRate(previous) : undefined),
       sparkline: currentWeeks.map((w, i) => ({ week: formatWeekLabel(w), value: pooledRate([current[i]]) })),
     };
@@ -428,26 +468,27 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
   const currentVis = weightedOf(currentWeeks);
   const previousVis = weightedOf(previousWeeks);
   const currentRuns = currentWeeks.reduce((s, w) => s + (runsByWeek.get(w) ?? 0), 0);
+  const currentRawRuns = currentWeeks.reduce((s, w) => s + (rawRunsByWeek.get(w) ?? 0), 0);
 
   return {
     visibilityScore: {
       value: currentVis,
       description:
-        "수집한 모든 답변을 기준으로 언급(45%)·인용(20%)·노출 위치(35%)를 합산한 0~100 점수예요. 감성은 판정 정확도가 낮아 점수에서 빼고 별도로 보여줘요. 언급되지 않은 답변은 위치도 0으로 세기 때문에 언급이 적으면 점수도 낮고, 수집한 프롬프트 수가 늘어도 같은 성과면 같은 점수예요. 노출 위치는 경쟁사와 함께 나온 답변에서는 언급 순서와 본문 내 위치를, 혼자 나온 답변에서는 본문 내 위치만 봐요. 주차·모델·마켓 그룹은 실행 수로 가중 평균해요.",
+        "수집한 모든 답변을 기준으로 언급(45%)·인용(20%)·노출 위치(35%)를 합산한 0~100 점수예요. 감성은 판정 정확도가 낮아 점수에서 빼고 별도로 보여줘요. 언급되지 않은 답변은 위치도 0으로 세기 때문에 언급이 적으면 점수도 낮고, 수집한 프롬프트 수가 늘어도 같은 성과면 같은 점수예요. 같은 주에 같은 프롬프트·엔진·마켓으로 여러 번 수집한 답변은 1건의 관측으로 합쳐서(답변이 달라도 언급 비율로 환산) 많이 수집한 질의가 더 크게 반영되지 않아요. 노출 위치는 경쟁사와 함께 나온 답변에서는 언급 순서와 본문 내 위치를, 혼자 나온 답변에서는 본문 내 위치만 봐요. 주차·모델·마켓 그룹은 관측 수로 가중 평균해요.",
       trend: trend(currentVis, previousWeeks.length ? previousVis : undefined),
-      caption: `실행 ${currentRuns.toLocaleString("ko-KR")}개 가중 평균${currentRuns < MIN_RELIABLE_RUNS ? " · 표본 적음" : ""}`,
+      caption: `관측 ${formatObservationCount(Number(currentRuns.toFixed(1)))}개(실행 ${currentRawRuns.toLocaleString("ko-KR")}건) 가중 평균${currentRuns < MIN_RELIABLE_RUNS ? " · 표본 적음" : ""}`,
       sparkline: currentWeeks.map((w) => ({ week: formatWeekLabel(w), value: weightedAverage(visibilityByWeek.get(w) ?? []) })),
     },
     brandMentions: rateMetric(
       mentionedRunsByWeek,
       "브랜드 언급률",
-      "선택 기간에 수집한 AI 답변 중 우리 브랜드가 언급된 답변의 비율이에요. 수집한 프롬프트 수가 늘어도 비율은 그대로라 기간·수집량이 달라도 비교할 수 있어요. 그래프는 주별 언급률이에요.",
+      "선택 기간에 수집한 AI 답변 중 우리 브랜드가 언급된 답변의 비율이에요. 같은 주에 같은 프롬프트·엔진·마켓으로 반복 수집한 답변은 1건의 관측으로 합쳐서(언급 비율로 환산) 기간·수집량이 달라도 비교할 수 있어요. 그래프는 주별 언급률이에요.",
       "언급"
     ),
     citations: rateMetric(
       citedRunsByWeek,
       "인용률",
-      "선택 기간에 수집한 AI 답변 중 우리 도메인이 출처로 인용된 답변의 비율이에요. 한 답변에 여러 번 인용돼도 1건으로 세요. 그래프는 주별 인용률이에요.",
+      "선택 기간에 수집한 AI 답변 중 우리 도메인이 출처로 인용된 답변의 비율이에요. 한 답변에 여러 번 인용돼도 1건으로 세고, 같은 주 반복 수집은 1건의 관측으로 합쳐요. 그래프는 주별 인용률이에요.",
       "인용"
     ),
   };
@@ -476,11 +517,15 @@ async function getRealRankedTabs(
   const { ownBrandId: OWN_BRAND_ID } = await currentScope();
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks, runsById } = result;
+  const { processed, weekOfRun, weightOfRun, currentWeeks, runsById } = result;
   const currentWeekSet = new Set(currentWeeks);
 
   const mentionByGroup = new Map<string, number>();
   const exposureByGroup = new Map<string, number>();
+  // "가시성" 탭은 관측 기준(같은 주·프롬프트·엔진·마켓 반복은 1건) — 많이 수집한 질의가 비율을 끌고 가지 않게.
+  // 언급 수/총 실행 수 탭은 말 그대로 실행 횟수라 원본 그대로 둔다.
+  const observedMentionByGroup = new Map<string, number>();
+  const observedExposureByGroup = new Map<string, number>();
 
   for (const run of runsById.values()) {
     const week = weekOfRun.get(run.id);
@@ -488,6 +533,7 @@ async function getRealRankedTabs(
     const group = groupKey(run);
     if (!group) continue;
     exposureByGroup.set(group, (exposureByGroup.get(group) ?? 0) + 1);
+    observedExposureByGroup.set(group, (observedExposureByGroup.get(group) ?? 0) + (weightOfRun.get(run.id) ?? 1));
   }
 
   for (const mention of processed.mentions) {
@@ -498,6 +544,7 @@ async function getRealRankedTabs(
     const group = run && groupKey(run);
     if (!group) continue;
     mentionByGroup.set(group, (mentionByGroup.get(group) ?? 0) + 1);
+    observedMentionByGroup.set(group, (observedMentionByGroup.get(group) ?? 0) + (weightOfRun.get(mention.promptRunId) ?? 1));
   }
   if (exposureByGroup.size === 0) return null;
 
@@ -516,8 +563,8 @@ async function getRealRankedTabs(
     .sort((a, b) => b.value - a.value);
   const visibility = groups
     .map((label) => {
-      const exposure = exposureByGroup.get(label) ?? 0;
-      const pct = exposure > 0 ? Math.round(((mentionByGroup.get(label) ?? 0) / exposure) * 100) : 0;
+      const exposure = observedExposureByGroup.get(label) ?? 0;
+      const pct = exposure > 0 ? Math.round(((observedMentionByGroup.get(label) ?? 0) / exposure) * 100) : 0;
       return toRow(label, pct, (v) => `${v}%`);
     })
     .sort((a, b) => b.value - a.value);
@@ -584,6 +631,9 @@ export async function getRealTopicRows(
 
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: topicBrands });
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
+  const observationWeight = weightsForRuns(promptRuns);
+  // 토픽 가시성은 관측 기준 — 같은 주에 같은 프롬프트를 여러 번 돌려도 1건으로 센다.
+  const observedByTopic = new Map<string, { hit: number; total: number }>();
 
   const ownMentionByRun = new Map<string, boolean>();
   const otherMentionCountByRun = new Map<string, number>();
@@ -664,6 +714,11 @@ export async function getRealTopicRows(
   for (const [topic, queries] of queriesByTopic) {
     const runIds = queries.flatMap((q) => runIdsByQuery.get(q)!);
     const mentionCount = runIds.filter((id) => ownMentionByRun.get(id)).length;
+    const observed = {
+      hit: sumWeights(runIds.filter((id) => ownMentionByRun.get(id)), observationWeight),
+      total: sumWeights(runIds, observationWeight),
+    };
+    observedByTopic.set(`real-${topic}`, observed);
     const firstRun = runsById.get(runIds[0])!;
     const market = seedMarkets.find((m) => m.id === firstRun.marketId)?.label ?? firstRun.marketId;
 
@@ -705,7 +760,7 @@ export async function getRealTopicRows(
       id: `real-${topic}`,
       topic,
       mentions: mentionCount,
-      visibility: Math.round((mentionCount / runIds.length) * 100),
+      visibility: Math.round((observed.hit / Math.max(observed.total, 1e-9)) * 100),
       market,
       prompts,
       funnel,
@@ -721,13 +776,14 @@ export async function getRealTopicRows(
 
   // 언급 "개수"로 정렬하면 많이 돌린 토픽이 위로 올라온다 — 가시성(언급 실행 /
   // 전체 실행)을 표본 크기까지 반영한 신뢰구간 하한으로 정렬한다.
-  topPrompts.sort(
-    (a, b) =>
-      wilsonLowerBound(b.mentions, b.prompts.length) - wilsonLowerBound(a.mentions, a.prompts.length) ||
-      b.mentions - a.mentions
-  );
-  // 언급이 0인 토픽은 가시성이 모두 0%라, 0%를 더 많이 확인한(실행이 많은) 토픽을 앞에 둔다.
-  opportunities.sort((a, b) => b.prompts.length - a.prompts.length);
+  const lowerBound = (row: TopicRow) => {
+    const o = observedByTopic.get(row.id) ?? { hit: row.mentions, total: row.prompts.length };
+    return wilsonLowerBound(o.hit, o.total);
+  };
+  topPrompts.sort((a, b) => lowerBound(b) - lowerBound(a) || b.mentions - a.mentions);
+  // 언급이 0인 토픽은 가시성이 모두 0%라, 0%를 더 많이 확인한(관측이 많은) 토픽을 앞에 둔다.
+  const observedTotal = (row: TopicRow) => observedByTopic.get(row.id)?.total ?? row.prompts.length;
+  opportunities.sort((a, b) => observedTotal(b) - observedTotal(a) || b.prompts.length - a.prompts.length);
 
   if (topPrompts.length === 0 && opportunities.length === 0) return null;
   return { topPrompts, opportunities };
@@ -737,21 +793,21 @@ export async function getRealTopicRows(
 
 // 주간×브랜드별 언급률/인용률(%) — "마켓 트래킹" 차트가 필요로 하는 shape
 // (BrandWeeklyPoint: { week, [brand]: number, ... }). 개수가 아니라 "그 주
-// 성공 실행 중 그 브랜드가 언급(인용)된 실행의 비율"이라 주별 수집량이
-// 달라도 추이를 비교할 수 있다. 한 실행에서 여러 번 나와도 1로 센다.
+// 관측 중 그 브랜드가 언급(인용)된 비율"이라 주별 수집량이
+// 달라도 추이를 비교할 수 있다(같은 주 반복 실행은 관측 1건). 한 실행에서 여러 번 나와도 1로 센다.
 export async function getRealMarketWeeklyTracking(
   range: DateRange,
   filters: RealDataFilters = {}
 ): Promise<{ mentionsByWeek: BrandWeeklyPoint[]; citationsByWeek: BrandWeeklyPoint[] } | null> {
   const result = await getProcessedWithWeeks(range, filters);
   if (!result) return null;
-  const { processed, weekOfRun, currentWeeks, brands } = result;
+  const { processed, weekOfRun, weightOfRun, currentWeeks, brands } = result;
   const currentWeekSet = new Set(currentWeeks);
 
   const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
   const runsByWeek = new Map<string, number>(currentWeeks.map((w) => [w, 0]));
-  for (const week of weekOfRun.values()) {
-    if (currentWeekSet.has(week)) runsByWeek.set(week, (runsByWeek.get(week) ?? 0) + 1);
+  for (const [runId, week] of weekOfRun) {
+    if (currentWeekSet.has(week)) runsByWeek.set(week, (runsByWeek.get(week) ?? 0) + (weightOfRun.get(runId) ?? 1));
   }
   const mentionedRuns = new Map<string, Map<string, Set<string>>>(currentWeeks.map((w) => [w, new Map()]));
   const citedRuns = new Map<string, Map<string, Set<string>>>(currentWeeks.map((w) => [w, new Map()]));
@@ -781,7 +837,7 @@ export async function getRealMarketWeeklyTracking(
     currentWeeks.map((w) => {
       const point: BrandWeeklyPoint = { week: formatWeekLabel(w) };
       const total = runsByWeek.get(w) ?? 0;
-      for (const [brand, runIds] of byWeek.get(w) ?? []) point[brand] = pooledRate([{ hit: runIds.size, total }]);
+      for (const [brand, runIds] of byWeek.get(w) ?? []) point[brand] = pooledRate([{ hit: sumWeights(runIds, weightOfRun), total }]);
       return point;
     });
 
@@ -891,6 +947,8 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
 
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
+  const observationWeight = weightsForRuns(promptRuns);
+  const observedById = new Map<string, { hit: number; total: number }>();
 
   const ownMentionByRun = new Map<string, { present: boolean; sentiment: Sentiment }>();
   for (const m of processed.mentions) {
@@ -922,12 +980,15 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
     const totalCitations = runIds.reduce((s, id) => s + (citationCountByRun.get(id) ?? 0), 0);
     const ownCitations = runIds.reduce((s, id) => s + (ownCitationCountByRun.get(id) ?? 0), 0);
 
+    const observed = { hit: sumWeights(mentionedRuns, observationWeight), total: sumWeights(runIds, observationWeight) };
+    observedById.set(`real-insight-${key}`, observed);
+
     return {
       id: `real-insight-${key}`,
       topic: query,
       source: modelName,
       popularity: runIds.length,
-      visibilityScore: Math.round((mentionedRuns.length / runIds.length) * 100),
+      visibilityScore: Math.round((observed.hit / Math.max(observed.total, 1e-9)) * 100),
       mentions: mentionedRuns.length,
       sentiment: dominantSentiment(mentionedRuns.map((id) => ownMentionByRun.get(id)!.sentiment)),
       totalCitations,
@@ -935,11 +996,12 @@ export async function getRealDataInsights(filters: RealDataFilters = {}): Promis
     };
   });
 
-  // 실행 횟수(popularity)가 아니라 가시성을 표본 크기까지 반영해 정렬한다.
-  rows.sort(
-    (a, b) =>
-      wilsonLowerBound(b.mentions, b.popularity) - wilsonLowerBound(a.mentions, a.popularity) || b.popularity - a.popularity
-  );
+  // 실행 횟수(popularity)가 아니라 관측 기준 가시성을 표본 크기까지 반영해 정렬한다.
+  const lowerBound = (row: DataInsightRow) => {
+    const o = observedById.get(row.id) ?? { hit: row.mentions, total: row.popularity };
+    return wilsonLowerBound(o.hit, o.total);
+  };
+  rows.sort((a, b) => lowerBound(b) - lowerBound(a) || b.popularity - a.popularity);
   return rows;
 }
 

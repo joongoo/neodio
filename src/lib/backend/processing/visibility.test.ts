@@ -27,6 +27,18 @@ test("100개 중 1개만 언급되면 점수가 낮다(조건부 평균으로 �
   assert.ok(score.totalScore < 3, `총점 ${score.totalScore}`);
 });
 
+test("같은 주 반복 실행은 관측 1건으로 합쳐 가중한다", () => {
+  // p1을 4번(1번만 언급), p2를 1번(언급) 수집 — 실행 기준 2/5=40%, 관측 기준 (0.25+1)/2=62.5%
+  const mk = (id: string, promptId: string) => ({ ...run(0), id, promptId });
+  const runs = [mk("a", "p1"), mk("b", "p1"), mk("c", "p1"), mk("d", "p1"), mk("e", "p2")];
+  const mentions = [mention(0, { promptRunId: "a" }), mention(1, { promptRunId: "e" })];
+  const [byRun] = buildVisibilityScores({ organizationId: "o", brand, runs, mentions, citations: [] });
+  const weights = new Map([["a", 0.25], ["b", 0.25], ["c", 0.25], ["d", 0.25], ["e", 1]]);
+  const [byObservation] = buildVisibilityScores({ organizationId: "o", brand, runs, mentions, citations: [], runWeights: weights });
+  assert.equal(byRun.mentionsScore, 40);
+  assert.equal(byObservation.mentionsScore, 63); // 62.5 반올림
+});
+
 test("총점은 언급 45%·인용 20%·위치 35%이고 감성은 반영하지 않는다", () => {
   const runs = Array.from({ length: 10 }, (_, i) => run(i));
   const base = runs.map((_, i) => mention(i, { sentiment: "positive", sentimentScore: 0.78 }));

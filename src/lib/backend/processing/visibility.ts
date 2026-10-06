@@ -54,7 +54,10 @@ export function buildVisibilityScores(params: {
   runs: PromptRunSeed[];
   mentions: MentionSeed[];
   citations: CitationSeed[];
+  /** 실행 id → 가중치. 같은 주·프롬프트·엔진·마켓의 반복 실행을 관측 1건으로 합칠 때 넘긴다(없으면 모두 1). */
+  runWeights?: Map<string, number>;
 }): VisibilityScoreSeed[] {
+  const weightOf = (runId: string) => params.runWeights?.get(runId) ?? 1;
   const successfulRuns = params.runs.filter((run) => run.status === "success");
   const groups = new Map<string, PromptRunSeed[]>();
 
@@ -79,11 +82,15 @@ export function buildVisibilityScores(params: {
 
     // 네 항목 모두 "전체 실행" 대비 — 언급되지 않은 실행은 위치·감성도 0으로 센다.
     // (언급된 답변만 평균내면 1%만 언급돼도 위치·감성이 만점에 가까워 총점이 부풀려진다.)
-    const runCount = Math.max(1, runs.length);
-    const mentionsScore = scorePercent(presentMentions.length / runCount);
-    const citationsScore = scorePercent(ownCitedRunIds.size / runCount);
-    const positionScore = scorePercent(presentMentions.reduce((total, mention) => total + mentionProminence(mention), 0) / runCount);
-    const sentimentScore = scorePercent(presentMentions.reduce((total, mention) => total + mention.sentimentScore, 0) / runCount);
+    const runCount = Math.max(1e-9, runs.reduce((total, run) => total + weightOf(run.id), 0));
+    const mentionsScore = scorePercent(presentMentions.reduce((total, mention) => total + weightOf(mention.promptRunId), 0) / runCount);
+    const citationsScore = scorePercent([...ownCitedRunIds].reduce((total, id) => total + weightOf(id), 0) / runCount);
+    const positionScore = scorePercent(
+      presentMentions.reduce((total, mention) => total + mentionProminence(mention) * weightOf(mention.promptRunId), 0) / runCount
+    );
+    const sentimentScore = scorePercent(
+      presentMentions.reduce((total, mention) => total + mention.sentimentScore * weightOf(mention.promptRunId), 0) / runCount
+    );
 
     return {
       id: `score-${params.brand.id}-${weekStart}-${llmModelId}-${marketId}`,
