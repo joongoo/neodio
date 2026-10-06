@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSitemapCrawlJob } from "@/lib/backend/sitemapCrawlJobRunner";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function GET(request: NextRequest) {
+  const denied = await guardApi("read");
+  if (denied) return denied;
   const jobId = request.nextUrl.searchParams.get("jobId");
   const job = jobId ? getSitemapCrawlJob(jobId) : undefined;
 

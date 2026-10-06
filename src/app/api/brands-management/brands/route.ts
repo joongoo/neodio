@@ -4,8 +4,11 @@ import { createManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { normalizeUrl } from "@/lib/normalizeUrl";
 import { ManagedBrand } from "@/lib/db/types";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("manageOrg");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";

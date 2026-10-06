@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPromptStore } from "@/lib/backend/database";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import type { PromptRunSeed } from "@/lib/db/types";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const MAX_RUNS_PER_REQUEST = 50;
 // 수집 스크립트가 rawMetadata.source에 쓰는 값 → 저장 위치(dir). 로컬 수집 결과 폴더 이름과 같다.
@@ -16,6 +17,8 @@ const SOURCE_DIRS: Record<string, string> = {
 // 결과를 다시 올려도 같은 실행으로 덮어쓴다(실행 ID 기준). 분석(언급·인용)은
 // 화면이 읽을 때 조직의 브랜드 설정으로 계산된다.
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const body = await request.json().catch(() => null);
   const runs: unknown[] = Array.isArray(body?.runs) ? body.runs : [];
   if (runs.length === 0) return NextResponse.json({ error: "반영할 수집 결과가 없습니다." }, { status: 400 });

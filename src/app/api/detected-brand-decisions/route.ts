@@ -12,6 +12,7 @@ import {
   setBrandRoles,
   type BrandRoleChange,
 } from "@/lib/backend/detectedBrandDecisions";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 type OptimizationCompetitor = { name: string; aliases?: string[]; evidenceDomain?: string | null };
 type OptimizationExclusion = { name: string; evidenceDomain?: string | null };
@@ -25,6 +26,8 @@ function isOptimizationExclusion(item: unknown): item is OptimizationExclusion {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {

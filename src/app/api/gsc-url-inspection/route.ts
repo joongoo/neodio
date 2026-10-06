@@ -3,8 +3,11 @@ import { getRealGscUrlIndexStatus } from "@/lib/backend/gscSearchAnalyticsReader
 import { setCachedUrlIndexStatus } from "@/lib/backend/gscUrlInspectionStore";
 
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const url = typeof body?.url === "string" ? body.url.trim() : "";

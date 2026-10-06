@@ -6,6 +6,7 @@ import { resolveApiKey } from "@/lib/backend/llm/runner";
 import { overLlmLimit } from "@/lib/backend/llm/rateLimit";
 import { LlmRequestError } from "@/lib/backend/llm/types";
 import { buildPromptResearchPrompt, parsePromptResearch, type GeneratedPromptResearch } from "@/lib/promptResearch";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 프롬프트 리서치 — 토픽을 넣으면 AI가 관련 토픽·질문을 제안한다. 같은 토픽·마켓은 저장해 둔 결과를 그대로
 // 돌려주고(호출 없음), 사용자가 "다시 생성"(refresh)을 눌렀을 때만 새로 호출한다.
@@ -14,6 +15,8 @@ const MAX_TOPIC_CHARS = 80;
 const MARKETS = new Set(["한국 (KR)", "미국 (US)", "전세계"]);
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const topic = typeof body?.topic === "string" ? body.topic.trim().replace(/\s+/g, " ") : "";

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DatalabError, fetchSearchTrend, isDatalabConfigured, SearchTrendRequest } from "@/lib/backend/naverDatalab";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const TIME_UNITS = ["date", "week", "month"];
 
 // 검색어 트렌드 조회 프록시 — Client ID/Secret이 브라우저에 노출되지 않도록 서버에서만 호출한다.
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "요청 본문이 필요합니다." }, { status: 400 });
@@ -53,5 +56,7 @@ export async function POST(request: NextRequest) {
 
 // 연동 여부 확인(키 존재만 알려 주고 값은 내보내지 않는다).
 export async function GET() {
+  const denied = await guardApi("read");
+  if (denied) return denied;
   return NextResponse.json({ configured: isDatalabConfigured() });
 }

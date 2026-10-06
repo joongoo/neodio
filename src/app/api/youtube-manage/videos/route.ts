@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { setVideosChecked } from "@/lib/backend/aio/videoManage";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const MAX_VIDEOS_PER_REQUEST = 500;
 
 // 영상 체크 켜기·끄기 — 체크한 영상만 예상 프롬프트 생성·인용 확인의 대상이 된다.
 export async function PATCH(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";

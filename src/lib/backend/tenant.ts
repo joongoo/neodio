@@ -1,12 +1,15 @@
 import { hostnameOfUrl } from "@/lib/normalizeUrl";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
-import { notFound, unstable_rethrow } from "next/navigation";
+import { notFound, redirect, unstable_rethrow } from "next/navigation";
 import { getPromptStore } from "./database";
 import { DEFAULT_ORG_ID } from "@/lib/db";
 import { ManagedBrand, Organization } from "@/lib/db/types";
 import { assignBrandSlugs, NO_BRAND_SLUG } from "@/lib/slug";
 import { TENANT_COOKIE, TENANT_HEADERS, TenantRef, tenantFromCookie } from "@/lib/tenantRouting";
+import { canAccessOrg, canEditBrand, canManageOrg, canViewBrand, isPending, type Principal } from "@/lib/auth/permissions";
+import { getCurrentUser, isAuthEnabled } from "./auth/session";
+import { principalFor } from "./auth/authStore";
 
 // 요청마다 "지금 보고 있는 조직과 브랜드". URL이 기준이다 — /{조직}/{브랜드}/{화면}
 // (src/lib/tenantRouting.ts). 프록시(src/proxy.ts)가 주소에서 해석해 요청 헤더로
@@ -41,6 +44,12 @@ export interface Tenant {
   /** brand?.id ?? "" — 브랜드 단위 조회 함수에 그대로 넘기기 위한 편의값 */
   brandId: string;
   demo: boolean;
+  /** 로그인한 사용자(로그인 체계가 꺼져 있으면 null) */
+  principal: Principal | null;
+  /** 이 브랜드의 설정·프롬프트·수집을 편집할 수 있는가(로그인이 꺼져 있으면 항상 true) */
+  canEdit: boolean;
+  /** 조직 관리·구성원·브랜드 접근 권한을 다룰 수 있는가(오너·직원) */
+  canManageOrg: boolean;
 }
 
 // 요청 밖(테스트에서 라우트를 직접 부를 때 등)에는 헤더·쿠키가 없다 — 그때는 기본 조직.
@@ -66,7 +75,18 @@ export const getCurrentTenant = cache(async (): Promise<Tenant> => {
   // 요청 정보를 DB보다 먼저 읽는다 — 정적 렌더링 시도라면 여기서 멈추고 DB에 가지 않는다.
   const { ref, strict } = await readRequest();
   const store = await getPromptStore();
-  const organizations = (await store.listOrganizations()).map(({ id, name, slug }) => ({ id, name, slug }));
+
+  // 로그인 체계(AUTH_ENABLED)가 켜져 있으면 로그인한 사용자가 접근할 수 있는 조직·브랜드만 다룬다.
+  let principal: Principal | null = null;
+  if (isAuthEnabled()) {
+    const user = await getCurrentUser();
+    if (!user) redirect("/login");
+    principal = await principalFor(user);
+    if (user.mustChangePassword) redirect("/account?force=1");
+    if (isPending(principal)) redirect("/pending");
+  }
+  const allOrganizations = (await store.listOrganizations()).map(({ id, name, slug }) => ({ id, name, slug }));
+  const organizations = principal ? allOrganizations.filter((o) => canAccessOrg(principal!, o.id)) : allOrganizations;
 
   let org = ref ? organizations.find((o) => o.slug === ref.org) : undefined;
   if (!org && strict) notFound();
@@ -74,7 +94,8 @@ export const getCurrentTenant = cache(async (): Promise<Tenant> => {
   const orgId = org?.id ?? DEFAULT_ORG_ID;
   const orgSlug = org?.slug ?? DEFAULT_ORG_ID;
 
-  const allBrands = await store.listBrands(orgId);
+  const allBrandsInOrg = await store.listBrands(orgId);
+  const allBrands = principal ? allBrandsInOrg.filter((b) => canViewBrand(principal!, orgId, b.id)) : allBrandsInOrg;
   const slugs = assignBrandSlugs(allBrands);
   const withSlug = (b: ManagedBrand): TenantBrand => ({ ...b, slug: slugs.get(b.id)! });
   const activeBrands = allBrands.filter((b) => b.status === "active").map(withSlug);
@@ -104,6 +125,9 @@ export const getCurrentTenant = cache(async (): Promise<Tenant> => {
     brand,
     brandId: brand?.id ?? "",
     demo,
+    principal,
+    canEdit: !principal || canManageOrg(principal, orgId) || (!!brand && canEditBrand(principal, orgId, brand.id)),
+    canManageOrg: !principal || canManageOrg(principal, orgId),
   };
 });
 

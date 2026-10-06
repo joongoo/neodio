@@ -6,6 +6,7 @@ import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { collectionUsesLocalAgent } from "@/lib/backend/collectionMode";
 import { planAioRun } from "@/lib/backend/aio/collector";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // YouTube AIO 인용 화면의 "지금 수집" — 실제 Chrome으로 Google을 여는 일이라 이 서버가 직접 하는 건 로컬 개발뿐이다.
 // 운영(Vercel 서버리스)은 Chrome이 없어서, 서버는 무엇을 수집할지 계획(키워드 × 디바이스, 오늘 수집한 건 제외)만 짜서
@@ -16,6 +17,8 @@ const AGENT_MIN_DELAY_MS = 30_000;
 const AGENT_MAX_DELAY_MS = 60_000;
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
 
   const body = await request.json().catch(() => null);
@@ -80,6 +83,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await guardApi("read");
+  if (denied) return denied;
   const jobId = request.nextUrl.searchParams.get("jobId");
   const brandId = request.nextUrl.searchParams.get("brandId");
   if (jobId) {
@@ -91,6 +96,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const jobId = request.nextUrl.searchParams.get("jobId");
   if (!jobId) return NextResponse.json({ error: "jobId가 필요합니다." }, { status: 400 });
   if (!cancelAioJob(jobId)) return NextResponse.json({ error: "이미 끝났거나 존재하지 않는 작업입니다." }, { status: 404 });

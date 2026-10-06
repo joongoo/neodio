@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildGoogleAuthUrl, createGoogleOAuthState, GSC_OAUTH_STATE_COOKIE } from "@/lib/backend/googleOAuth";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function GET(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const brandId = request.nextUrl.searchParams.get("brandId");
   if (!brandId) {
     return NextResponse.json({ error: "brandId가 필요합니다." }, { status: 400 });

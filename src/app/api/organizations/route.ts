@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPromptStore } from "@/lib/backend/database";
 import { orgSlugError } from "@/lib/slug";
+import { filterAccessibleOrgs, guardApi, guardOrgTarget } from "@/lib/backend/auth/guard";
 
 // 설정 > 조직 관리 — 조직 목록/추가/이름 변경/삭제. 조직을 고르는 것은
 // 헤더 스위처(쿠키)의 몫이고, 여기서는 조직 자체만 다룬다.
@@ -29,10 +30,14 @@ async function conflict(name: string, slug: string | null, exceptId?: string): P
 }
 
 export async function GET() {
-  return NextResponse.json({ organizations: await (await getPromptStore()).listOrganizations() });
+  const denied = await guardApi("read");
+  if (denied) return denied;
+  return NextResponse.json({ organizations: await filterAccessibleOrgs(await (await getPromptStore()).listOrganizations()) });
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("staff");
+  if (denied) return denied;
   const body = await request.json().catch(() => null);
   const name = validateName(body?.name);
   if (typeof name !== "string") return NextResponse.json(name, { status: 400 });
@@ -48,6 +53,8 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const id = typeof body?.id === "string" ? body.id : "";
+  const denied = await guardOrgTarget(id);
+  if (denied) return denied;
   const name = validateName(body?.name);
   if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
   if (typeof name !== "string") return NextResponse.json(name, { status: 400 });
@@ -63,6 +70,8 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await guardApi("staff");
+  if (denied) return denied;
   const id = request.nextUrl.searchParams.get("id") ?? "";
   if (!id) return NextResponse.json({ error: "id가 필요합니다." }, { status: 400 });
   const store = await getPromptStore();

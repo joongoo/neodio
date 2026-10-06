@@ -4,12 +4,15 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getLlmProvider } from "@/lib/backend/llm/registry";
 import { resolveApiKey, runLlmQuery } from "@/lib/backend/llm/runner";
 import { overLlmLimit } from "@/lib/backend/llm/rateLimit";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 프롬프트 라이브러리 "선택 수집"의 Gemini 단계 — 프롬프트 1개를 Gemini API에 물어 답변·출처를 prompt_runs에 저장한다.
 // 화면이 프롬프트마다 한 번씩 순서대로 부른다(서버리스 함수 시간 제한 안에서 끝나도록 1건씩).
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const query = typeof body?.query === "string" ? body.query.trim() : "";

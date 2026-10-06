@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setLlmBridgeEntries, setLlmBridgeEntry } from "@/lib/backend/llmBridgeStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const PROMPT_ARRAY_SCOPES = new Set(["gsc-keyword-prompts", "citation-test-prompts"]);
 
@@ -44,6 +45,8 @@ const GUIDE_SCOPES = new Set([
 ]);
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const scope = typeof body?.scope === "string" ? body.scope : "";

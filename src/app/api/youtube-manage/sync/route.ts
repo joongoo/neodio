@@ -5,10 +5,13 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { listChannelVideos, YoutubeApiKeyMissingError } from "@/lib/backend/youtube";
 import { saveSyncedVideos } from "@/lib/backend/aio/videoManage";
 import { YoutubeVideoMeta } from "@/lib/db/types";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // YouTube 관리의 "영상 가져오기" — 브랜드에 연결된 채널마다 공개 영상을 최신순으로 가져와 저장한다.
 // 새 영상은 체크 해제 상태로 들어가고, 이미 있는 영상은 제목·게시일만 갱신한다(체크·보관 상태는 그대로).
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";

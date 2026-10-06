@@ -181,6 +181,8 @@ export async function assignMember(orgId: string, input: { email: string; role: 
   if (!user) throw new AuthError("가입한 사용자를 찾을 수 없어요. 먼저 가입하거나 계정을 발급해주세요.", "not_found");
   await store.transaction(async () => {
     const [existing] = await store.query<{ role: string }>("SELECT role FROM memberships WHERE user_id=$1 AND organization_id=$2", [user.id, orgId]);
+    const [org] = await store.query<{ owner_user_id: string | null }>("SELECT owner_user_id FROM organizations WHERE id=$1", [orgId]);
+    if (org?.owner_user_id === user.id && input.role !== "admin") throw new AuthError("오너는 admin이어야 해요. 먼저 오너를 다른 admin에게 이전해주세요.", "denied");
     if (existing) await store.query("UPDATE memberships SET role=$1 WHERE user_id=$2 AND organization_id=$3", [input.role, user.id, orgId]);
     else await store.query("INSERT INTO memberships(user_id,organization_id,role,created_at,created_by) VALUES ($1,$2,$3,$4,$5)", [user.id, orgId, input.role, now(), actorUserId]);
     await setMemberBrands(orgId, user.id, input.brandIds, actorUserId);

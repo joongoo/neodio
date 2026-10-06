@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startCollectionJob } from "@/lib/backend/collectionJobRunner";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 실제 수집(Playwright로 네이버/구글 AI검색을 여는 자식 프로세스)은 로컬
 // 프로세스 전제로 짜여있어서 Vercel 서버리스에서 못 돈다 — 사이트맵 크롤과
@@ -14,6 +15,8 @@ function refuseOnServerless() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const refused = refuseOnServerless();
   if (refused) return refused;
   const body = await request.json().catch(() => null);

@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { addWorkLog, deleteWorkLog } from "@/lib/backend/aio/store";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 키워드 상세의 "이 영상의 최적화 작업 이력" — 작업일(자막·챕터·설명란 등)을
 // 기록해 두면 첫 인용일과 나란히 보여 준다.
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";
@@ -26,6 +29,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const brandId = request.nextUrl.searchParams.get("brandId");
   const id = request.nextUrl.searchParams.get("id");
   if (!brandId || !id) return NextResponse.json({ error: "brandId와 id가 필요합니다." }, { status: 400 });

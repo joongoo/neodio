@@ -33,8 +33,23 @@ function authorized(request: NextRequest): boolean {
 // 여기서 해석해 서버(src/lib/backend/tenant.ts)에 요청 헤더로 넘긴다 — 클라이언트가
 // 같은 이름의 헤더를 보내도 항상 지우고 다시 쓴다. 나중에 사용자 권한이 생기면
 // "이 사용자가 이 조직을 볼 수 있는가"도 이 자리에서 막으면 된다.
+// 로그인 체계(AUTH_ENABLED=true)에서 로그인 없이 볼 수 있는 경로
+const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/signup"];
+const isPublicPath = (pathname: string) => PUBLIC_PATHS.includes(pathname);
+
 export default function proxy(request: NextRequest) {
   if (!authorized(request)) return unauthorized();
+
+  // 로그인이 켜져 있으면 세션 쿠키가 없는 요청은 로그인으로 보낸다(쿠키 값의 유효성은 서버가 DB로 확인한다 —
+  // 여기서는 "쿠키가 있는가"만 본다). API는 리다이렉트 대신 401을 준다.
+  if (process.env.AUTH_ENABLED === "true" && !isPublicPath(request.nextUrl.pathname) && !request.cookies.get("neodio-session")?.value) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "로그인이 필요해요." }, { status: 401 });
+    }
+    const login = new URL("/login", request.url);
+    if (request.nextUrl.pathname !== "/") login.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
+    return NextResponse.redirect(login);
+  }
 
   const route = resolveTenantRoute(
     request.nextUrl.pathname,

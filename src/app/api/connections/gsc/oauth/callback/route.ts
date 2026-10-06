@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForTokens, fetchSites, fetchUserEmail, findMatchingGscProperty, GSC_OAUTH_STATE_COOKIE, verifyGoogleOAuthState } from "@/lib/backend/googleOAuth";
 import { saveGscToken } from "@/lib/backend/gscTokenStore";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 function redirectAndClear(url: URL): NextResponse {
   const response = NextResponse.redirect(url);
@@ -10,6 +11,8 @@ function redirectAndClear(url: URL): NextResponse {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const code = request.nextUrl.searchParams.get("code");
   const stateParam = request.nextUrl.searchParams.get("state");
   const errorParam = request.nextUrl.searchParams.get("error");

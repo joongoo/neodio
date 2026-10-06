@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBrandAioSettings, saveBrandAioSettings, validateAioSettings } from "@/lib/backend/brandAioConfig";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ brandId: string }> }) {
-  const tenant = await getCurrentTenant();
   const { brandId } = await params;
+  const denied = await guardApi("write", { brandId });
+  if (denied) return denied;
+  const tenant = await getCurrentTenant();
   if (!(await getManagedBrand(tenant.orgId, brandId))) {
     return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 404 });
   }

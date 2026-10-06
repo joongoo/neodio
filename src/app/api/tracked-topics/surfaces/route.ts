@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPromptStore } from "@/lib/backend/database";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { normalizeSurfaces } from "@/lib/promptSurfaces";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const MAX_ROWS = 300;
 
 // 프롬프트 라이브러리에서 고른 여러 프롬프트의 플랫폼을 한 번에 같은 값으로 바꾼다.
 // 플랫폼이 바뀌면 AIO 수집 대상(aio_keywords)도 함께 맞춰진다(store.setTrackingSurfaces).
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const ids: string[] = Array.isArray(body?.ids) ? body.ids.filter((id: unknown): id is string => typeof id === "string") : [];

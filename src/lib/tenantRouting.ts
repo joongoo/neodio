@@ -14,7 +14,7 @@ export const TENANT_COOKIE = "neodio-tenant";
 export const TENANT_HEADERS = { org: "x-neodio-org", brand: "x-neodio-brand", source: "x-neodio-tenant-source" } as const;
 
 /** 조직·브랜드와 무관한 최상위 경로 */
-const GLOBAL_SEGMENTS = new Set(["api", "help", "organizations", "_next", "favicon.ico"]);
+const GLOBAL_SEGMENTS = new Set(["api", "help", "organizations", "login", "signup", "pending", "account", "_next", "favicon.ico"]);
 
 export interface TenantRef {
   org: string;

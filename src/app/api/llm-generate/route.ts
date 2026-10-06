@@ -6,6 +6,7 @@ import { LlmRequestError } from "@/lib/backend/llm/types";
 import { overLlmLimit } from "@/lib/backend/llm/rateLimit";
 import { getManagedBrands } from "@/lib/backend/brandsManagementStore";
 import { fetchPageText, hostOf, PageFetchError } from "@/lib/backend/pageText";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // LLM 브릿지 모달의 "자동 생성" — 사람이 외부 LLM에 붙여넣던 프롬프트를 서버가 대신 LLM API에
 // 물어 답변 원문을 돌려준다. 저장은 하지 않는다: 답변은 모달의 붙여넣기 칸에 채워지고,
@@ -14,6 +15,8 @@ import { fetchPageText, hostOf, PageFetchError } from "@/lib/backend/pageText";
 const MAX_PROMPT_CHARS = 30_000;
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const promptText = typeof body?.promptText === "string" ? body.promptText.trim() : "";

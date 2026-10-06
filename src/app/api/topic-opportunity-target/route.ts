@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setTopicOpportunityTarget } from "@/lib/backend/topicOpportunityTargets";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const topic = typeof body?.topic === "string" ? body.topic.trim() : "";

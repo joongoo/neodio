@@ -6,6 +6,7 @@ import { getCachedVideos } from "@/lib/backend/aio/store";
 import { activeVideoIds, VIDEO_SOURCE_TYPE } from "@/lib/backend/aio/videoManage";
 import { normalizeSurfaces } from "@/lib/promptSurfaces";
 import { MAX_PROMPT_LENGTH } from "@/lib/videoPromptSuggestion";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const MAX_PROMPTS_PER_REQUEST = 60;
 const CATEGORY = "YouTube 영상";
@@ -13,6 +14,8 @@ const CATEGORY = "YouTube 영상";
 // 예상 프롬프트를 프롬프트 라이브러리에 등록한다 — 한 곳에서만 등록하고 플랫폼은 프롬프트별 체크박스(promptSurfaces).
 // 영상과의 연결은 prompt_sources(youtube-video, 영상 ID)로 남겨, 영상 상세에서 이 영상용 프롬프트를 다시 찾는다.
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";

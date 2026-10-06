@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteCategory, listCategories, saveCategory } from "@/lib/backend/categoryStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function GET() {
+  const denied = await guardApi("read");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   return NextResponse.json({ categories: await listCategories(tenant.orgId) });
 }
 
 async function save(request: NextRequest, editing: boolean) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -27,6 +32,8 @@ export const POST = (request: NextRequest) => save(request, false);
 export const PATCH = (request: NextRequest) => save(request, true);
 
 export async function DELETE(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   try {
     const found = await deleteCategory(tenant.orgId, request.nextUrl.searchParams.get("id") ?? "");

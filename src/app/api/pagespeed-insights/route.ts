@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRealPageSpeedInsights } from "@/lib/backend/pageSpeedInsightsReader";
 import { setCachedPageSpeedResult } from "@/lib/backend/pageSpeedInsightsStore";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const body = await request.json().catch(() => null);
   const url = typeof body?.url === "string" ? body.url.trim() : "";
   if (!url) {

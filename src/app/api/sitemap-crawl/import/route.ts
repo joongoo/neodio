@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPromptStore } from "@/lib/backend/database";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { MAX_CRAWLS_PER_IMPORT, sanitizeSitemapCrawl } from "@/lib/sitemapCrawlImport";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 사이트맵 크롤의 "반영" — 사용자 PC의 설치형 수집기가 크롤한 결과(콘텐츠 가시성·FAQ·목차·복잡도 등)를
 // 로그인한 브라우저가 받아 올린다. 지금 보고 있는 조직으로 저장하고, 같은 크롤을 다시 올려도 같은 기록으로
 // 덮어쓴다(크롤 시각 기준). 수집기는 서버·DB에 직접 붙지 않는다(docs/collector.md).
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const entries: unknown[] = Array.isArray(body?.crawls) ? body.crawls : [];

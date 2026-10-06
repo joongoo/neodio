@@ -6,11 +6,14 @@ import { getBrandAioSettings, listBrandYoutubeChannels } from "@/lib/backend/bra
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { sanitizeAioResult } from "@/lib/aioResultImport";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // YouTube AIO "지금 수집"의 반영 — 사용자 PC의 설치형 수집기가 Google에서 검색한 결과 한 건을 로그인한 브라우저가 올린다.
 // 어떤 키워드·디바이스인지와 국가·언어는 서버가 가진 값으로 확인하고, 자사 영상 판정과 저장은 서버가 한다
 // (채널 매칭에 YouTube 조회가 필요하고, 판정 기준을 화면이 정하게 두지 않는다). 수집기는 서버·DB에 직접 붙지 않는다.
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";

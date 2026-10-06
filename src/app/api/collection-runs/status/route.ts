@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getJob } from "@/lib/backend/collectionJobRunner";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function GET(request: NextRequest) {
+  const denied = await guardApi("read");
+  if (denied) return denied;
   const jobId = request.nextUrl.searchParams.get("jobId");
   const job = jobId ? await getJob(jobId) : undefined;
 

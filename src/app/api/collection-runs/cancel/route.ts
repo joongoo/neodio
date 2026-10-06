@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cancelCollectionJob } from "@/lib/backend/collectionJobRunner";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const body = await request.json().catch(() => null);
   const jobId = typeof body?.jobId === "string" ? body.jobId : "";
   if (!jobId) {

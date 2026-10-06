@@ -3,11 +3,14 @@ import { AIO_KEYWORD_GROUPS, addAioKeywords, archiveAioKeyword } from "@/lib/bac
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { AioKeywordGroup } from "@/lib/db";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const MAX_KEYWORDS_PER_REQUEST = 200;
 
 // YouTube AIO 인용 페이지의 "프롬프트 추가" — 줄바꿈으로 여러 개를 한 번에.
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";
@@ -35,6 +38,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const brandId = request.nextUrl.searchParams.get("brandId");
   const id = request.nextUrl.searchParams.get("id");
   if (!brandId || !id) return NextResponse.json({ error: "brandId와 id가 필요합니다." }, { status: 400 });

@@ -5,6 +5,7 @@ import { markLibraryRowDeleted } from "@/lib/backend/deletedLibraryRows";
 import { getPromptStore } from "@/lib/backend/database";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { normalizeSurfaces } from "@/lib/promptSurfaces";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 const VALID_ORIGINS = new Set(["manual", "ai_generated", "csv_import"]);
 // 실 파일로 저장된 행(추적/수동 추가/CSV 가져오기 전부 이 형식)만 수정 가능.
@@ -14,6 +15,8 @@ const ID_PATTERN = /^tracked-\d+-[a-z0-9]+$/;
 const SEED_ID_PATTERN = /^pl-[a-z0-9-]+$/i;
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
@@ -53,6 +56,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const id = request.nextUrl.searchParams.get("id") ?? "";
   if (ID_PATTERN.test(id)) {
@@ -67,6 +72,8 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const tenant = await getCurrentTenant();
   const id = request.nextUrl.searchParams.get("id") ?? "";
   if (!ID_PATTERN.test(id) && !SEED_ID_PATTERN.test(id)) {

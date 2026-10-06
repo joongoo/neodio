@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCollectedRunDetail } from "@/lib/backend/collectionRuns";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 수집 로그에서 행을 펼칠 때 그 실행의 원문·인용만 불러온다(목록에는 싣지 않는다).
 export async function GET(request: NextRequest) {
+  const denied = await guardApi("read");
+  if (denied) return denied;
   const dir = request.nextUrl.searchParams.get("dir") ?? "";
   const filename = request.nextUrl.searchParams.get("filename") ?? "";
   if (!dir || !filename) return NextResponse.json({ error: "dir과 filename이 필요합니다." }, { status: 400 });

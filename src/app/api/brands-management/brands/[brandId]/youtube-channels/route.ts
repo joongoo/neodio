@@ -4,6 +4,7 @@ import { getManagedBrand, getManagedBrandById, updateManagedBrand } from "@/lib/
 import { parseChannelInput, resolveYoutubeChannel } from "@/lib/backend/youtube";
 import { findChannelForSocial, socialForChannel } from "@/lib/youtubeSocial";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // YouTube AIO 인용 판정용 채널 — 채널 URL/@핸들/UC… ID를 받아 실제 채널
 // ID로 조회한 뒤 저장한다. 연결 관리의 "YouTube 채널" 카드와 브랜드 설정의
@@ -15,8 +16,10 @@ async function respond(brandId: string) {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ brandId: string }> }) {
-  const tenant = await getCurrentTenant();
   const { brandId } = await params;
+  const denied = await guardApi("write", { brandId });
+  if (denied) return denied;
+  const tenant = await getCurrentTenant();
   const brand = await getManagedBrand(tenant.orgId, brandId);
   if (!brand) {
     return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 404 });
@@ -41,8 +44,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ brandId: string }> }) {
-  const tenant = await getCurrentTenant();
   const { brandId } = await params;
+  const denied = await guardApi("write", { brandId });
+  if (denied) return denied;
+  const tenant = await getCurrentTenant();
   const channelId = request.nextUrl.searchParams.get("channelId");
   if (!channelId) return NextResponse.json({ error: "channelId가 필요합니다." }, { status: 400 });
 

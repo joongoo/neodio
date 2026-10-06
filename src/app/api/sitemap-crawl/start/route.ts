@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { startSitemapCrawlJob, startUrlRecrawlJob } from "@/lib/backend/sitemapCrawlJobRunner";
 import { collectionUsesLocalAgent } from "@/lib/backend/collectionMode";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 // 이 서버가 직접 크롤하는 건 로컬 개발뿐이다(Playwright 브라우저 + `npm run crawl:sitemap` 자식 프로세스).
 // 운영(Vercel 서버리스)은 브라우저를 설치할 수도, 오래 실행할 수도 없어서 사용자 PC의 설치형 수집기가
@@ -15,6 +16,8 @@ function refuseWhenAgentMode() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const refused = refuseWhenAgentMode();
   if (refused) return refused;
   const body = await request.json().catch(() => null);

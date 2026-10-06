@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { deleteGscToken } from "@/lib/backend/gscTokenStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
+import { guardApi } from "@/lib/backend/auth/guard";
 
 export async function POST(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
   const form = await request.formData();
   const brandId = form.get("brandId");
   if (typeof brandId !== "string" || !brandId) {
