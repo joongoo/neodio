@@ -1,3 +1,4 @@
+import { EditOnly } from "@/components/auth/PermissionsProvider";
 import { CheckCircle2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -13,9 +14,11 @@ export function GscConnectionCard({ gsc, brandId }: { gsc: GscConnection | null;
       <Card className="flex flex-col items-start gap-3">
         <h2 className="text-base font-bold text-neutral-900">Google Search Console</h2>
         <p className="text-sm text-neutral-500">아직 연결되지 않았습니다.</p>
-        <Button variant="primary" href={`/api/connections/gsc/oauth/start?brandId=${brandId}`}>
-          Google 계정으로 연결
-        </Button>
+        <EditOnly>
+          <Button variant="primary" href={`/api/connections/gsc/oauth/start?brandId=${brandId}`}>
+            Google 계정으로 연결
+          </Button>
+        </EditOnly>
       </Card>
     );
   }
@@ -52,12 +55,14 @@ export function GscConnectionCard({ gsc, brandId }: { gsc: GscConnection | null;
       </div>
 
       <div>
-        <form action="/api/connections/gsc/disconnect" method="POST">
-          <input type="hidden" name="brandId" value={brandId} />
-          <Button type="submit" variant="secondary">
-            연결 해제
-          </Button>
-        </form>
+        <EditOnly>
+          <form action="/api/connections/gsc/disconnect" method="POST">
+            <input type="hidden" name="brandId" value={brandId} />
+            <Button type="submit" variant="secondary">
+              연결 해제
+            </Button>
+          </form>
+        </EditOnly>
       </div>
     </Card>
   );

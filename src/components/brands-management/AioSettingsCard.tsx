@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { FormEvent, useState } from "react";
 import { Settings2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
@@ -26,6 +28,7 @@ const DEVICES: { value: AioDevice; label: string }[] = [
 // 의미 있으므로, 바꾸면 그날부터의 추이가 이전과 끊긴다는 점을 안내한다.
 export function AioSettingsCard({ brandId, initialSettings }: { brandId: string; initialSettings: BrandAioSettings }) {
   const [settings, setSettings] = useState(initialSettings);
+  const canEdit = useCanEdit();
   const [draft, setDraft] = useState(initialSettings);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -78,7 +81,7 @@ export function AioSettingsCard({ brandId, initialSettings }: { brandId: string;
         <div className="grid grid-cols-2 gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-neutral-600">국가</span>
-            <select
+            <select disabled={!canEdit}
               value={draft.country}
               onChange={(e) => setDraft({ ...draft, country: e.target.value })}
               className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm"
@@ -92,7 +95,7 @@ export function AioSettingsCard({ brandId, initialSettings }: { brandId: string;
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-neutral-600">언어</span>
-            <select
+            <select disabled={!canEdit}
               value={draft.language}
               onChange={(e) => setDraft({ ...draft, language: e.target.value })}
               className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm"
@@ -111,7 +114,7 @@ export function AioSettingsCard({ brandId, initialSettings }: { brandId: string;
           <div className="flex gap-4">
             {DEVICES.map((d) => (
               <label key={d.value} className="flex items-center gap-2 text-sm text-neutral-800">
-                <input
+                <input disabled={!canEdit}
                   type="checkbox"
                   checked={draft.devices.includes(d.value)}
                   onChange={() => toggleDevice(d.value)}
@@ -126,7 +129,7 @@ export function AioSettingsCard({ brandId, initialSettings }: { brandId: string;
 
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-neutral-600">최적화 기준일 (선택)</span>
-          <input
+          <input disabled={!canEdit}
             type="date"
             value={draft.optimizationDate ?? ""}
             onChange={(e) => setDraft({ ...draft, optimizationDate: e.target.value || null })}
@@ -136,9 +139,11 @@ export function AioSettingsCard({ brandId, initialSettings }: { brandId: string;
         </label>
 
         <div className="flex items-center gap-3">
-          <Button type="submit" variant="primary" disabled={pending || !dirty || draft.devices.length === 0}>
-            {pending ? "저장 중…" : "저장"}
-          </Button>
+          <EditOnly>
+            <Button type="submit" variant="primary" disabled={pending || !dirty || draft.devices.length === 0}>
+              {pending ? "저장 중…" : "저장"}
+            </Button>
+          </EditOnly>
           {message && <span className={message.kind === "ok" ? "text-xs text-emerald-700" : "text-xs text-red-600"}>{message.text}</span>}
         </div>
       </form>

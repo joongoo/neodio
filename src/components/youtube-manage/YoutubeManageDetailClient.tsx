@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -77,13 +79,17 @@ export function YoutubeManageDetailClient({ data }: { data: VideoManageDetailDat
           {demo && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">샘플 데이터</span>}
           {devices.length > 1 && <Dropdown label="디바이스" value={DEVICE_LABEL[device]} options={devices.map((d) => DEVICE_LABEL[d])} onChange={setDevice} />}
           {video.checked ? (
-            <Button variant="primary" icon={<Sparkles size={16} />} onClick={() => setModalOpen(true)} disabled={demo}>
-              예상 프롬프트 만들기
-            </Button>
+            <EditOnly>
+              <Button variant="primary" icon={<Sparkles size={16} />} onClick={() => setModalOpen(true)} disabled={demo}>
+                예상 프롬프트 만들기
+              </Button>
+            </EditOnly>
           ) : (
-            <Button variant="primary" onClick={() => void check()} disabled={demo || checking}>
-              {checking ? "체크하는 중..." : "관리 대상으로 체크"}
-            </Button>
+            <EditOnly>
+              <Button variant="primary" onClick={() => void check()} disabled={demo || checking}>
+                {checking ? "체크하는 중..." : "관리 대상으로 체크"}
+              </Button>
+            </EditOnly>
           )}
         </div>
       </div>

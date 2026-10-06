@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { CitationFeaturesCard } from "@/components/url-inspector/CitationFeaturesCard";
 import type { CitationFeatureAnalysis } from "@/lib/citationFeatures";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -125,16 +127,18 @@ function buildOwnColumns(onUnregister: (row: OwnCitedUrlRow) => void): DataTable
       width: "w-[90px]",
       render: (r) =>
         r.id.startsWith("registered-") ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onUnregister(r);
-            }}
-            className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] text-neutral-500 hover:bg-neutral-50 cursor-pointer"
-          >
-            등록 해제
-          </button>
+          <EditOnly>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUnregister(r);
+              }}
+              className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] text-neutral-500 hover:bg-neutral-50 cursor-pointer"
+            >
+              등록 해제
+            </button>
+          </EditOnly>
         ) : null,
     },
   ];
@@ -316,23 +320,25 @@ export function UrlInspectorClient({
         onSearchChange={ownTable.setSearchText}
         searchPlaceholder="URL 검색"
       >
-        <div className="mb-3 flex items-center gap-2">
-          <input
-            value={newUrl}
-            onChange={(e) => setNewUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && registerNewUrl()}
-            placeholder="https://... — 추적할 URL 등록"
-            className="h-9 flex-1 rounded-md border border-neutral-300 px-3 text-sm"
-          />
-          <button
-            type="button"
-            disabled={registering || !newUrl.trim()}
-            onClick={registerNewUrl}
-            className="h-9 shrink-0 rounded-md bg-slate-800 px-3 text-sm font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-40"
-          >
-            등록
-          </button>
-        </div>
+        <EditOnly>
+          <div className="mb-3 flex items-center gap-2">
+            <input
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && registerNewUrl()}
+              placeholder="https://... — 추적할 URL 등록"
+              className="h-9 flex-1 rounded-md border border-neutral-300 px-3 text-sm"
+            />
+            <button
+              type="button"
+              disabled={registering || !newUrl.trim()}
+              onClick={registerNewUrl}
+              className="h-9 shrink-0 rounded-md bg-slate-800 px-3 text-sm font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-40"
+            >
+              등록
+            </button>
+          </div>
+        </EditOnly>
         <DataTable
           columns={own.filtered}
           rows={ownPage.rows}

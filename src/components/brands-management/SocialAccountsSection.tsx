@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Plus, Share2, SquarePlay, X } from "lucide-react";
@@ -101,9 +103,11 @@ export function SocialAccountsSection({
             </p>
           </div>
         </div>
-        <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddOpen(true)}>
-          추가
-        </Button>
+        <EditOnly>
+          <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddOpen(true)}>
+            추가
+          </Button>
+        </EditOnly>
       </div>
 
       {rows.length === 0 ? (
@@ -123,15 +127,17 @@ export function SocialAccountsSection({
                       {account.platform}: {channel ? `${channel.title} (${account.handle})` : account.handle}
                     </span>
                   </span>
-                  <button
-                    type="button"
-                    aria-label={`${account.platform} ${account.handle} 삭제`}
-                    onClick={() => remove(account, index)}
-                    disabled={busy === account.handle}
-                    className="shrink-0 cursor-pointer text-neutral-400 hover:text-red-600 disabled:opacity-40"
-                  >
-                    {busy === account.handle ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
-                  </button>
+                  <EditOnly>
+                    <button
+                      type="button"
+                      aria-label={`${account.platform} ${account.handle} 삭제`}
+                      onClick={() => remove(account, index)}
+                      disabled={busy === account.handle}
+                      className="shrink-0 cursor-pointer text-neutral-400 hover:text-red-600 disabled:opacity-40"
+                    >
+                      {busy === account.handle ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                    </button>
+                  </EditOnly>
                 </div>
                 {youtube &&
                   (channel ? (
@@ -155,14 +161,16 @@ export function SocialAccountsSection({
                   ) : (
                     <div className="flex items-center justify-between gap-2 border-t border-neutral-200 pt-1.5">
                       <span className="text-neutral-500">AIO 인용 추적에 연결되지 않은 계정입니다.</span>
-                      <button
-                        type="button"
-                        onClick={() => linkExisting(account)}
-                        disabled={busy === account.handle}
-                        className="cursor-pointer font-medium text-slate-800 hover:opacity-70 disabled:opacity-40"
-                      >
-                        AIO 추적 연결
-                      </button>
+                      <EditOnly>
+                        <button
+                          type="button"
+                          onClick={() => linkExisting(account)}
+                          disabled={busy === account.handle}
+                          className="cursor-pointer font-medium text-slate-800 hover:opacity-70 disabled:opacity-40"
+                        >
+                          AIO 추적 연결
+                        </button>
+                      </EditOnly>
                     </div>
                   ))}
               </li>

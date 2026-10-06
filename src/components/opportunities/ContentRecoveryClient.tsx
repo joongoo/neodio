@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, FileCheck2, Loader2, RefreshCw, Settings, Sparkles } from "lucide-react";
@@ -24,6 +26,7 @@ const OPTIONAL_COLUMNS: ColumnOption[] = [
 const TABS = ["현재 제안", "수정 완료"] as const;
 
 export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryOpportunity; domain: string }) {
+  const canEdit = useCanEdit();
   const router = useRouter();
   const tenantBase = useTenantBase();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
@@ -143,7 +146,7 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
       width: "w-[220px]",
       render: (r) => {
         const job = recheckJobs[r.url];
-        const guideButton = (
+        const guideButton = (canEdit || !!r.guide) && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -175,16 +178,18 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
         }
         return (
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                recheckUrl(r.url);
-              }}
-              className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-            >
-              <RefreshCw size={12} />
-              수정 완료 확인
-            </button>
+            <EditOnly>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  recheckUrl(r.url);
+                }}
+                className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+              >
+                <RefreshCw size={12} />
+                수정 완료 확인
+              </button>
+            </EditOnly>
             {guideButton}
           </div>
         );
@@ -366,17 +371,19 @@ export function ContentRecoveryClient({ data, domain }: { data: ContentRecoveryO
             {viewingGuide.guide}
           </p>
           <div className="mt-4 flex justify-end">
-            <button
-              type="button"
-              onClick={() => {
-                const target = viewingGuide;
-                setViewingGuide(null);
-                setGuideTarget(target);
-              }}
-              className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-            >
-              다시 등록
-            </button>
+            <EditOnly>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewingGuide;
+                  setViewingGuide(null);
+                  setGuideTarget(target);
+                }}
+                className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+              >
+                다시 등록
+              </button>
+            </EditOnly>
           </div>
         </Modal>
       )}

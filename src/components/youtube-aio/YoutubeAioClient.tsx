@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { ReactNode, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -73,10 +75,12 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
           <Button variant="secondary" icon={<Download size={16} />} onClick={() => downloadCsv(brandName, overview.rows)} disabled={overview.rows.length === 0}>
             스냅샷 내보내기
           </Button>
-          <AioCollectButton brandId={brandId} searches={data.totalKeywords * settings.devices.length} disabled={demo || noKeywords} />
-          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)} disabled={demo}>
-            프롬프트 추가
-          </Button>
+          <EditOnly><AioCollectButton brandId={brandId} searches={data.totalKeywords * settings.devices.length} disabled={demo || noKeywords} /></EditOnly>
+          <EditOnly>
+            <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)} disabled={demo}>
+              프롬프트 추가
+            </Button>
+          </EditOnly>
         </div>
       </div>
 
@@ -110,9 +114,11 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
           <p className="max-w-md text-sm text-neutral-500">
             프롬프트를 등록하면 Google에서 검색해 AI Overview에 어떤 YouTube 영상이 인용되는지 기록합니다. 프롬프트 라이브러리에서 Google AI Overview 플랫폼을 켠 프롬프트도 여기에 나옵니다.
           </p>
-          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>
-            프롬프트 추가
-          </Button>
+          <EditOnly>
+            <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddOpen(true)}>
+              프롬프트 추가
+            </Button>
+          </EditOnly>
         </Card>
       ) : (
         <>

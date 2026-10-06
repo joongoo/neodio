@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -22,6 +24,7 @@ type Filter = "all" | "checked";
 // YouTube 관리 — 채널 영상을 전부 가져와 두고, 체크한 영상만 예상 프롬프트를 만들어 Google AIO 인용을 추적한다.
 export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
   const { base, demo, brandId, brandName, industry, settings, device, existingPrompts, canSync } = data;
+  const canEdit = useCanEdit();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -101,7 +104,7 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
           type="checkbox"
           aria-label="현재 페이지 전체 선택"
           checked={pageAllChecked}
-          disabled={demo}
+          disabled={demo || !canEdit}
           onChange={(e) => void setChecked(pageRows.map((v) => v.videoId), e.target.checked)}
           className="size-4 cursor-pointer accent-slate-800"
         />
@@ -111,7 +114,7 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
           type="checkbox"
           aria-label={`${v.title} 체크`}
           checked={v.checked}
-          disabled={demo}
+          disabled={demo || !canEdit}
           onChange={(e) => void setChecked([v.videoId], e.target.checked)}
           className="size-4 cursor-pointer accent-slate-800"
         />
@@ -178,18 +181,22 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
         </div>
         <div className="flex items-center gap-2">
           {demo && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">샘플 데이터</span>}
-          <Button
-            variant="secondary"
-            icon={syncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            onClick={() => void sync()}
-            disabled={demo || syncing || !canSync}
-            title={canSync ? undefined : "서버에 YouTube API 키가 설정되어야 채널 영상을 가져올 수 있습니다"}
-          >
-            {syncing ? "가져오는 중..." : "영상 가져오기"}
-          </Button>
-          <Button variant="primary" icon={<Sparkles size={16} />} onClick={() => setModalOpen(true)} disabled={demo || checkedCount === 0}>
-            예상 프롬프트 만들기{checkedCount > 0 ? ` (${checkedCount})` : ""}
-          </Button>
+          <EditOnly>
+            <Button
+              variant="secondary"
+              icon={syncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              onClick={() => void sync()}
+              disabled={demo || syncing || !canSync}
+              title={canSync ? undefined : "서버에 YouTube API 키가 설정되어야 채널 영상을 가져올 수 있습니다"}
+            >
+              {syncing ? "가져오는 중..." : "영상 가져오기"}
+            </Button>
+          </EditOnly>
+          <EditOnly>
+            <Button variant="primary" icon={<Sparkles size={16} />} onClick={() => setModalOpen(true)} disabled={demo || checkedCount === 0}>
+              예상 프롬프트 만들기{checkedCount > 0 ? ` (${checkedCount})` : ""}
+            </Button>
+          </EditOnly>
         </div>
       </div>
 

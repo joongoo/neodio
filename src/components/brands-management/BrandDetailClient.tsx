@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { hostnameOfUrl, normalizeUrl } from "@/lib/normalizeUrl";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -54,6 +56,7 @@ export function BrandDetailClient({
   /** 이 브랜드의 YouTube AIO 인용 화면 주소 */
   citationsHref: string;
 }) {
+  const canEdit = useCanEdit();
   const router = useRouter();
   const tenantBase = useTenantBase();
   const [brand, setBrand] = useState(initial);
@@ -195,31 +198,37 @@ export function BrandDetailClient({
               연결 관리
             </Button>
           </a>
-          <Button variant="primary" disabled={!dirty || saving} onClick={save}>
-            {saving ? "저장하는 중..." : "변경사항 저장"}
-          </Button>
+          <EditOnly>
+            <Button variant="primary" disabled={!dirty || saving} onClick={save}>
+              {saving ? "저장하는 중..." : "변경사항 저장"}
+            </Button>
+          </EditOnly>
           {brand.status === "active" ? (
-            <Button variant="secondary" onClick={() => setMoveToPendingOpen(true)}>
-              대기 상태로 전환
-            </Button>
+            <EditOnly>
+              <Button variant="secondary" onClick={() => setMoveToPendingOpen(true)}>
+                대기 상태로 전환
+              </Button>
+            </EditOnly>
           ) : (
-            <Button
-              variant="secondary"
-              disabled={movingToActive}
-              onClick={async () => {
-                setMovingToActive(true);
-                try {
-                  await persist({ status: "active" });
-                  setBrand((b) => ({ ...b, status: "active" }));
-                  setDraft((d) => ({ ...d, status: "active" }));
-                  showToast("활성 상태로 전환했습니다.");
-                } finally {
-                  setMovingToActive(false);
-                }
-              }}
-            >
-              {movingToActive ? "전환하는 중..." : "활성 상태로 전환"}
-            </Button>
+            <EditOnly>
+              <Button
+                variant="secondary"
+                disabled={movingToActive}
+                onClick={async () => {
+                  setMovingToActive(true);
+                  try {
+                    await persist({ status: "active" });
+                    setBrand((b) => ({ ...b, status: "active" }));
+                    setDraft((d) => ({ ...d, status: "active" }));
+                    showToast("활성 상태로 전환했습니다.");
+                  } finally {
+                    setMovingToActive(false);
+                  }
+                }}
+              >
+                {movingToActive ? "전환하는 중..." : "활성 상태로 전환"}
+              </Button>
+            </EditOnly>
           )}
         </div>
       </div>
@@ -227,7 +236,7 @@ export function BrandDetailClient({
       <Card className="flex flex-col gap-4">
         <h2 className="text-base font-bold text-neutral-900">기본 정보</h2>
         <Field label="이름 *">
-          <input
+          <input readOnly={!canEdit}
             value={draft.name}
             onChange={(e) => updateDraft({ name: e.target.value })}
             className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
@@ -238,29 +247,31 @@ export function BrandDetailClient({
         </Field>
         <Field label="사이트맵 URL">
           <div className="flex items-center gap-2">
-            <input
+            <input readOnly={!canEdit}
               value={draft.sitemapUrl}
               onChange={(e) => updateDraft({ sitemapUrl: e.target.value })}
               placeholder="https://example.com/sitemap.xml"
               className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
             />
-            <Button
-              type="button"
-              variant="secondary"
-              icon={<Radar size={14} />}
-              disabled={!brand.sitemapUrl.trim() || crawlJobId !== null}
-              onClick={startBrandSitemapCrawl}
-              className="shrink-0 whitespace-nowrap"
-            >
-              사이트맵 크롤
-            </Button>
+            <EditOnly>
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<Radar size={14} />}
+                disabled={!brand.sitemapUrl.trim() || crawlJobId !== null}
+                onClick={startBrandSitemapCrawl}
+                className="shrink-0 whitespace-nowrap"
+              >
+                사이트맵 크롤
+              </Button>
+            </EditOnly>
           </div>
           <span className="text-[11px] text-neutral-400">
             이 사이트맵 기준으로 실제 페이지를 크롤해 raw HTML 대비 렌더링 후 텍스트 비율로 콘텐츠 가시성을 계산합니다.
           </span>
         </Field>
         <Field label="설명">
-          <textarea
+          <textarea readOnly={!canEdit}
             value={draft.description}
             onChange={(e) => updateDraft({ description: e.target.value })}
             rows={2}
@@ -268,7 +279,7 @@ export function BrandDetailClient({
           />
         </Field>
         <Field label="업종">
-          <input
+          <input readOnly={!canEdit}
             value={draft.industry}
             onChange={(e) => updateDraft({ industry: e.target.value })}
             className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
@@ -279,7 +290,7 @@ export function BrandDetailClient({
           <span className="text-xs font-medium text-neutral-600">마켓 *</span>
           <div className="flex flex-wrap gap-2">
             {MARKET_OPTIONS.map((m) => (
-              <button
+              <button disabled={!canEdit}
                 key={m}
                 type="button"
                 onClick={() => toggleMarket(m)}
@@ -338,12 +349,16 @@ export function BrandDetailClient({
             </div>
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setOptimizeOpen(true)}>
-              AI로 별칭 최적화
-            </Button>
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddAliasOpen(true)}>
-              추가
-            </Button>
+            <EditOnly>
+              <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setOptimizeOpen(true)}>
+                AI로 별칭 최적화
+              </Button>
+            </EditOnly>
+            <EditOnly>
+              <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddAliasOpen(true)}>
+                추가
+              </Button>
+            </EditOnly>
           </div>
         </div>
         {brand.aliases.length === 0 ? (
@@ -353,14 +368,16 @@ export function BrandDetailClient({
             {brand.aliases.map((item, i) => (
               <li key={item} className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
                 {item}
-                <button
-                  type="button"
-                  aria-label={`${item} 삭제`}
-                  onClick={() => applyListChange({ aliases: brand.aliases.filter((_, idx) => idx !== i) })}
-                  className="cursor-pointer text-neutral-400 hover:text-red-600"
-                >
-                  <X size={13} />
-                </button>
+                <EditOnly>
+                  <button
+                    type="button"
+                    aria-label={`${item} 삭제`}
+                    onClick={() => applyListChange({ aliases: brand.aliases.filter((_, idx) => idx !== i) })}
+                    className="cursor-pointer text-neutral-400 hover:text-red-600"
+                  >
+                    <X size={13} />
+                  </button>
+                </EditOnly>
               </li>
             ))}
           </ul>
@@ -376,15 +393,21 @@ export function BrandDetailClient({
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setCleanupOpen(true)}>
-              AI로 브랜드 정리·경쟁사 탐색
-            </Button>
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setPickObservedOpen(true)}>
-              가시성 개요에서 추가
-            </Button>
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddOtherBrandOpen(true)}>
-              직접 추가
-            </Button>
+            <EditOnly>
+              <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setCleanupOpen(true)}>
+                AI로 브랜드 정리·경쟁사 탐색
+              </Button>
+            </EditOnly>
+            <EditOnly>
+              <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setPickObservedOpen(true)}>
+                가시성 개요에서 추가
+              </Button>
+            </EditOnly>
+            <EditOnly>
+              <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setAddOtherBrandOpen(true)}>
+                직접 추가
+              </Button>
+            </EditOnly>
           </div>
         </div>
         {brand.otherBrands.length === 0 ? (
@@ -406,6 +429,7 @@ export function BrandDetailClient({
                     <span key={b.name} className="flex items-center gap-1.5 rounded-full bg-neutral-100 py-1 pl-3 pr-2 text-xs text-neutral-700">
                       <button
                         type="button"
+                        disabled={!canEdit}
                         onClick={() => setEditingOtherBrand(b)}
                         className="flex items-center gap-1 cursor-pointer hover:underline"
                         title={[b.description, b.aliases.length > 0 ? `별칭: ${b.aliases.join(", ")}` : "별칭 없음 — 눌러서 추가"].filter(Boolean).join("\n")}
@@ -414,16 +438,18 @@ export function BrandDetailClient({
                         {b.tier && <span className="rounded bg-emerald-50 px-1 text-[10px] font-bold text-emerald-700">{TIER_LABEL[b.tier]}</span>}
                         {b.origin === "ai-suggested" && <span className="rounded bg-amber-50 px-1 text-[10px] font-bold text-amber-700">AI 제안</span>}
                         {b.aliases.length > 0 && <span className="text-neutral-400">({b.aliases.length})</span>}
-                        <Pencil size={10} className="text-neutral-400" />
+                        <EditOnly><Pencil size={10} className="text-neutral-400" /></EditOnly>
                       </button>
-                      <button
-                        type="button"
-                        aria-label={`${b.name} 삭제`}
-                        onClick={() => applyListChange({ otherBrands: brand.otherBrands.filter((_, idx) => idx !== i) })}
-                        className="cursor-pointer text-neutral-400 hover:text-red-600"
-                      >
-                        <X size={12} />
-                      </button>
+                      <EditOnly>
+                        <button
+                          type="button"
+                          aria-label={`${b.name} 삭제`}
+                          onClick={() => applyListChange({ otherBrands: brand.otherBrands.filter((_, idx) => idx !== i) })}
+                          className="cursor-pointer text-neutral-400 hover:text-red-600"
+                        >
+                          <X size={12} />
+                        </button>
+                      </EditOnly>
                     </span>
                   ))}
                 </div>
@@ -589,9 +615,11 @@ function ListSection({
             <p className="mt-0.5 text-xs text-neutral-500">{description}</p>
           </div>
         </div>
-        <Button variant="secondary" icon={<Plus size={14} />} onClick={onAdd}>
-          추가
-        </Button>
+        <EditOnly>
+          <Button variant="secondary" icon={<Plus size={14} />} onClick={onAdd}>
+            추가
+          </Button>
+        </EditOnly>
       </div>
       {items.length === 0 ? (
         <p className="text-xs text-neutral-400">아직 추가된 항목이 없습니다.</p>
@@ -600,14 +628,16 @@ function ListSection({
           {items.map((item, i) => (
             <li key={item} className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
               {item}
-              <button
-                type="button"
-                aria-label={`${item} 삭제`}
-                onClick={() => onRemove(i)}
-                className="cursor-pointer text-neutral-400 hover:text-red-600"
-              >
-                <X size={13} />
-              </button>
+              <EditOnly>
+                <button
+                  type="button"
+                  aria-label={`${item} 삭제`}
+                  onClick={() => onRemove(i)}
+                  className="cursor-pointer text-neutral-400 hover:text-red-600"
+                >
+                  <X size={13} />
+                </button>
+              </EditOnly>
             </li>
           ))}
         </ul>
@@ -897,9 +927,11 @@ function OtherBrandEditModal({
         <Button variant="secondary" onClick={onClose}>
           취소
         </Button>
-        <Button variant="primary" onClick={save}>
-          저장
-        </Button>
+        <EditOnly>
+          <Button variant="primary" onClick={save}>
+            저장
+          </Button>
+        </EditOnly>
       </div>
     </Modal>
   );
@@ -1016,9 +1048,11 @@ function OptimizeAliasesModal({
         <Button variant="secondary" onClick={close}>
           취소
         </Button>
-        <Button variant="primary" disabled={!pasted.trim()} onClick={save}>
-          별칭 병합
-        </Button>
+        <EditOnly>
+          <Button variant="primary" disabled={!pasted.trim()} onClick={save}>
+            별칭 병합
+          </Button>
+        </EditOnly>
       </div>
     </Modal>
   );

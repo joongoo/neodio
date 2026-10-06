@@ -1,3 +1,4 @@
+import { canManageOrg, isStaff } from "@/lib/auth/permissions";
 import { OrganizationsClient } from "@/components/organizations/OrganizationsClient";
 import { MembersSection } from "@/components/organizations/MembersSection";
 import { getPromptStore } from "@/lib/backend/database";
@@ -12,7 +13,12 @@ export default async function OrganizationsPage() {
   const visible = await filterAccessibleOrgs(organizations);
   return (
     <>
-      <OrganizationsClient initial={visible} currentOrgId={tenant.orgId} />
+      <OrganizationsClient
+        initial={visible}
+        currentOrgId={tenant.orgId}
+        canCreateDelete={!tenant.principal || isStaff(tenant.principal)}
+        manageableOrgIds={visible.filter((org) => !tenant.principal || canManageOrg(tenant.principal, org.id)).map((org) => org.id)}
+      />
       {/* 구성원 관리는 로그인 체계가 켜져 있고 오너(또는 직원)일 때만 — 현재 선택한 조직의 구성원이다. */}
       {tenant.principal && tenant.canManageOrg && <MembersSection orgName={tenant.org.name} currentUserId={tenant.principal.userId} />}
     </>

@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Sparkles } from "lucide-react";
@@ -11,6 +13,7 @@ import { TopicRow, TopicVisibilityFunnel } from "@/lib/db";
 import { useTenantBase } from "@/lib/useTenantBase";
 
 export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
+  const canEdit = useCanEdit();
   const router = useRouter();
   const tenantBase = useTenantBase();
   const [trackOpen, setTrackOpen] = useState(false);
@@ -92,13 +95,15 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
           ) : (
             <>
               <span className="text-sm text-neutral-600">아직 프롬프트 라이브러리에 없습니다. 콘텐츠를 만들었다면 추가해두세요.</span>
-              <button
-                type="button"
-                onClick={() => setTrackOpen(true)}
-                className="rounded-md bg-slate-800 px-3 py-2 text-sm font-bold text-white cursor-pointer hover:opacity-90"
-              >
-                라이브러리에 추가
-              </button>
+              <EditOnly>
+                <button
+                  type="button"
+                  onClick={() => setTrackOpen(true)}
+                  className="rounded-md bg-slate-800 px-3 py-2 text-sm font-bold text-white cursor-pointer hover:opacity-90"
+                >
+                  라이브러리에 추가
+                </button>
+              </EditOnly>
             </>
           )}
         </div>
@@ -111,19 +116,22 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
         </p>
         <div className="mt-3 flex items-center gap-2">
           <input
+            readOnly={!canEdit}
             value={targetUrlInput}
             onChange={(e) => setTargetUrlInput(e.target.value)}
             placeholder="https://..."
             className="h-10 flex-1 rounded-md border border-neutral-300 px-3 text-sm"
           />
-          <button
-            type="button"
-            disabled={saving || !targetUrlInput.trim()}
-            onClick={saveTargetUrl}
-            className="h-10 rounded-md bg-slate-800 px-4 text-sm font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-40"
-          >
-            저장
-          </button>
+          <EditOnly>
+            <button
+              type="button"
+              disabled={saving || !targetUrlInput.trim()}
+              onClick={saveTargetUrl}
+              className="h-10 rounded-md bg-slate-800 px-4 text-sm font-bold text-white cursor-pointer hover:opacity-90 disabled:cursor-default disabled:opacity-40"
+            >
+              저장
+            </button>
+          </EditOnly>
         </div>
         {row.targetUrl && (
           <p className="mt-3 text-sm">
@@ -142,7 +150,8 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
             <Sparkles size={16} className="text-neutral-400" />
             <h2 className="text-[15px] font-bold text-neutral-700">LLM 기반 콘텐츠 생성 가이드</h2>
           </div>
-          <button
+          {(canEdit || !!row.guide) && (
+            <button
             type="button"
             onClick={() => (row.guide ? setViewingGuide(true) : setGuideOpen(true))}
             className={`flex shrink-0 items-center gap-1 rounded px-2.5 py-1.5 text-[11px] font-bold cursor-pointer ${
@@ -152,6 +161,7 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
             <Sparkles size={12} />
             {row.guide ? "가이드 보기" : "가이드 등록"}
           </button>
+          )}
         </div>
         <p className="mt-2 text-xs text-neutral-500">
           아직 LLM API가 연동되지 않아, &quot;가이드 등록&quot; 버튼으로 직접 LLM에게 물어본 답변을 등록할 수 있습니다. API가 연동되면
@@ -198,16 +208,18 @@ export function TopicOpportunityDetailClient({ row }: { row: TopicRow }) {
           <p className="mt-1 text-xs text-neutral-500">{row.topic}</p>
           <p className="mt-4 whitespace-pre-wrap rounded-lg bg-neutral-50 p-4 text-[13px] leading-relaxed text-neutral-700">{row.guide}</p>
           <div className="mt-4 flex justify-end">
-            <button
-              type="button"
-              onClick={() => {
-                setViewingGuide(false);
-                setGuideOpen(true);
-              }}
-              className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-            >
-              다시 등록
-            </button>
+            <EditOnly>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewingGuide(false);
+                  setGuideOpen(true);
+                }}
+                className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+              >
+                다시 등록
+              </button>
+            </EditOnly>
           </div>
         </Modal>
       )}

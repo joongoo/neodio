@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Settings, Sparkles } from "lucide-react";
@@ -195,16 +197,18 @@ function buildTopicColumns(
       trackedIds.has(r.id) || r.addedToLibrary ? (
         <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
       ) : (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onTrack(r);
-          }}
-          className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
-        >
-          추적
-        </button>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTrack(r);
+            }}
+            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+          >
+            추적
+          </button>
+        </EditOnly>
       ),
   });
 
@@ -216,6 +220,7 @@ type RoleChoice = BrandKind | "excluded";
 // 브랜드 표 — 선택 체크박스 · 브랜드 · 역할(경쟁사면 등급) · 언급 답변 수. 역할·등급은 행에서 바로 바꾼다
 // (신규 후보는 역할을 고르면 기타 브랜드로 등록, "제외"는 업체가 아닌 것으로 목록에서 뺀다).
 function buildBrandColumns(opts: {
+  canEdit: boolean;
   roleInfo: Map<string, BrandRoleInfo>;
   suggestedNames: Set<string>;
   allowPartner: boolean;
@@ -277,6 +282,7 @@ function buildBrandColumns(opts: {
       render: (r) => {
         if (r.isOwn) return <span className="text-neutral-400">자사</span>;
         const info = opts.roleInfo.get(rowKey(r));
+        if (!opts.canEdit) return <span>{info?.kind ? BRAND_KIND_LABEL[info.kind] : "분류 전"}{info?.tier ? ` · ${TIER_LABEL[info.tier]}` : ""}</span>;
         return (
           <span className="flex items-center gap-1.5" onClick={stop}>
             <select
@@ -400,17 +406,19 @@ function buildSourceColumns(onRegister: (row: CitedSourceRow) => void): DataTabl
             {r.recommendation}
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRegister(r);
-            }}
-            className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-          >
-            <Sparkles size={12} />
-            DB 등록
-          </button>
+          <EditOnly>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRegister(r);
+              }}
+              className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+            >
+              <Sparkles size={12} />
+              DB 등록
+            </button>
+          </EditOnly>
         ),
     },
   ];
@@ -444,6 +452,7 @@ export function TopicsTableSection({
    *  이 값만큼의 최근 주차로 잘라서 보여준다. */
   range: DateRange;
 }) {
+  const canEdit = useCanEdit();
   const router = useRouter();
   const tenantBase = useTenantBase();
   // "기회" 페이지의 "토픽 기회" 카드처럼 ?category=topic-opportunities로
@@ -599,6 +608,7 @@ export function TopicsTableSection({
   const brandColumns = useMemo(
     () =>
       buildBrandColumns({
+        canEdit,
         roleInfo,
         suggestedNames,
         allowPartner: partnerAllowed,
@@ -623,9 +633,9 @@ export function TopicsTableSection({
         onChangeRole: (row, choice) => void applyRoleChanges([row], choice),
         onChangeTier: (row, tier) => void applyRoleChanges([row], "competitor", tier),
       }),
-    [roleInfo, suggestedNames, partnerAllowed, selectedBrandIds, pageBrandRows, applyRoleChanges]
+    [canEdit, roleInfo, suggestedNames, partnerAllowed, selectedBrandIds, pageBrandRows, applyRoleChanges]
   );
-  const visibleBrandColumns = brandColumns.filter((c) => !["mentions"].includes(c.key) || visible.has(c.key));
+  const visibleBrandColumns = brandColumns.filter((c) => (canEdit || c.key !== "select") && (!["mentions"].includes(c.key) || visible.has(c.key)));
   const visiblePageColumns = pageColumns.filter((c) => !["responses", "market"].includes(c.key) || visible.has(c.key));
   const sourceColumns = useMemo(() => buildSourceColumns((row) => setRegisteringSource(row)), []);
   const visibleSourceColumns = sourceColumns.filter(
@@ -647,9 +657,11 @@ export function TopicsTableSection({
           <p className="mt-0.5 text-xs text-neutral-500">{CATEGORY_DESCRIPTIONS[categoryId] ?? ""}</p>
         </div>
         {isTopicFamily && allPromptTexts.length > 0 && (
-          <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setGroupingOpen(true)}>
-            AI로 토픽 묶기
-          </Button>
+          <EditOnly>
+            <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setGroupingOpen(true)}>
+              AI로 토픽 묶기
+            </Button>
+          </EditOnly>
         )}
         <button
           type="button"
@@ -660,9 +672,11 @@ export function TopicsTableSection({
           <Settings size={16} />
         </button>
         {isBrandFamily && optimizationCandidates.length > 0 && (
-          <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setBrandOptimizationOpen(true)}>
-            브랜드 최적화
-          </Button>
+          <EditOnly>
+            <Button variant="secondary" icon={<Sparkles size={16} />} onClick={() => setBrandOptimizationOpen(true)}>
+              브랜드 최적화
+            </Button>
+          </EditOnly>
         )}
         <Button variant="primary" icon={<Download size={16} />}>
           내보내기
@@ -687,7 +701,7 @@ export function TopicsTableSection({
               {allRows.length.toLocaleString("ko-KR")}개 표시 · 전체 {(allBrandRows.length - brandCounts.excluded).toLocaleString("ko-KR")}개
             </span>
           </div>
-          {selectedBrandRows.length > 0 && (
+          {canEdit && selectedBrandRows.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-4 py-2.5 text-xs">
               <span className="font-bold text-slate-800">{selectedBrandRows.length}개 선택</span>
               <select
@@ -772,21 +786,23 @@ export function TopicsTableSection({
                         {trackedIds.has(trackId) || p.addedToLibrary ? (
                           <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setTrackTarget({
-                                kind: "prompt",
-                                id: trackId,
-                                prompt: p.prompt,
-                                topic: row.topic,
-                                market: p.market,
-                              })
-                            }
-                            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
-                          >
-                            추적
-                          </button>
+                          <EditOnly>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTrackTarget({
+                                  kind: "prompt",
+                                  id: trackId,
+                                  prompt: p.prompt,
+                                  topic: row.topic,
+                                  market: p.market,
+                                })
+                              }
+                              className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+                            >
+                              추적
+                            </button>
+                          </EditOnly>
                         )}
                       </span>
                     </div>

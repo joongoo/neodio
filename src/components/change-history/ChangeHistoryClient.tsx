@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
@@ -118,9 +120,11 @@ export function ChangeHistoryClient({
             프롬프트 추가·수정·보관, 토픽 묶음, 브랜드 설정이 언제 어떻게 바뀌었는지 기록합니다. 수집된 답변은 바뀌지 않는 원본이라 여기에 담지 않아요.
           </p>
         </div>
-        <Button variant="primary" onClick={() => setSaveOpen(true)}>
-          현재 설정을 버전으로 저장
-        </Button>
+        <EditOnly>
+          <Button variant="primary" onClick={() => setSaveOpen(true)}>
+            현재 설정을 버전으로 저장
+          </Button>
+        </EditOnly>
       </div>
 
       <div className="flex gap-2">

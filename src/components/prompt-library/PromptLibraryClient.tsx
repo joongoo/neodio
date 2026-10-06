@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
@@ -55,6 +57,7 @@ export function PromptLibraryClient({
   /** 지금 보고 있는 브랜드 — AIO 수집에 쓴다. 브랜드가 없으면 빈 문자열. */
   brandId: string;
 }) {
+  const canEdit = useCanEdit();
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   // 오늘 추가/수정된 항목을 "NEW"로 표시 — 프롬프트 전략/가시성 개요에서
@@ -223,28 +226,32 @@ export function PromptLibraryClient({
       width: "w-[60px]",
       render: (r) => (
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label="편집"
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingRow(r);
-            }}
-            className="text-neutral-400 hover:text-neutral-700 cursor-pointer"
-          >
-            <Pencil size={14} />
-          </button>
-          <button
-            type="button"
-            aria-label="삭제"
-            onClick={(e) => {
-              e.stopPropagation();
-              deleteRows(new Set([r.id]));
-            }}
-            className="text-neutral-400 hover:text-red-600 cursor-pointer"
-          >
-            <Trash2 size={14} />
-          </button>
+          <EditOnly>
+            <button
+              type="button"
+              aria-label="편집"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingRow(r);
+              }}
+              className="text-neutral-400 hover:text-neutral-700 cursor-pointer"
+            >
+              <Pencil size={14} />
+            </button>
+          </EditOnly>
+          <EditOnly>
+            <button
+              type="button"
+              aria-label="삭제"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteRows(new Set([r.id]));
+              }}
+              className="text-neutral-400 hover:text-red-600 cursor-pointer"
+            >
+              <Trash2 size={14} />
+            </button>
+          </EditOnly>
         </div>
       ),
     },
@@ -266,7 +273,7 @@ export function PromptLibraryClient({
   }
   const commonSurfaces = PROMPT_SURFACES.filter((surface) => selectedRows.length > 0 && selectedRows.every((r) => r.surfaces?.includes(surface)));
   const aioLoad = aioDailyLoad(rows.map((r) => r.surfaces), aioDeviceCount);
-  const columns = allColumns.filter((c) => !optionalColumns.some((o) => o.key === c.key) || visibleCols.has(c.key));
+  const columns = allColumns.filter((c) => (canEdit || !["select", "action"].includes(c.key)) && (!optionalColumns.some((o) => o.key === c.key) || visibleCols.has(c.key)));
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
@@ -328,18 +335,24 @@ export function PromptLibraryClient({
           className="h-10 w-[260px] rounded-md border border-neutral-300 px-3 text-sm outline-none focus:border-slate-500"
         />
         <div className="flex-1" />
-        <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setOptimizeOpen(true)}>
-          라이브러리 최적화
-        </Button>
-        <Button variant="secondary" icon={<Upload size={14} />} onClick={() => setImportOpen(true)}>
-          CSV 가져오기
-        </Button>
+        <EditOnly>
+          <Button variant="secondary" icon={<Sparkles size={14} />} onClick={() => setOptimizeOpen(true)}>
+            라이브러리 최적화
+          </Button>
+        </EditOnly>
+        <EditOnly>
+          <Button variant="secondary" icon={<Upload size={14} />} onClick={() => setImportOpen(true)}>
+            CSV 가져오기
+          </Button>
+        </EditOnly>
         <Button variant="secondary" icon={<Download size={14} />} onClick={exportCsv}>
           CSV 내보내기
         </Button>
-        <Button variant="primary" icon={<Plus size={14} />} onClick={() => setAddOpen(true)}>
-          프롬프트 추가
-        </Button>
+        <EditOnly>
+          <Button variant="primary" icon={<Plus size={14} />} onClick={() => setAddOpen(true)}>
+            프롬프트 추가
+          </Button>
+        </EditOnly>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -383,7 +396,7 @@ export function PromptLibraryClient({
             }}
           />
         </div>
-        {filtered.length > 0 && (
+        {canEdit && filtered.length > 0 && (
           <Button
             variant="secondary"
             onClick={() => setSelected(new Set(filtered.map((r) => r.id)))}
@@ -393,17 +406,23 @@ export function PromptLibraryClient({
           </Button>
         )}
         <div className="flex-1" />
-        {selected.size > 0 && (
+        {canEdit && selected.size > 0 && (
           <>
-            <Button variant="secondary" onClick={() => setSurfaceOpen(true)}>
-              플랫폼 변경 ({selected.size})
-            </Button>
-            <Button variant="primary" onClick={() => setChooseOpen(true)}>
-              선택 수집 ({selected.size})
-            </Button>
-            <Button variant="secondary" onClick={deleteSelected}>
-              선택 삭제 ({selected.size})
-            </Button>
+            <EditOnly>
+              <Button variant="secondary" onClick={() => setSurfaceOpen(true)}>
+                플랫폼 변경 ({selected.size})
+              </Button>
+            </EditOnly>
+            <EditOnly>
+              <Button variant="primary" onClick={() => setChooseOpen(true)}>
+                선택 수집 ({selected.size})
+              </Button>
+            </EditOnly>
+            <EditOnly>
+              <Button variant="secondary" onClick={deleteSelected}>
+                선택 삭제 ({selected.size})
+              </Button>
+            </EditOnly>
           </>
         )}
         <button

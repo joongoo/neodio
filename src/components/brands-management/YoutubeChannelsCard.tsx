@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { FormEvent, useState } from "react";
 import { CheckCircle2, SquarePlay, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
@@ -79,33 +81,37 @@ export function YoutubeChannelsCard({ brandId, initialChannels }: { brandId: str
                   {channel.channelId}
                 </p>
               </div>
-              <button
-                type="button"
-                aria-label={`${channel.title} 채널 삭제`}
-                onClick={() => handleRemove(channel.channelId)}
-                className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
-              >
-                <Trash2 size={16} />
-              </button>
+              <EditOnly>
+                <button
+                  type="button"
+                  aria-label={`${channel.title} 채널 삭제`}
+                  onClick={() => handleRemove(channel.channelId)}
+                  className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </EditOnly>
             </li>
           ))}
         </ul>
       )}
 
-      <form onSubmit={handleAdd} className="flex items-start gap-2">
-        <div className="flex flex-1 flex-col gap-1.5">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="https://www.youtube.com/@salesforce, @핸들 또는 UC… 채널 ID"
-            className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
-          />
-          {error && <p className="text-xs text-red-600">{error}</p>}
-        </div>
-        <Button type="submit" variant="primary" disabled={pending || !input.trim()}>
-          {pending ? "조회 중…" : "채널 추가"}
-        </Button>
-      </form>
+      <EditOnly>
+        <form onSubmit={handleAdd} className="flex items-start gap-2">
+          <div className="flex flex-1 flex-col gap-1.5">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="https://www.youtube.com/@salesforce, @핸들 또는 UC… 채널 ID"
+              className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
+            />
+            {error && <p className="text-xs text-red-600">{error}</p>}
+          </div>
+          <Button type="submit" variant="primary" disabled={pending || !input.trim()}>
+            {pending ? "조회 중…" : "채널 추가"}
+          </Button>
+        </form>
+      </EditOnly>
     </Card>
   );
 }

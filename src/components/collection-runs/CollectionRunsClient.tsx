@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TablePanel } from "@/components/ui/TablePanel";
@@ -86,16 +88,18 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       label: "",
       width: "w-[90px]",
       render: (file) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAnalyze(file);
-          }}
-          className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
-        >
-          분석
-        </button>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAnalyze(file);
+            }}
+            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+          >
+            분석
+          </button>
+        </EditOnly>
       ),
     },
   ];
@@ -204,13 +208,13 @@ export function CollectionRunsClient({
         </p>
       </div>
 
-      <CollectionRunForm />
+      <EditOnly><CollectionRunForm /></EditOnly>
 
       <div className="h-px w-full bg-neutral-200" />
 
       {stats.total === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
-          아직 수집된 실행이 없습니다. 위에서 키워드를 입력해 수집을 시작해 보세요.
+          아직 수집된 실행이 없습니다.<EditOnly> 위에서 키워드를 입력해 수집을 시작해 보세요.</EditOnly>
         </p>
       ) : (
         <>

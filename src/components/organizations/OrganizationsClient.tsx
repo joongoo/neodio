@@ -19,7 +19,12 @@ interface OrgRow {
 // 설정 > 조직 관리 — 대행사처럼 여러 고객(예: Neodigm, Salesforce)을 각자의
 // 브랜드·프롬프트·수집 데이터로 나눠 관리한다. 조직은 URL로 구분된다
 // (/{조직 슬러그}/{브랜드}/…, src/lib/tenantRouting.ts).
-export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow[]; currentOrgId: string }) {
+export function OrganizationsClient({ initial, currentOrgId, canCreateDelete, manageableOrgIds }: {
+  initial: OrgRow[];
+  currentOrgId: string;
+  canCreateDelete: boolean;
+  manageableOrgIds: string[];
+}) {
   const router = useRouter();
   const [orgs, setOrgs] = useState(initial);
   const [createOpen, setCreateOpen] = useState(false);
@@ -80,9 +85,11 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
             조직마다 브랜드·프롬프트·카테고리·수집 기록·YouTube AIO 추적이 따로 관리됩니다. 헤더의 &quot;조직&quot;에서 전환합니다.
           </p>
         </div>
-        <Button variant="primary" icon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
-          조직 추가
-        </Button>
+        {canCreateDelete && (
+          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
+            조직 추가
+          </Button>
+        )}
       </div>
 
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -94,7 +101,7 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
             return (
               <li key={org.id} className="flex items-center gap-4 px-5 py-4">
                 <Building2 size={18} className="shrink-0 text-neutral-400" />
-                {editing === org.id ? (
+                {manageableOrgIds.includes(org.id) && editing === org.id ? (
                   <form
                     className="flex flex-1 items-center gap-2"
                     onSubmit={(e) => {
@@ -141,28 +148,32 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
                         이 조직으로 전환
                       </Button>
                     )}
-                    <button
-                      type="button"
-                      aria-label={`${org.name} 이름 변경`}
-                      onClick={() => {
-                        setEditing(org.id);
-                        setEditName(org.name);
-                        setEditSlug(org.slug);
-                      }}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`${org.name} 삭제`}
-                      title={org.brandCount > 0 ? "브랜드가 남아 있는 조직은 삭제할 수 없습니다" : undefined}
-                      disabled={org.brandCount > 0 || orgs.length === 1}
-                      onClick={() => remove(org)}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {manageableOrgIds.includes(org.id) && (
+                      <button
+                        type="button"
+                        aria-label={`${org.name} 이름 변경`}
+                        onClick={() => {
+                          setEditing(org.id);
+                          setEditName(org.name);
+                          setEditSlug(org.slug);
+                        }}
+                        className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 cursor-pointer"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
+                    {canCreateDelete && (
+                      <button
+                        type="button"
+                        aria-label={`${org.name} 삭제`}
+                        title={org.brandCount > 0 ? "브랜드가 남아 있는 조직은 삭제할 수 없습니다" : undefined}
+                        disabled={org.brandCount > 0 || orgs.length === 1}
+                        onClick={() => remove(org)}
+                        className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 cursor-pointer"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </div>
                 )}
               </li>
@@ -172,7 +183,7 @@ export function OrganizationsClient({ initial, currentOrgId }: { initial: OrgRow
       </Card>
 
       <CreateOrgModal
-        open={createOpen}
+        open={canCreateDelete && createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={(org) => {
           setCreateOpen(false);

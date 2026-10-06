@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, FileCheck2, Loader2, RefreshCw, Settings, Sparkles, XCircle } from "lucide-react";
@@ -49,6 +51,7 @@ export function ContentAuditClient({
 }) {
   const tenantBase = useTenantBase();
   const back = backHref ?? `${tenantBase}/opportunities`;
+  const canEdit = useCanEdit();
   const router = useRouter();
   const [tab, setTab] = useState<(typeof TABS)[number]>("현재 제안");
   const [recheckJobs, setRecheckJobs] = useState<Record<string, { jobId: string; stage: string; done: boolean; error: string | null }>>({});
@@ -270,7 +273,7 @@ export function ContentAuditClient({
       width: "w-[220px]",
       render: (r) => {
         const job = recheckJobs[r.url];
-        const guideButton = (
+        const guideButton = (canEdit || !!r.guide) && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -288,15 +291,17 @@ export function ContentAuditClient({
         if (r.status === "excluded") {
           return (
             <div className="flex items-center gap-1.5">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setExcluded(r.url, false);
-                }}
-                className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-              >
-                다시 포함
-              </button>
+              <EditOnly>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExcluded(r.url, false);
+                  }}
+                  className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+                >
+                  다시 포함
+                </button>
+              </EditOnly>
             </div>
           );
         }
@@ -317,26 +322,30 @@ export function ContentAuditClient({
         }
         return (
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                recheckUrl(r.url);
-              }}
-              className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-            >
-              <RefreshCw size={12} />
-              재색인
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setExcluded(r.url, true);
-              }}
-              className="flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-500 cursor-pointer hover:bg-neutral-200"
-            >
-              <XCircle size={12} />
-              제외
-            </button>
+            <EditOnly>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  recheckUrl(r.url);
+                }}
+                className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+              >
+                <RefreshCw size={12} />
+                재색인
+              </button>
+            </EditOnly>
+            <EditOnly>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExcluded(r.url, true);
+                }}
+                className="flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-[11px] font-bold text-neutral-500 cursor-pointer hover:bg-neutral-200"
+              >
+                <XCircle size={12} />
+                제외
+              </button>
+            </EditOnly>
             {guideButton}
           </div>
         );
@@ -494,22 +503,24 @@ export function ContentAuditClient({
                   `${selected.size > 0 ? `선택 (${selected.size})` : "전체"} 속도 확인`
                 )}
               </button>
-              <button
-                type="button"
-                disabled={!!bulkDiagnostic || !!(bulkJob && !bulkJob.done)}
-                onClick={() => recheckMany(selected.size > 0 ? [...selected] : rowsByTab["현재 제안"].map((r) => r.url))}
-                className="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
-              >
-                {bulkJob && !bulkJob.done ? (
-                  <>
-                    <Loader2 size={12} className="animate-spin" /> 재크롤 중...
-                  </>
-                ) : selected.size > 0 ? (
-                  `선택 재색인 (${selected.size}) →`
-                ) : (
-                  "전체 재색인 →"
-                )}
-              </button>
+              <EditOnly>
+                <button
+                  type="button"
+                  disabled={!!bulkDiagnostic || !!(bulkJob && !bulkJob.done)}
+                  onClick={() => recheckMany(selected.size > 0 ? [...selected] : rowsByTab["현재 제안"].map((r) => r.url))}
+                  className="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
+                >
+                  {bulkJob && !bulkJob.done ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" /> 재크롤 중...
+                    </>
+                  ) : selected.size > 0 ? (
+                    `선택 재색인 (${selected.size}) →`
+                  ) : (
+                    "전체 재색인 →"
+                  )}
+                </button>
+              </EditOnly>
             </div>
           )}
         </div>
@@ -550,17 +561,19 @@ export function ContentAuditClient({
             {viewingGuide.guide}
           </p>
           <div className="mt-4 flex justify-end">
-            <button
-              type="button"
-              onClick={() => {
-                const target = viewingGuide;
-                setViewingGuide(null);
-                setGuideTarget(target);
-              }}
-              className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
-            >
-              다시 등록
-            </button>
+            <EditOnly>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = viewingGuide;
+                  setViewingGuide(null);
+                  setGuideTarget(target);
+                }}
+                className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-200"
+              >
+                다시 등록
+              </button>
+            </EditOnly>
           </div>
         </Modal>
       )}

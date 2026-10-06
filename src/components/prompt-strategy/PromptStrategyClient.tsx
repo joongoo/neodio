@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InfoBanner } from "@/components/ui/InfoBanner";
@@ -244,15 +246,17 @@ export function PromptStrategyClient({
         trackedIds.has(r.id) ? (
           <span className="text-[11px] font-medium text-emerald-600">추적 중</span>
         ) : (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setTrackingTopic(r);
-            }}
-            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-50"
-          >
-            추적
-          </button>
+          <EditOnly>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setTrackingTopic(r);
+              }}
+              className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer hover:bg-slate-50"
+            >
+              추적
+            </button>
+          </EditOnly>
         ),
     };
 
@@ -366,56 +370,66 @@ export function PromptStrategyClient({
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <button
-          type="button"
-          onClick={() => setGscWizardOpen(true)}
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
-        >
-          <div className="grid size-10 place-items-center rounded-lg bg-blue-50 text-blue-600">
-            <Search size={20} />
-          </div>
-          <span className="text-[13px] font-bold text-neutral-900">구글서치콘솔 분석</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setBrainstormOpen(true)}
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
-        >
-          <div className="grid size-10 place-items-center rounded-lg bg-violet-50 text-violet-600">
-            <Users size={20} />
-          </div>
-          <span className="text-[13px] font-bold text-neutral-900">가상 사용자 질문 분석</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setCitationWizardOpen(true)}
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
-        >
-          <div className="grid size-10 place-items-center rounded-lg bg-amber-50 text-amber-600">
-            <Quote size={20} />
-          </div>
-          <span className="text-[13px] font-bold text-neutral-900">인용 테스트 분석</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setStrategyKind("trend")}
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
-        >
-          <div className="grid size-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
-            <TrendingUp size={20} />
-          </div>
-          <span className="text-[13px] font-bold text-neutral-900">검색어 트렌드 분석</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setStrategyKind("sitemap")}
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
-        >
-          <div className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-600">
-            <Network size={20} />
-          </div>
-          <span className="text-[13px] font-bold text-neutral-900">사이트맵 크롤 분석</span>
-        </button>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={() => setGscWizardOpen(true)}
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+          >
+            <div className="grid size-10 place-items-center rounded-lg bg-blue-50 text-blue-600">
+              <Search size={20} />
+            </div>
+            <span className="text-[13px] font-bold text-neutral-900">구글서치콘솔 분석</span>
+          </button>
+        </EditOnly>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={() => setBrainstormOpen(true)}
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+          >
+            <div className="grid size-10 place-items-center rounded-lg bg-violet-50 text-violet-600">
+              <Users size={20} />
+            </div>
+            <span className="text-[13px] font-bold text-neutral-900">가상 사용자 질문 분석</span>
+          </button>
+        </EditOnly>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={() => setCitationWizardOpen(true)}
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+          >
+            <div className="grid size-10 place-items-center rounded-lg bg-amber-50 text-amber-600">
+              <Quote size={20} />
+            </div>
+            <span className="text-[13px] font-bold text-neutral-900">인용 테스트 분석</span>
+          </button>
+        </EditOnly>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={() => setStrategyKind("trend")}
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+          >
+            <div className="grid size-10 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+              <TrendingUp size={20} />
+            </div>
+            <span className="text-[13px] font-bold text-neutral-900">검색어 트렌드 분석</span>
+          </button>
+        </EditOnly>
+        <EditOnly>
+          <button
+            type="button"
+            onClick={() => setStrategyKind("sitemap")}
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white py-6 cursor-pointer hover:border-slate-300 hover:bg-neutral-50"
+          >
+            <div className="grid size-10 place-items-center rounded-lg bg-sky-50 text-sky-600">
+              <Network size={20} />
+            </div>
+            <span className="text-[13px] font-bold text-neutral-900">사이트맵 크롤 분석</span>
+          </button>
+        </EditOnly>
       </div>
 
       <div className="flex items-center justify-end gap-3">
@@ -518,18 +532,20 @@ export function PromptStrategyClient({
                   >
                     닫기
                   </button>
-                  <button
-                    type="button"
-                    disabled={allTracked || isEmpty}
-                    onClick={() => setBulkGroupTopics(trackTargetRows)}
-                    className="rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
-                  >
-                    {allTracked
-                      ? "모두 추적 중"
-                      : selectedRows.length > 0
-                        ? `선택 추적 (${selectedRows.length}) →`
-                        : "전체 추적 →"}
-                  </button>
+                  <EditOnly>
+                    <button
+                      type="button"
+                      disabled={allTracked || isEmpty}
+                      onClick={() => setBulkGroupTopics(trackTargetRows)}
+                      className="rounded-md bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white cursor-pointer hover:bg-slate-700 disabled:cursor-default disabled:bg-neutral-300"
+                    >
+                      {allTracked
+                        ? "모두 추적 중"
+                        : selectedRows.length > 0
+                          ? `선택 추적 (${selectedRows.length}) →`
+                          : "전체 추적 →"}
+                    </button>
+                  </EditOnly>
                 </div>
               </div>
               <div className="mt-4">

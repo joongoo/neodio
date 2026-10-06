@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly, OrgManagerOnly } from "@/components/auth/PermissionsProvider";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, CheckCircle2, XCircle, ChevronRight } from "lucide-react";
@@ -90,9 +92,11 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
           <h1 className="text-2xl font-semibold text-neutral-900">브랜드 관리</h1>
           <p className="mt-1 text-sm text-neutral-500">조직에서 추적하는 브랜드와 카테고리를 관리하세요.</p>
         </div>
-        <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddBrandOpen(true)}>
-          브랜드 추가
-        </Button>
+        <OrgManagerOnly>
+          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setAddBrandOpen(true)}>
+            브랜드 추가
+          </Button>
+        </OrgManagerOnly>
       </div>
 
       <section>
@@ -123,9 +127,11 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
       <section>
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-neutral-900">카테고리</h2>
-          <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setCreateCategoryOpen(true)}>
-            카테고리 생성
-          </Button>
+          <EditOnly>
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setCreateCategoryOpen(true)}>
+              카테고리 생성
+            </Button>
+          </EditOnly>
         </div>
         <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200 bg-white">
           <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 border-b border-neutral-100 px-3 py-3 text-xs font-semibold text-neutral-500 sm:grid-cols-[minmax(0,1fr)_100px_80px_80px] sm:gap-3 sm:px-5">
@@ -160,24 +166,28 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
               <span className="text-right tabular-nums text-neutral-600">{cat.promptCount}</span>
               <span className="hidden text-right text-neutral-400 sm:block">{cat.origin === "system" ? "—" : "직접 생성"}</span>
               <span className="flex justify-end">
-                <button
-                  type="button"
-                  aria-label={`${cat.name} 편집`}
-                  title="카테고리 편집"
-                  onClick={() => setEditingCategory(cat)}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-700 cursor-pointer"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`${cat.name} 삭제`}
-                  title="카테고리 삭제"
-                  onClick={() => setDeletingCategory(cat)}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-red-600 cursor-pointer"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <EditOnly>
+                  <button
+                    type="button"
+                    aria-label={`${cat.name} 편집`}
+                    title="카테고리 편집"
+                    onClick={() => setEditingCategory(cat)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </EditOnly>
+                <EditOnly>
+                  <button
+                    type="button"
+                    aria-label={`${cat.name} 삭제`}
+                    title="카테고리 삭제"
+                    onClick={() => setDeletingCategory(cat)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-red-600 cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </EditOnly>
               </span>
               </div>
               <div id={`category-topics-${cat.id}`} hidden={!expanded}>
@@ -263,18 +273,20 @@ function BrandCard({ brand, onDelete }: { brand: ManagedBrand; onDelete: () => v
             >
               {brand.status === "active" ? "활성" : "대기 중"}
             </span>
-            <button
-              type="button"
-              aria-label={`${brand.name} 삭제`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="text-neutral-400 hover:text-red-600 cursor-pointer"
-            >
-              <Trash2 size={14} />
-            </button>
+            <OrgManagerOnly>
+              <button
+                type="button"
+                aria-label={`${brand.name} 삭제`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="text-neutral-400 hover:text-red-600 cursor-pointer"
+              >
+                <Trash2 size={14} />
+              </button>
+            </OrgManagerOnly>
           </div>
         </div>
 

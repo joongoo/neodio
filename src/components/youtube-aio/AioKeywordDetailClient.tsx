@@ -1,5 +1,7 @@
 "use client";
 
+import { EditOnly } from "@/components/auth/PermissionsProvider";
+
 import { FormEvent, ReactNode, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -73,12 +75,14 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
             </>
           )}
           {!demo && (
-            <AioCollectButton brandId={brandId} keywordId={keyword.id} keywordLabel={keyword.keyword} searches={settings.devices.length} size="sm" />
+            <EditOnly><AioCollectButton brandId={brandId} keywordId={keyword.id} keywordLabel={keyword.keyword} searches={settings.devices.length} size="sm" /></EditOnly>
           )}
           {!demo && (
-            <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={archive}>
-              추적 중지
-            </Button>
+            <EditOnly>
+              <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={archive}>
+                추적 중지
+              </Button>
+            </EditOnly>
           )}
         </div>
       </div>
@@ -302,55 +306,59 @@ function OwnVideoPanel({ video, brandId, demo, device, base }: { video: AioOwnVi
                 <span className={cn("w-12 shrink-0 tabular-nums", item.logId ? "text-neutral-600" : "font-semibold text-blue-600")}>{shortDate(item.date)}</span>
                 <span className={cn("flex-1", item.logId ? "text-neutral-800" : "font-semibold text-blue-700")}>{item.text}</span>
                 {item.logId && !demo && (
-                  <button
-                    type="button"
-                    aria-label="작업 이력 삭제"
-                    onClick={() => remove(item.logId!)}
-                    className="rounded p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 cursor-pointer"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <EditOnly>
+                    <button
+                      type="button"
+                      aria-label="작업 이력 삭제"
+                      onClick={() => remove(item.logId!)}
+                      className="rounded p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600 cursor-pointer"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </EditOnly>
                 )}
               </li>
             ))}
           </ul>
         )}
         {!demo && (
-          <form onSubmit={add} className="flex flex-col gap-2 border-t border-neutral-100 pt-3">
-            <div className="flex gap-2">
-              <input
-                type="date"
-                value={workDate}
-                onChange={(e) => setWorkDate(e.target.value)}
-                required
-                aria-label="작업일"
-                className="h-9 w-36 rounded-md border border-neutral-300 px-2 text-sm"
-              />
-              <select
-                value={workType}
-                onChange={(e) => setWorkType(e.target.value)}
-                aria-label="작업 내용"
-                className="h-9 flex-1 rounded-md border border-neutral-300 bg-white px-2 text-sm"
-              >
-                {WORK_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="메모 (선택)"
-                maxLength={200}
-                className="h-9 flex-1 rounded-md border border-neutral-300 px-2 text-sm"
-              />
-              <Button type="submit" variant="secondary" size="sm" disabled={pending || !workDate}>
-                {pending ? "저장 중…" : "기록"}
-              </Button>
-            </div>
-            {error && <p className="text-xs text-red-600">{error}</p>}
-          </form>
+          <EditOnly>
+            <form onSubmit={add} className="flex flex-col gap-2 border-t border-neutral-100 pt-3">
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={workDate}
+                  onChange={(e) => setWorkDate(e.target.value)}
+                  required
+                  aria-label="작업일"
+                  className="h-9 w-36 rounded-md border border-neutral-300 px-2 text-sm"
+                />
+                <select
+                  value={workType}
+                  onChange={(e) => setWorkType(e.target.value)}
+                  aria-label="작업 내용"
+                  className="h-9 flex-1 rounded-md border border-neutral-300 bg-white px-2 text-sm"
+                >
+                  {WORK_TYPES.map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="메모 (선택)"
+                  maxLength={200}
+                  className="h-9 flex-1 rounded-md border border-neutral-300 px-2 text-sm"
+                />
+                <Button type="submit" variant="secondary" size="sm" disabled={pending || !workDate}>
+                  {pending ? "저장 중…" : "기록"}
+                </Button>
+              </div>
+              {error && <p className="text-xs text-red-600">{error}</p>}
+            </form>
+          </EditOnly>
         )}
       </Card>
 
