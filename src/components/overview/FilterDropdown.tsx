@@ -15,12 +15,14 @@ export function FilterDropdown({
   value,
   options,
   bold,
+  variant,
 }: {
   label: string;
   paramKey: string;
   value: string;
   options: string[];
   bold?: boolean;
+  variant?: "light" | "solid";
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -33,5 +35,5 @@ export function FilterDropdown({
     router.push(`${pathname}?${params.toString()}`);
   }
 
-  return <Dropdown label={label} value={value} options={options} onChange={handleChange} bold={bold} />;
+  return <Dropdown label={label} value={value} options={options} onChange={handleChange} bold={bold} variant={variant} />;
 }

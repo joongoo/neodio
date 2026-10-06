@@ -21,20 +21,27 @@ import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { listDetectedBrandDecisions } from "@/lib/backend/detectedBrandDecisions";
 import { getCurrentTenant } from "@/lib/backend/tenant";
+import type { QueryScope } from "@/lib/queryScope";
 
 const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다 —
 // 개요/수집 로그 페이지와 동일한 이유.
 export const dynamic = "force-dynamic";
 
+// 자사 브랜드명이 들어간 질의는 언급되기 쉬워 가시성을 부풀리므로 따로 볼 수 있게 한다.
+const SCOPE_BY_LABEL: Record<string, QueryScope> = { "브랜드 질의": "brand", "일반 질의": "nonbrand" };
+
 export default async function VisibilityOverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string }>;
+  searchParams: Promise<{ range?: string; scope?: string }>;
 }) {
   const tenant = await getCurrentTenant();
   const orgId = tenant.orgId;
-  const requestedRange = (await searchParams).range;
+  const query = await searchParams;
+  const requestedRange = query.range;
+  const queryScope = query.scope ? SCOPE_BY_LABEL[query.scope] : undefined;
+  const filters = queryScope ? { queryScope } : {};
   const range: DateRange = VALID_RANGES.includes(requestedRange as DateRange)
     ? (requestedRange as DateRange)
     : "4w";
@@ -66,31 +73,38 @@ export default async function VisibilityOverviewPage({
   const [realStats, realMentionsByModel, realMentionsByMarket, realTopicRows, realTopBrands, realCitedPages, realCitedSources, realSourceOpportunities] = demo
     ? [null, null, null, null, null, null, null, null]
     : await Promise.all([
-        getRealStatSeries(range),
-        getRealMentionsByModel(range),
-        getRealMentionsByMarket(range),
-        getRealTopicRows({}, { libraryPrompts, targetUrls }),
-        getRealTopBrands({ range, includeOwn: true }),
-        getRealCitedPages(),
-        getRealCitedSources({}, { trackedDomains }),
-        getRealSourceOpportunities({}, { trackedDomains }),
+        getRealStatSeries(range, filters),
+        getRealMentionsByModel(range, filters),
+        getRealMentionsByMarket(range, filters),
+        getRealTopicRows(filters, { libraryPrompts, targetUrls }),
+        getRealTopBrands({ range, includeOwn: true, ...filters }),
+        getRealCitedPages(filters),
+        getRealCitedSources(filters, { trackedDomains }),
+        getRealSourceOpportunities(filters, { trackedDomains }),
       ]);
 
   // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
+  // 질의 유형을 골랐는데 그 조건에 맞는 수집이 없으면 샘플(mock) 대신 빈 화면을 보여준다 —
+  // 수집 자체가 전혀 없을 때만 샘플로 되돌아간다.
+  const filteredEmpty = !!queryScope && !demo && realStats === null && (await getRealStatSeries(range)) !== null;
   const statCards = statCardsSeed.map((stat) => {
+    if (filteredEmpty && ["visibility-score", "brand-mentions", "citations"].includes(stat.id)) {
+      return { ...stat, value: 0, decimals: undefined, suffix: undefined, trendUnit: undefined, caption: "선택한 조건에 맞는 수집 데이터가 없어요", trend: { direction: "flat" as const, percent: 0 }, sparkline: [] };
+    }
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
     if (stat.id === "brand-mentions") return { ...stat, ...realStats.brandMentions };
     if (stat.id === "citations") return { ...stat, ...realStats.citations };
     return stat;
   });
-  const mentionsByModel = { ...mentionsByModelSeed, ...(realMentionsByModel ?? {}) };
-  const mentionsByMarket = { ...mentionsByMarketSeed, ...(realMentionsByMarket ?? {}) };
+  const EMPTY_RANKED = { mentions: [], visibility: [], exposure: [] };
+  const mentionsByModel = filteredEmpty ? EMPTY_RANKED : { ...mentionsByModelSeed, ...(realMentionsByModel ?? {}) };
+  const mentionsByMarket = filteredEmpty ? EMPTY_RANKED : { ...mentionsByMarketSeed, ...(realMentionsByMarket ?? {}) };
 
   const topicsByCategory: Record<string, VisibilityTableRow[]> = {};
   await Promise.all(
     topicCategories.map(async (c) => {
-      topicsByCategory[c.id] = await db.visibilityOverview.getTopics(orgId, c.id);
+      topicsByCategory[c.id] = filteredEmpty ? [] : await db.visibilityOverview.getTopics(orgId, c.id);
     })
   );
   // "top-prompts"/"topic-opportunities"는 수집 로그에 입력한 키워드
@@ -137,6 +151,7 @@ export default async function VisibilityOverviewPage({
     <VisibilityOverviewClient
       org={org}
       range={range}
+      queryScopeLabel={query.scope && SCOPE_BY_LABEL[query.scope] ? query.scope : "전체"}
       statCards={statCards}
       mentionsByModel={mentionsByModel}
       mentionsByMarket={mentionsByMarket}

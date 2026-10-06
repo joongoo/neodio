@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Share2, Settings } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { FilterDropdown } from "@/components/overview/FilterDropdown";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { ChartPanel } from "@/components/overview/ChartPanel";
 import { StatCard } from "@/components/overview/StatCard";
@@ -45,9 +46,12 @@ const SENTIMENT_COLOR: Record<Sentiment, string> = {
 export function BrandPresenceClient({
   statCards,
   data,
+  queryScopeLabel = "전체",
 }: {
   statCards: StatCardData[];
   data: BrandPresenceData;
+  /** 질의 유형 필터("전체" | "브랜드 질의" | "일반 질의") — 서버가 이 값으로 다시 계산한다. */
+  queryScopeLabel?: string;
 }) {
   const router = useRouter();
   const [market, setMarket] = useState(MARKET_OPTIONS[0]);
@@ -218,6 +222,7 @@ export function BrandPresenceClient({
         <div className="flex gap-2">
           <Dropdown variant="solid" label="마켓" value={market} options={MARKET_OPTIONS} onChange={setMarket} />
           <Dropdown variant="solid" label="모델" value={model} options={MODEL_OPTIONS} onChange={setModel} />
+          <FilterDropdown label="질의" paramKey="scope" value={queryScopeLabel} options={["전체", "브랜드 질의", "일반 질의"]} variant="solid" />
         </div>
       </div>
 

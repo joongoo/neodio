@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { FilterDropdown } from "@/components/overview/FilterDropdown";
 import type { BrandOptimizationContext } from "@/components/visibility-overview/TopicsTableSection";
 import { StatCard } from "@/components/overview/StatCard";
 import { RangeDropdown } from "@/components/overview/RangeDropdown";
@@ -45,6 +46,7 @@ export function VisibilityOverviewClient({
   topicsByCategory,
   sourceOpportunityDomains,
   brandContext,
+  queryScopeLabel = "전체",
 }: {
   org: Organization;
   range: DateRange;
@@ -57,6 +59,8 @@ export function VisibilityOverviewClient({
   sourceOpportunityDomains?: string[];
   /** 브랜드 최적화(AI 브랜드 정리)가 쓰는 자사·등록 경쟁사 정보. 브랜드가 없으면 null. */
   brandContext: BrandOptimizationContext | null;
+  /** 질의 유형 필터("전체" | "브랜드 질의" | "일반 질의") — 서버가 이 값으로 다시 계산한다. */
+  queryScopeLabel?: string;
 }) {
   const [market, setMarket] = useState("전체");
   const [model, setModel] = useState("전체");
@@ -93,6 +97,7 @@ export function VisibilityOverviewClient({
           <Dropdown variant="solid" label="" value={org.domain} options={[org.domain]} />
           <Dropdown variant="solid" label="마켓" value={market} options={MARKET_OPTIONS} onChange={setMarket} />
           <Dropdown variant="solid" label="모델" value={model} options={MODEL_OPTIONS} onChange={setModel} />
+          <FilterDropdown label="질의" paramKey="scope" value={queryScopeLabel} options={["전체", "브랜드 질의", "일반 질의"]} variant="solid" />
         </div>
       </div>
 
