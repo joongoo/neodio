@@ -59,7 +59,7 @@ export function ShareAreaChart({ data, series, height = 260 }: { data: Row[]; se
   );
 }
 
-/** 왼쪽 축: 검색 관심도(라인, 0~100) / 오른쪽 축: AI 언급 수(막대). 단위가 다른 두 시계열을 한 화면에서 겹쳐 본다. */
+/** 왼쪽 축: 검색 관심도(라인, 0~100) / 오른쪽 축: AI 언급률(막대, %). 단위가 다른 두 시계열을 한 화면에서 겹쳐 본다. */
 export function SearchVsMentionChart({ data, searchKey, mentionKey, height = 300 }: { data: Row[]; searchKey: string; mentionKey: string; height?: number }) {
   return (
     <ChartFrame height={height}>
@@ -67,7 +67,7 @@ export function SearchVsMentionChart({ data, searchKey, mentionKey, height = 300
         <CartesianGrid vertical={false} stroke="#f1f5f9" />
         <XAxis dataKey="period" {...AXIS} minTickGap={24} />
         <YAxis yAxisId="left" {...AXIS} width={36} domain={[0, 100]} />
-        <YAxis yAxisId="right" orientation="right" {...AXIS} width={36} allowDecimals={false} />
+        <YAxis yAxisId="right" orientation="right" {...AXIS} width={44} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} />
         <Tooltip formatter={round1} />
         <Legend verticalAlign="bottom" height={32} />
         <Bar yAxisId="right" dataKey={mentionKey} fill="#cbd5e1" radius={[3, 3, 0, 0]} />

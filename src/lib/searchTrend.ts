@@ -158,18 +158,26 @@ export const MIN_CORRELATION_POINTS = 8;
 
 /**
  * 검색 관심도(search)가 LLM 언급(mentions)보다 lag 구간 앞서 움직였는지 본다.
- * lag>0: 검색이 먼저(검색 → 몇 구간 뒤 AI 언급), lag<0: AI 언급이 먼저. 겹치는 구간이 8개 미만이면 null.
+ * lag>0: 검색이 먼저(검색 → 몇 구간 뒤 AI 언급), lag<0: AI 언급이 먼저. 값이 있는(null 아닌) 짝이 8개 미만이면 null.
+ * 언급은 개수가 아니라 비율(언급 답변/수집 답변)을 넘긴다 — 개수는 주별 수집량에 따라 달라져 가짜 상관이 생긴다.
  */
-export function bestLagCorrelation(search: number[], mentions: number[], maxLag = 4): LagCorrelation | null {
+export function bestLagCorrelation(search: (number | null)[], mentions: (number | null)[], maxLag = 4): LagCorrelation | null {
   let best: LagCorrelation | null = null;
   for (let lag = -maxLag; lag <= maxLag; lag++) {
     const s = lag >= 0 ? search.slice(0, search.length - lag) : search.slice(-lag);
     const m = lag >= 0 ? mentions.slice(lag) : mentions.slice(0, mentions.length + lag);
-    const n = Math.min(s.length, m.length);
-    if (n < MIN_CORRELATION_POINTS) continue;
-    const r = pearson(s.slice(0, n), m.slice(0, n));
+    // 수집이 너무 적어 값이 없는(null) 주는 짝에서 뺀다 — 0으로 채우면 가짜 상관이 생긴다.
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let i = 0; i < Math.min(s.length, m.length); i++) {
+      if (s[i] === null || m[i] === null) continue;
+      xs.push(s[i] as number);
+      ys.push(m[i] as number);
+    }
+    if (xs.length < MIN_CORRELATION_POINTS) continue;
+    const r = pearson(xs, ys);
     if (r === null) continue;
-    if (!best || Math.abs(r) > Math.abs(best.r)) best = { lag, r: Math.round(r * 100) / 100, n };
+    if (!best || Math.abs(r) > Math.abs(best.r)) best = { lag, r: Math.round(r * 100) / 100, n: xs.length };
   }
   return best;
 }

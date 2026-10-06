@@ -76,6 +76,18 @@ test("bestLagCorrelation finds a 2-period lead and refuses short series", () => 
   assert.equal(bestLagCorrelation([1, 2, 3], [1, 2, 3]), null);
 });
 
+test("bestLagCorrelation은 null(수집 부족) 주를 짝에서 빼고 남은 짝으로 계산한다", () => {
+  const search = [1, 3, 2, 5, 4, 8, 6, 9, 7, 10, 8, 12];
+  const mentions: (number | null)[] = [...search];
+  mentions[3] = null;
+  const best = bestLagCorrelation(search, mentions);
+  assert.equal(best?.lag, 0);
+  assert.equal(best?.n, 11);
+  // 값이 있는 짝이 부족하면 계산하지 않는다
+  const sparse: (number | null)[] = search.map((v, i) => (i < 5 ? v : null));
+  assert.equal(bestLagCorrelation(search, sparse), null);
+});
+
 test("toPromptContext produces a compact one-line summary", () => {
   const filled = fillPeriods(monthly);
   const text = toPromptContext(filled, computeSignals(filled));

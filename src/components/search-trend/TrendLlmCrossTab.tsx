@@ -8,6 +8,8 @@ import { fetchTrend, TrendGroupInput, TrendQuery } from "./trendApi";
 import { SearchVsMentionChart, ShareGapChart } from "./TrendCharts";
 
 const MIN_WEEKS = 26;
+/** 한 주에 수집한 답변이 이보다 적으면 그 주의 언급률은 우연에 크게 흔들려 비교에서 뺀다. */
+const MIN_WEEK_RUNS = 3;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function weeklyRange(mentionWeeks: BrandMentionWeek[] | null) {
@@ -55,10 +57,22 @@ export function TrendLlmCrossTab({ groups, mentionWeeks, base }: { groups: Trend
     const rows = selected.data.map((d) => ({
       period: d.period,
       "검색 관심도": d.ratio,
-      "AI 언급 수": inRange(d.period) ? (byWeek.get(d.period)?.mentions[selected.groupName] ?? 0) : (null as unknown as number),
+      // 개수가 아니라 "그 주 수집 답변 중 언급된 비율" — 주별 수집량이 달라도 비교할 수 있다.
+      "AI 언급률": (() => {
+        if (!inRange(d.period)) return null as unknown as number;
+        const week = byWeek.get(d.period);
+        if (!week || week.runs < MIN_WEEK_RUNS) return null as unknown as number;
+        return Math.round(((week.mentions[selected.groupName] ?? 0) / week.runs) * 1000) / 10;
+      })(),
     }));
     const overlap = rows.filter((r) => inRange(String(r.period)));
-    const correlation = selectedMatched ? bestLagCorrelation(overlap.map((r) => Number(r["검색 관심도"])), overlap.map((r) => Number(r["AI 언급 수"]))) : null;
+    const correlation = selectedMatched
+      ? bestLagCorrelation(
+          overlap.map((r) => Number(r["검색 관심도"])),
+          overlap.map((r) => (r["AI 언급률"] === null ? null : Number(r["AI 언급률"])))
+        )
+      : null;
+    const thinWeeks = overlap.filter((r) => r["AI 언급률"] === null).length;
 
     // 검색 점유율은 AI 데이터가 있는 기간만 잘라 합산 — 같은 요청 안이라 그룹끼리 비교가 유효하다.
     let gap: { name: string; search: number; ai: number }[] = [];
@@ -71,7 +85,7 @@ export function TrendLlmCrossTab({ groups, mentionWeeks, base }: { groups: Trend
         gap = matched.map((s, i) => ({ name: s.groupName, search: Math.round((searchTotals[i] / sSum) * 1000) / 10, ai: Math.round((aiTotals[i] / aSum) * 1000) / 10 }));
       }
     }
-    return { rows, overlapWeeks: overlap.length, correlation, selectedMatched, gap, first, last, totalRuns: mentionWeeks.reduce((s, w) => s + w.runs, 0) };
+    return { rows, overlapWeeks: overlap.length, thinWeeks, correlation, selectedMatched, gap, first, last, totalRuns: mentionWeeks.reduce((s, w) => s + w.runs, 0) };
   }, [current, mentionWeeks, groupName]);
 
   if (!mentionWeeks?.length) {
@@ -88,7 +102,7 @@ export function TrendLlmCrossTab({ groups, mentionWeeks, base }: { groups: Trend
           <div>
             <p className="text-sm font-bold text-neutral-900">검색 관심도 × AI 답변 언급</p>
             <p className="mt-0.5 text-xs text-neutral-500">
-              선: 네이버 검색 관심도(상대 지수, 왼쪽 축) · 막대: 수집된 AI 답변에서 브랜드가 언급된 횟수(오른쪽 축) · AI 데이터 {analysis.first} ~ {analysis.last}, 수집 {analysis.totalRuns}건
+              선: 네이버 검색 관심도(상대 지수, 왼쪽 축) · 막대: 그 주 수집한 AI 답변 중 브랜드가 언급된 비율(오른쪽 축, 수집이 {MIN_WEEK_RUNS}건 미만인 주는 제외) · AI 데이터 {analysis.first} ~ {analysis.last}, 수집 {analysis.totalRuns}건
             </p>
           </div>
           <select
@@ -103,7 +117,7 @@ export function TrendLlmCrossTab({ groups, mentionWeeks, base }: { groups: Trend
           </select>
         </div>
         {analysis.selectedMatched ? (
-          <SearchVsMentionChart data={analysis.rows} searchKey="검색 관심도" mentionKey="AI 언급 수" />
+          <SearchVsMentionChart data={analysis.rows} searchKey="검색 관심도" mentionKey="AI 언급률" />
         ) : (
           <p className="py-8 text-center text-sm text-neutral-500">
             &quot;{groupName}&quot;은(는) 브랜드 관리에 등록된 브랜드 이름과 달라 AI 언급과 짝지을 수 없습니다. 주제어 이름을 브랜드 이름과 같게 입력하세요.
@@ -115,7 +129,7 @@ export function TrendLlmCrossTab({ groups, mentionWeeks, base }: { groups: Trend
               ? `겹치는 ${analysis.correlation.n}주 기준 상관계수 ${analysis.correlation.r} — ${
                   analysis.correlation.lag === 0 ? "같은 주에 함께 움직입니다" : analysis.correlation.lag > 0 ? `검색이 ${analysis.correlation.lag}주 먼저 움직이고 AI 언급이 뒤따릅니다` : `AI 언급이 ${-analysis.correlation.lag}주 먼저 움직이고 검색이 뒤따릅니다`
                 }. 상관은 인과가 아닙니다.`
-              : `겹치는 기간이 ${analysis.overlapWeeks}주라 상관·선후 관계는 계산하지 않았습니다(${MIN_CORRELATION_POINTS}주 이상 필요).`}
+              : `수집이 충분한 주가 ${analysis.overlapWeeks - analysis.thinWeeks}주라 상관·선후 관계는 계산하지 않았습니다(${MIN_CORRELATION_POINTS}주 이상 필요).`}
           </p>
         )}
       </Card>
