@@ -15,6 +15,8 @@ import { Pagination } from "@/components/ui/Pagination";
 import { usePagedRows } from "@/lib/usePagedRows";
 import { SentimentChart } from "@/components/charts/SentimentChart";
 import { MultiLineChart } from "@/components/charts/MultiLineChart";
+import { ModelTopicHeatmap } from "@/components/brand-presence/ModelTopicHeatmap";
+import { CollectionQualityCard } from "@/components/brand-presence/CollectionQualityCard";
 import { BrandPresenceDetailsModal } from "@/components/brand-presence/BrandPresenceDetailsModal";
 import { downloadCsv } from "@/lib/csv";
 import {
@@ -290,6 +292,9 @@ export function BrandPresenceClient({
           />
         </ChartPanel>
       </div>
+
+      {data.modelTopicMatrix && <ModelTopicHeatmap matrix={data.modelTopicMatrix} />}
+      {data.collectionQuality && <CollectionQualityCard rows={data.collectionQuality} />}
 
       <Card>
         <div className="flex items-start justify-between gap-3">

@@ -147,15 +147,25 @@ export default async function OverviewPage({
         getRealSentimentSeries(range, realDataFilters),
         getRealMarketComparison(range, realDataFilters),
       ]);
+  // 필터를 걸었는데 그 조건에 맞는 수집이 없으면 샘플(mock) 숫자로 되돌아가지 않는다 —
+  // 수집 자체가 전혀 없을 때만 샘플을 보여주고, 조건에 맞는 데이터가 없으면 "없음"으로 표시.
+  const filtersActive = Object.keys(realDataFilters).length > 0;
+  const hasCollected =
+    !demo && (realStats !== null || (filtersActive && (await getRealStatSeries(range)) !== null));
+  const filteredEmpty = filtersActive && realStats === null && hasCollected;
+  const EMPTY_FILTER_CAPTION = "선택한 조건에 맞는 수집 데이터가 없어요";
   const statCards = statCardsSeed.map((stat) => {
+    if (filteredEmpty && ["visibility-score", "brand-mentions", "citations"].includes(stat.id)) {
+      return { ...stat, value: 0, decimals: undefined, suffix: undefined, trendUnit: undefined, caption: EMPTY_FILTER_CAPTION, trend: { direction: "flat" as const, percent: 0 }, sparkline: [] };
+    }
     if (!realStats) return stat;
     if (stat.id === "visibility-score") return { ...stat, ...realStats.visibilityScore };
     if (stat.id === "brand-mentions") return { ...stat, ...realStats.brandMentions };
     if (stat.id === "citations") return { ...stat, ...realStats.citations };
     return stat;
   });
-  const sentimentData = realSentiment ?? sentiment;
-  const marketData = realMarket ?? market;
+  const sentimentData = realSentiment ?? (filteredEmpty ? [] : sentiment);
+  const marketData = realMarket ?? (filteredEmpty ? [] : market);
 
   // "최신 기회" — 실제 기회 DB(크롤 기록/토픽 수집 기록)에 createdAt이 있는
   // 것만 모아 최신순 3개를 보여준다. createdAt이 없는 기회(예: robots.txt —
@@ -200,7 +210,7 @@ export default async function OverviewPage({
   // ChecklistCard가 그 단계를 "준비 중"으로 표시한다.
   const hasUploadedPrompt = promptLibraryRows.some((p) => p.origin === "manual" || p.origin === "csv_import");
   const STEP_DONE: Record<string, boolean> = {
-    "connect-traffic": realStats !== null,
+    "connect-traffic": hasCollected,
     "more-exposure": promptLibraryRows.length > 0,
     "connect-search-console": gscConnected,
     "connect-web-analytics": ownBrand?.analyticsConnected ?? false,

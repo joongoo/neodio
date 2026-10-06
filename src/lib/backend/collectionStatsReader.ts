@@ -15,6 +15,8 @@ import {
   BrandRankRow,
   BrandWeeklyPoint,
   CitedDomainRow,
+  CollectionQualityRow,
+  ModelTopicMatrix,
   CitedPageRow,
   CitedSourceRow,
   DataInsightRow,
@@ -125,10 +127,6 @@ function trend(current: number, previous: number | undefined): StatCard["trend"]
   if (previous === undefined || previous === 0) return { direction: "flat", percent: 0 };
   const percent = Math.round(((current - previous) / previous) * 100);
   return { direction: percent === 0 ? "flat" : percent > 0 ? "up" : "down", percent: Math.abs(percent) };
-}
-
-function average(values: number[]) {
-  return values.length > 0 ? Number((values.reduce((sum, v) => sum + v, 0) / values.length).toFixed(1)) : 0;
 }
 
 function normalizeDetectedCompanyName(value: string) {
@@ -1007,6 +1005,67 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
       wilsonLowerBound(b.mentions, b.popularity) - wilsonLowerBound(a.mentions, a.popularity) || b.popularity - a.popularity
   );
   return rows;
+}
+
+// 엔진(모델) × 질의 가시성 표 — 어느 엔진에서 어느 질의가 약한지 한눈에 보게 한다.
+// 전체 기간 집계(토픽 표와 같은 이유로 range 없음). 행은 많이 실행한 질의 순 상위 N개.
+export async function getRealModelTopicMatrix(maxRows = 15): Promise<ModelTopicMatrix | null> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (promptRuns.length === 0) return null;
+
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
+  const mentionedRuns = new Set(processed.mentions.filter((m) => m.brandId === OWN_BRAND_ID && m.isPresent).map((m) => m.promptRunId));
+
+  const modelName = (id: string) => seedLlmModels.find((m) => m.id === id)?.name ?? id;
+  const byQuery = new Map<string, Map<string, { hit: number; total: number }>>();
+  const modelTotals = new Map<string, number>();
+  for (const run of promptRuns) {
+    const query = run.rawMetadata.query?.trim();
+    if (!query) continue;
+    const model = modelName(run.llmModelId);
+    const cells = byQuery.get(query) ?? new Map<string, { hit: number; total: number }>();
+    const cell = cells.get(model) ?? { hit: 0, total: 0 };
+    cell.total += 1;
+    if (mentionedRuns.has(run.id)) cell.hit += 1;
+    cells.set(model, cell);
+    byQuery.set(query, cells);
+    modelTotals.set(model, (modelTotals.get(model) ?? 0) + 1);
+  }
+  if (byQuery.size === 0) return null;
+
+  const models = [...modelTotals.entries()].sort((a, b) => b[1] - a[1]).map(([model]) => model);
+  const rows = [...byQuery.entries()]
+    .map(([topic, cells]) => ({
+      topic,
+      totalRuns: [...cells.values()].reduce((sum, c) => sum + c.total, 0),
+      cells: Object.fromEntries(cells),
+    }))
+    .sort((a, b) => b.totalRuns - a.totalRuns)
+    .slice(0, maxRows);
+  return { models, rows };
+}
+
+// 엔진별 수집 품질 — 성공/AI 미답변/수집 실패. 가시성 비율의 분모(AI가 답한 실행)가
+// 엔진마다 얼마나 다른지 보여줘, 엔진 간 비교의 신뢰도를 판단하게 한다.
+export async function getRealCollectionQuality(): Promise<CollectionQualityRow[] | null> {
+  const { orgId: ORG_ID } = await currentScope();
+  const runFiles = await listCollectedRuns(ORG_ID);
+  if (runFiles.length === 0) return null;
+
+  const byModel = new Map<string, CollectionQualityRow>();
+  for (const { promptRun: run } of runFiles) {
+    const model = seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId;
+    const row = byModel.get(model) ?? { model, attempted: 0, answered: 0, absent: 0, error: 0 };
+    row.attempted += 1;
+    const outcome = getRunOutcome(run);
+    if (outcome === "ai-answered") row.answered += 1;
+    else if (outcome === "ai-absent") row.absent += 1;
+    else row.error += 1;
+    byModel.set(model, row);
+  }
+  return [...byModel.values()].sort((a, b) => b.attempted - a.attempted);
 }
 
 const SENTIMENT_RANK: Record<Sentiment, number> = { negative: 0, neutral: 1, positive: 2 };

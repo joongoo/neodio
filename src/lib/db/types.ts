@@ -966,7 +966,27 @@ export interface ShareOfVoiceRow {
   topBrands: { brand: string; share: number }[];
 }
 
+/** 엔진(모델) × 질의 가시성 — 셀은 그 조합에서 자사가 언급된 실행 수 / 전체 실행 수. */
+export interface ModelTopicMatrix {
+  models: string[];
+  rows: { topic: string; totalRuns: number; cells: Record<string, { hit: number; total: number }> }[];
+}
+
+/** 엔진별 수집 품질 — 모든 비율 지표의 분모가 믿을 만한지 알려준다. */
+export interface CollectionQualityRow {
+  model: string;
+  attempted: number;
+  /** AI가 답을 만든 실행 — 지표의 분모. */
+  answered: number;
+  /** 수집은 됐지만 AI가 답을 만들지 않은 실행(엔진·질문 특성). */
+  absent: number;
+  /** 봇 차단·네트워크 오류 등 진짜 수집 실패. */
+  error: number;
+}
+
 export interface BrandPresenceData {
+  modelTopicMatrix?: ModelTopicMatrix;
+  collectionQuality?: CollectionQualityRow[];
   allCompetitors: string[];
   defaultSelectedCompetitors: string[];
   mentionsByWeek: BrandWeeklyPoint[];

@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import {
   getRealDataInsights,
   getRealMarketWeeklyTracking,
+  getRealModelTopicMatrix,
+  getRealCollectionQuality,
   getRealPromptMetricsByWeek,
   getRealSentimentMovers,
   getRealSentimentSeries,
@@ -28,8 +30,8 @@ export default async function BrandPresencePage() {
   ]);
   if (!data) return null;
 
-  const [realStats, realSentiment, realWeeklyTracking, realPromptMetrics, realDataInsights, realShareOfVoice, realMovers] = demo
-    ? [null, null, null, null, null, null, null]
+  const [realStats, realSentiment, realWeeklyTracking, realPromptMetrics, realDataInsights, realShareOfVoice, realMovers, realMatrix, realQuality] = demo
+    ? [null, null, null, null, null, null, null, null, null]
     : await Promise.all([
         getRealStatSeries(RANGE),
         getRealSentimentSeries(RANGE),
@@ -38,6 +40,8 @@ export default async function BrandPresencePage() {
         getRealDataInsights(),
         getRealShareOfVoice(),
         getRealSentimentMovers(RANGE),
+        getRealModelTopicMatrix(),
+        getRealCollectionQuality(),
       ]);
 
   // 상단 "모델" 필터가 Share of Voice에도 걸리도록 모델별로 따로 계산해 둔다(수집 데이터가 있는 모델만).
@@ -70,6 +74,8 @@ export default async function BrandPresencePage() {
         sentimentByWeek: realSentiment ?? data.sentimentByWeek,
         mentionsByWeek: realWeeklyTracking?.mentionsByWeek ?? data.mentionsByWeek,
         citationsByWeek: realWeeklyTracking?.citationsByWeek ?? data.citationsByWeek,
+        modelTopicMatrix: realMatrix ?? undefined,
+        collectionQuality: realQuality ?? undefined,
         weeklyTrackingIsRate: realWeeklyTracking ? true : undefined,
         promptMetricsByWeek: realPromptMetrics ?? data.promptMetricsByWeek,
         dataInsights: realDataInsights ?? data.dataInsights,
