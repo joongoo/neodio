@@ -99,6 +99,7 @@ const OPTIONAL_COLUMNS: Record<Family, ColumnOption[]> = {
     { key: "myBrandMentions", label: "내 브랜드 언급 수" },
     { key: "citedPages", label: "인용된 페이지 수" },
     { key: "prompts", label: "프롬프트 수" },
+    { key: "coMentioned", label: "함께 언급된 경쟁사" },
   ],
 };
 
@@ -377,6 +378,19 @@ function buildSourceColumns(onRegister: (row: CitedSourceRow) => void): DataTabl
     { key: "citedPages", label: "인용된 페이지 수", width: "w-[130px]", render: (r) => r.citedPages },
     { key: "prompts", label: "프롬프트 수", width: "w-[110px]", render: (r) => r.prompts },
     {
+      key: "coMentioned",
+      label: "함께 언급된 경쟁사",
+      width: "w-[200px]",
+      render: (r) =>
+        r.coMentionedCompetitors && r.coMentionedCompetitors.length > 0 ? (
+          <span className="line-clamp-2 text-[11px] text-neutral-600" title="이 소스를 인용한 답변에서 함께 언급된 경쟁사(답변 수)">
+            {r.coMentionedCompetitors.map((c) => `${c.brand} ${c.answers}`).join(", ")}
+          </span>
+        ) : (
+          <span className="text-neutral-300">–</span>
+        ),
+    },
+    {
       key: "recommendation",
       label: "추천 액션",
       width: "w-[220px]",
@@ -615,7 +629,7 @@ export function TopicsTableSection({
   const visiblePageColumns = pageColumns.filter((c) => !["responses", "market"].includes(c.key) || visible.has(c.key));
   const sourceColumns = useMemo(() => buildSourceColumns((row) => setRegisteringSource(row)), []);
   const visibleSourceColumns = sourceColumns.filter(
-    (c) => !["market", "myBrandMentions", "citedPages", "prompts"].includes(c.key) || visible.has(c.key)
+    (c) => !["market", "myBrandMentions", "citedPages", "prompts", "coMentioned"].includes(c.key) || visible.has(c.key)
   );
 
   return (

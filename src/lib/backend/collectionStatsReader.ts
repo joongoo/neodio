@@ -1510,6 +1510,19 @@ export async function getRealCitedSources(
   const runsById = new Map(promptRuns.map((r) => [r.id, r]));
   const marketOf = (runId: string) => seedMarkets.find((m) => m.id === runsById.get(runId)?.marketId)?.code ?? "GLOBAL";
 
+  // 답변(run)별로 언급된 경쟁사 이름 — 소스 도메인 행에 "함께 언급된 경쟁사"를 붙이는 근거.
+  const competitorNames = new Map(
+    (promptRuns.length > 0 ? await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) : []).filter((b) => !b.isOwnBrand).map((b) => [b.id, b.name])
+  );
+  const competitorsByRun = new Map<string, string[]>();
+  for (const m of processed?.mentions ?? []) {
+    const name = m.isPresent ? competitorNames.get(m.brandId) : undefined;
+    if (!name) continue;
+    const list = competitorsByRun.get(m.promptRunId) ?? [];
+    list.push(name);
+    competitorsByRun.set(m.promptRunId, list);
+  }
+
   const byDomain = new Map<string, { pageUrls: Set<string>; promptRunIds: Set<string>; markets: Map<string, number> }>();
   for (const c of thirdPartyCitations) {
     const agg = byDomain.get(c.domain) ?? { pageUrls: new Set<string>(), promptRunIds: new Set<string>(), markets: new Map<string, number>() };
@@ -1534,6 +1547,11 @@ export async function getRealCitedSources(
       myBrandMentions: [...agg.promptRunIds].filter((id) => ownMentionRuns.has(id)).length,
       citedPages: agg.pageUrls.size,
       prompts: agg.promptRunIds.size,
+      coMentionedCompetitors: (() => {
+        const counts = new Map<string, number>();
+        for (const runId of agg.promptRunIds) for (const name of competitorsByRun.get(runId) ?? []) counts.set(name, (counts.get(name) ?? 0) + 1);
+        return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([brand, answers]) => ({ brand, answers }));
+      })(),
     }))
     .sort((a, b) => b.prompts - a.prompts);
 }

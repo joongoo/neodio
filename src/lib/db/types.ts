@@ -427,6 +427,9 @@ export interface CitedSourceRow {
   myBrandMentions: number;
   citedPages: number;
   prompts: number;
+  /** 이 소스가 인용된 답변에서 함께 언급된 경쟁사(많이 언급된 순 상위 3) — 경쟁사는 이 소스의
+   *  덕을 보는데 우리는 없다는 신호. */
+  coMentionedCompetitors?: { brand: string; answers: number }[];
   /** LLM이 이 소스를 어떻게 공략할지 제안한 액션 — LLM API 연동 전엔 수동으로 채운다. */
   recommendation?: string;
   reasoning?: string;
