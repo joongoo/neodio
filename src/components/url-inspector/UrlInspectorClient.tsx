@@ -2,17 +2,17 @@
 
 import { CitationFeaturesCard } from "@/components/url-inspector/CitationFeaturesCard";
 import type { CitationFeatureAnalysis } from "@/lib/citationFeatures";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
 import { TablePanel } from "@/components/ui/TablePanel";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { ConfigureColumnsModal, ColumnOption } from "@/components/ui/ConfigureColumnsModal";
 import { Pagination } from "@/components/ui/Pagination";
-import { usePagedRows } from "@/lib/usePagedRows";
+import { TABLE_PAGE_SIZES, type TablePage } from "@/lib/serverPaging";
 import { useColumnVisibility } from "@/lib/useColumnVisibility";
-import { CitedDomainRow, CitedPromptRun, OwnCitedUrlRow, ThirdPartyUrlRow, UrlInspectorData } from "@/lib/db";
+import { CitedDomainRow, CitedPromptRun, OwnCitedUrlRow, ThirdPartyUrlRow } from "@/lib/db";
 import { formatRunAt } from "@/lib/formatRunAt";
 
 const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
@@ -181,13 +181,68 @@ const domainOptional: ColumnOption[] = [
   { key: "contentType", label: "콘텐츠 유형" },
 ];
 
-export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspectorData; featureAnalysis?: CitationFeatureAnalysis | null }) {
+// 표 하나의 페이지·크기·검색을 주소(쿼리)로 다루는 훅 — 검색은 입력을 멈추면(0.35초) 서버로 보낸다.
+function useUrlTable(prefix: string, serverSearch: string) {
   const router = useRouter();
-  const [market, setMarket] = useState(MARKET_OPTIONS[0]);
-  const [category, setCategory] = useState(CATEGORY_OPTIONS[0]);
-  const [ownSearch, setOwnSearch] = useState("");
-  const [thirdPartySearch, setThirdPartySearch] = useState("");
-  const [domainSearch, setDomainSearch] = useState("");
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [searchText, setSearchText] = useState(serverSearch);
+
+  const navigate = useCallback(
+    (changes: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === null || value === "") next.delete(key);
+        else next.set(key, value);
+      }
+      router.push(`${pathname}?${next.toString()}`);
+    },
+    [router, pathname, searchParams]
+  );
+
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (searchText.trim() === serverSearch) return;
+    const timer = setTimeout(() => navigate({ [`${prefix}Q`]: searchText.trim() || null, [`${prefix}Page`]: null }), 350);
+    return () => clearTimeout(timer);
+    // 입력값이 바뀔 때만 다시 예약한다(navigate는 렌더마다 새로 만들어질 수 있다).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText]);
+
+  return {
+    navigate,
+    searchText,
+    setSearchText,
+    onPageChange: (page: number) => navigate({ [`${prefix}Page`]: page === 1 ? null : String(page) }),
+    onPageSizeChange: (size: number) => navigate({ [`${prefix}Size`]: String(size), [`${prefix}Page`]: null }),
+  };
+}
+
+export function UrlInspectorClient({
+  stats,
+  market,
+  category,
+  own: ownPage,
+  thirdParty: thirdPartyPage,
+  domains: domainPage,
+  featureAnalysis,
+}: {
+  stats: { ownCitedPrompts: number; totalCitedPrompts: number; uniqueCitedUrls: number; totalCitations: number };
+  market: string;
+  category: string;
+  own: TablePage<OwnCitedUrlRow>;
+  thirdParty: TablePage<ThirdPartyUrlRow>;
+  domains: TablePage<CitedDomainRow>;
+  featureAnalysis?: CitationFeatureAnalysis | null;
+}) {
+  const router = useRouter();
+  const ownTable = useUrlTable("own", ownPage.search);
+  const thirdPartyTable = useUrlTable("tp", thirdPartyPage.search);
+  const domainTable = useUrlTable("dom", domainPage.search);
   const [newUrl, setNewUrl] = useState("");
   const [registering, setRegistering] = useState(false);
 
@@ -217,12 +272,6 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
     [router]
   );
 
-  const ownRowsBase = data.ownUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
-  const thirdPartyRowsBase = data.thirdPartyUrls.filter((r) => (market === "전체" || r.market === market) && (category === "전체" || r.category === category));
-  const ownRows = ownRowsBase.filter((r) => r.url.toLowerCase().includes(ownSearch.trim().toLowerCase()));
-  const thirdPartyRows = thirdPartyRowsBase.filter((r) => r.url.toLowerCase().includes(thirdPartySearch.trim().toLowerCase()));
-  const domainRows = data.citedDomains.filter((r) => r.domain.toLowerCase().includes(domainSearch.trim().toLowerCase()));
-
   const ownColumns = useMemo(
     () => buildOwnColumns((r) => unregisterUrl(r.url)),
     [unregisterUrl]
@@ -236,10 +285,6 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
   const thirdParty = useColumnVisibility(thirdPartyColumns, thirdPartyOptional);
   const domain = useColumnVisibility(domainColumns, domainOptional);
 
-  const ownPaged = usePagedRows(ownRows);
-  const thirdPartyPaged = usePagedRows(thirdPartyRows);
-  const domainPaged = usePagedRows(domainRows);
-
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <div>
@@ -248,15 +293,15 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Dropdown variant="solid" label="마켓" value={market} options={MARKET_OPTIONS} onChange={setMarket} />
-        <Dropdown variant="solid" label="카테고리" value={category} options={CATEGORY_OPTIONS} onChange={setCategory} />
+        <Dropdown variant="solid" label="마켓" value={market} options={MARKET_OPTIONS} onChange={(v) => ownTable.navigate({ market: v === "전체" ? null : v, ownPage: null, tpPage: null })} />
+        <Dropdown variant="solid" label="카테고리" value={category} options={CATEGORY_OPTIONS} onChange={(v) => ownTable.navigate({ category: v === "전체" ? null : v, ownPage: null, tpPage: null })} />
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <SimpleStatCard label="자사 인용 고유 프롬프트 수" value={data.ownCitedPrompts} />
-        <SimpleStatCard label="전체 고유 프롬프트 수" value={data.totalCitedPrompts} />
-        <SimpleStatCard label="고유 인용 URL 수" value={data.uniqueCitedUrls} />
-        <SimpleStatCard label="총 인용 횟수" value={data.totalCitations} />
+        <SimpleStatCard label="자사 인용 고유 프롬프트 수" value={stats.ownCitedPrompts} />
+        <SimpleStatCard label="전체 고유 프롬프트 수" value={stats.totalCitedPrompts} />
+        <SimpleStatCard label="고유 인용 URL 수" value={stats.uniqueCitedUrls} />
+        <SimpleStatCard label="총 인용 횟수" value={stats.totalCitations} />
       </div>
 
       {featureAnalysis && <CitationFeaturesCard analysis={featureAnalysis} />}
@@ -264,11 +309,11 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
       <TablePanel
         title="자사 인용 URL"
         description="AI 답변에 인용된 우리 사이트 URL입니다. 아직 인용 안 됐어도 추적하고 싶은 새 콘텐츠는 직접 등록해두세요."
-        count={ownRows.length}
-        total={ownRowsBase.length}
+        count={ownPage.filteredTotal}
+        total={ownPage.total}
         onConfigureColumns={() => own.setOpen(true)}
-        searchValue={ownSearch}
-        onSearchChange={setOwnSearch}
+        searchValue={ownTable.searchText}
+        onSearchChange={ownTable.setSearchText}
         searchPlaceholder="URL 검색"
       >
         <div className="mb-3 flex items-center gap-2">
@@ -290,18 +335,19 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
         </div>
         <DataTable
           columns={own.filtered}
-          rows={ownPaged.pageRows}
+          rows={ownPage.rows}
           getRowId={(r) => r.id}
           renderExpanded={(r) => <CitedPromptsExpanded row={r} />}
         />
         <div className="mt-3">
           <Pagination
-            page={ownPaged.page}
-            pageCount={ownPaged.pageCount}
-            pageSize={ownPaged.pageSize}
-            totalCount={ownRows.length}
-            onPageChange={ownPaged.setPage}
-            onPageSizeChange={ownPaged.setPageSize}
+            page={ownPage.page}
+            pageCount={ownPage.pageCount}
+            pageSize={ownPage.pageSize}
+            totalCount={ownPage.filteredTotal}
+            pageSizeOptions={TABLE_PAGE_SIZES}
+            onPageChange={ownTable.onPageChange}
+            onPageSizeChange={ownTable.onPageSizeChange}
           />
         </div>
         <ConfigureColumnsModal open={own.open} onClose={() => own.setOpen(false)} columns={ownOptional} visible={own.visible} onApply={own.setVisible} />
@@ -310,27 +356,28 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
       <TablePanel
         title="인용된 제3자 URL"
         description="AI 답변에 인용된 제3자 사이트 URL입니다."
-        count={thirdPartyRows.length}
-        total={thirdPartyRowsBase.length}
+        count={thirdPartyPage.filteredTotal}
+        total={thirdPartyPage.total}
         onConfigureColumns={() => thirdParty.setOpen(true)}
-        searchValue={thirdPartySearch}
-        onSearchChange={setThirdPartySearch}
+        searchValue={thirdPartyTable.searchText}
+        onSearchChange={thirdPartyTable.setSearchText}
         searchPlaceholder="URL 검색"
       >
         <DataTable
           columns={thirdParty.filtered}
-          rows={thirdPartyPaged.pageRows}
+          rows={thirdPartyPage.rows}
           getRowId={(r) => r.id}
           renderExpanded={(r) => <CitedPromptsExpanded row={r} />}
         />
         <div className="mt-3">
           <Pagination
-            page={thirdPartyPaged.page}
-            pageCount={thirdPartyPaged.pageCount}
-            pageSize={thirdPartyPaged.pageSize}
-            totalCount={thirdPartyRows.length}
-            onPageChange={thirdPartyPaged.setPage}
-            onPageSizeChange={thirdPartyPaged.setPageSize}
+            page={thirdPartyPage.page}
+            pageCount={thirdPartyPage.pageCount}
+            pageSize={thirdPartyPage.pageSize}
+            totalCount={thirdPartyPage.filteredTotal}
+            pageSizeOptions={TABLE_PAGE_SIZES}
+            onPageChange={thirdPartyTable.onPageChange}
+            onPageSizeChange={thirdPartyTable.onPageSizeChange}
           />
         </div>
         <ConfigureColumnsModal
@@ -345,22 +392,23 @@ export function UrlInspectorClient({ data, featureAnalysis }: { data: UrlInspect
       <TablePanel
         title="인용된 도메인"
         description="AI 답변이 가장 많이 인용한 도메인입니다."
-        count={domainRows.length}
-        total={data.citedDomains.length}
+        count={domainPage.filteredTotal}
+        total={domainPage.total}
         onConfigureColumns={() => domain.setOpen(true)}
-        searchValue={domainSearch}
-        onSearchChange={setDomainSearch}
+        searchValue={domainTable.searchText}
+        onSearchChange={domainTable.setSearchText}
         searchPlaceholder="도메인 검색"
       >
-        <DataTable columns={domain.filtered} rows={domainPaged.pageRows} getRowId={(r) => r.id} />
+        <DataTable columns={domain.filtered} rows={domainPage.rows} getRowId={(r) => r.id} />
         <div className="mt-3">
           <Pagination
-            page={domainPaged.page}
-            pageCount={domainPaged.pageCount}
-            pageSize={domainPaged.pageSize}
-            totalCount={domainRows.length}
-            onPageChange={domainPaged.setPage}
-            onPageSizeChange={domainPaged.setPageSize}
+            page={domainPage.page}
+            pageCount={domainPage.pageCount}
+            pageSize={domainPage.pageSize}
+            totalCount={domainPage.filteredTotal}
+            pageSizeOptions={TABLE_PAGE_SIZES}
+            onPageChange={domainTable.onPageChange}
+            onPageSizeChange={domainTable.onPageSizeChange}
           />
         </div>
         <ConfigureColumnsModal open={domain.open} onClose={() => domain.setOpen(false)} columns={domainOptional} visible={domain.visible} onApply={domain.setVisible} />

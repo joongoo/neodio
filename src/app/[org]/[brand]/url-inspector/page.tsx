@@ -7,11 +7,13 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getLatestSitemapCrawl } from "@/lib/backend/sitemapCrawlReader";
 import { buildCitationFeatureAnalysis } from "@/lib/citationFeatures";
 import { EMPTY_URL_INSPECTOR } from "@/lib/db/data/emptyOrg";
+import { pageTable, tableQueryFrom } from "@/lib/serverPaging";
 
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다.
 export const dynamic = "force-dynamic";
 
-export default async function UrlInspectorPage() {
+export default async function UrlInspectorPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const params = await searchParams;
   const tenant = await getCurrentTenant();
   const [demo, data, registeredUrls] = await Promise.all([
     isDemoMode(),
@@ -46,5 +48,28 @@ export default async function UrlInspectorPage() {
     ? buildCitationFeatureAnalysis(latestCrawl.urls, real!.ownUrls.filter((u) => u.citations > 0).map((u) => u.url))
     : null;
 
-  return <UrlInspectorClient data={{ ...merged, ownUrls: [...merged.ownUrls, ...extraRows] }} featureAnalysis={featureAnalysis} />;
+  // 표마다 한 페이지만 보낸다 — 인용 URL이 수천 개가 돼도 브라우저로 가는 양이 일정하다.
+  // 마켓·카테고리는 필터, 페이지·크기·검색어는 표별 주소 파라미터(own*/tp*/dom*)로 받는다.
+  const market = params.market ?? "전체";
+  const category = params.category ?? "전체";
+  const inFilter = (r: { market: string; category: string }) =>
+    (market === "전체" || r.market === market) && (category === "전체" || r.category === category);
+  const urlMatches = (r: { url: string }, q: string) => r.url.toLowerCase().includes(q);
+
+  return (
+    <UrlInspectorClient
+      stats={{
+        ownCitedPrompts: merged.ownCitedPrompts,
+        totalCitedPrompts: merged.totalCitedPrompts,
+        uniqueCitedUrls: merged.uniqueCitedUrls,
+        totalCitations: merged.totalCitations,
+      }}
+      market={market}
+      category={category}
+      own={pageTable([...merged.ownUrls, ...extraRows].filter(inFilter), tableQueryFrom(params, "own"), urlMatches)}
+      thirdParty={pageTable(merged.thirdPartyUrls.filter(inFilter), tableQueryFrom(params, "tp"), urlMatches)}
+      domains={pageTable(merged.citedDomains, tableQueryFrom(params, "dom"), (r, q) => r.domain.toLowerCase().includes(q))}
+      featureAnalysis={featureAnalysis}
+    />
+  );
 }
