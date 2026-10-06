@@ -262,6 +262,16 @@ async function queryScopeFilter(orgId: string, ownBrandId: string, scope?: Query
   return (run) => queryScopeOf(run.rawMetadata.query, keywords) === scope;
 }
 
+// 엔진·마켓·카테고리·질의 유형 필터를 한 번에 — 범위를 지정하지 않으면 모두 통과.
+async function runFilterOf(orgId: string, ownBrandId: string, filters: RealDataFilters = {}): Promise<(run: PromptRunSeed) => boolean> {
+  const inQueryScope = await queryScopeFilter(orgId, ownBrandId, filters.queryScope);
+  return (run) =>
+    (!filters.llmModelId || run.llmModelId === filters.llmModelId) &&
+    (!filters.category || run.rawMetadata.category === filters.category) &&
+    (!filters.marketId || run.marketId === filters.marketId) &&
+    inQueryScope(run);
+}
+
 // 같은 주·프롬프트·엔진·마켓의 반복 실행을 관측 1건으로 합치는 가중치(전체 기간 집계용).
 function weightsForRuns(runs: PromptRunSeed[]) {
   return observationWeights(
@@ -1090,10 +1100,10 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
 
 // 엔진(모델) 이름별 쉐어 오브 보이스 — 전체 1번 분석한 결과를 엔진별로 나눠 계산한다(엔진마다 다시 읽고
 // 분석하지 않는다). 수집 데이터가 있는 엔진만 키가 있다.
-export async function getRealShareOfVoiceByModel(queryScope?: QueryScope): Promise<Record<string, ShareOfVoiceRow[]>> {
+export async function getRealShareOfVoiceByModel(filters: RealDataFilters = {}): Promise<Record<string, ShareOfVoiceRow[]>> {
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
-  const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, queryScope);
-  const promptRuns = (await listCollectedRuns(ORG_ID)).map((f) => f.promptRun).filter((run) => run.status === "success").filter(inQueryScope);
+  const passes = await runFilterOf(ORG_ID, OWN_BRAND_ID, filters);
+  const promptRuns = (await listCollectedRuns(ORG_ID)).map((f) => f.promptRun).filter((run) => run.status === "success").filter(passes);
   if (promptRuns.length === 0) return {};
   const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
@@ -1163,11 +1173,11 @@ function buildShareOfVoice(promptRuns: PromptRunSeed[], mentions: MentionSeed[],
 
 // 엔진(모델) × 질의 가시성 표 — 어느 엔진에서 어느 질의가 약한지 한눈에 보게 한다.
 // 전체 기간 집계(토픽 표와 같은 이유로 range 없음). 행은 많이 실행한 질의 순 상위 N개.
-export async function getRealModelTopicMatrix(maxRows = 15, queryScope?: QueryScope): Promise<ModelTopicMatrix | null> {
+export async function getRealModelTopicMatrix(maxRows = 15, filters: RealDataFilters = {}): Promise<ModelTopicMatrix | null> {
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
-  const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, queryScope);
+  const passes = await runFilterOf(ORG_ID, OWN_BRAND_ID, filters);
   const runFiles = await listCollectedRuns(ORG_ID);
-  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(inQueryScope);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(passes);
   if (promptRuns.length === 0) return null;
 
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
@@ -1204,13 +1214,15 @@ export async function getRealModelTopicMatrix(maxRows = 15, queryScope?: QuerySc
 
 // 엔진별 수집 품질 — 성공/AI 미답변/수집 실패. 가시성 비율의 분모(AI가 답한 실행)가
 // 엔진마다 얼마나 다른지 보여줘, 엔진 간 비교의 신뢰도를 판단하게 한다.
-export async function getRealCollectionQuality(): Promise<CollectionQualityRow[] | null> {
-  const { orgId: ORG_ID } = await currentScope();
+export async function getRealCollectionQuality(filters: RealDataFilters = {}): Promise<CollectionQualityRow[] | null> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const passes = await runFilterOf(ORG_ID, OWN_BRAND_ID, filters);
   const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
 
   const byModel = new Map<string, CollectionQualityRow>();
   for (const { promptRun: run } of runFiles) {
+    if (!passes(run)) continue;
     const model = seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId;
     const row = byModel.get(model) ?? { model, attempted: 0, answered: 0, absent: 0, error: 0 };
     row.attempted += 1;
@@ -1224,11 +1236,11 @@ export async function getRealCollectionQuality(): Promise<CollectionQualityRow[]
 }
 
 // 자사가 답변 안에서 "얼마나 눈에 띄게" 나오는지 — 엔진별 + 전체. 전체 기간 집계.
-export async function getRealPlacementStats(queryScope?: QueryScope): Promise<PlacementSummary[] | null> {
+export async function getRealPlacementStats(filters: RealDataFilters = {}): Promise<PlacementSummary[] | null> {
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
-  const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, queryScope);
+  const passes = await runFilterOf(ORG_ID, OWN_BRAND_ID, filters);
   const runFiles = await listCollectedRuns(ORG_ID);
-  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(inQueryScope);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(passes);
   if (promptRuns.length === 0) return null;
 
   const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
@@ -1254,11 +1266,11 @@ export async function getRealPlacementStats(queryScope?: QueryScope): Promise<Pl
 
 // 감성 판정의 근거 — 키워드 방식(긍정·부정 단어 개수)이라 맞는지 눈으로 검수할 수 있게
 // 자사가 언급된 답변의 발췌문과 판정에 쓰인 키워드를 감성별로 보여준다. 전체 기간.
-export async function getRealSentimentEvidence(perSentiment = 6, queryScope?: QueryScope): Promise<SentimentEvidence | null> {
+export async function getRealSentimentEvidence(perSentiment = 6, filters: RealDataFilters = {}): Promise<SentimentEvidence | null> {
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
-  const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, queryScope);
+  const passes = await runFilterOf(ORG_ID, OWN_BRAND_ID, filters);
   const runFiles = await listCollectedRuns(ORG_ID);
-  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(inQueryScope);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(passes);
   if (promptRuns.length === 0) return null;
   const own = (await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID)).find((b) => b.id === OWN_BRAND_ID);
   if (!own) return null;
@@ -1301,11 +1313,11 @@ export async function getRealSentimentEvidence(perSentiment = 6, queryScope?: Qu
 
 // 답변 일관성 — 같은 질의를 같은 엔진에 여러 번 물었을 때 자사가 매번 나오는지. AI 답변은 매번
 // 달라서 한 번의 수집으로 "언급됨/안 됨"을 단정하면 틀릴 수 있다. 전체 기간.
-export async function getRealConsistency(maxFlaky = 10, queryScope?: QueryScope): Promise<ConsistencySummary | null> {
+export async function getRealConsistency(maxFlaky = 10, filters: RealDataFilters = {}): Promise<ConsistencySummary | null> {
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
-  const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, queryScope);
+  const passes = await runFilterOf(ORG_ID, OWN_BRAND_ID, filters);
   const runFiles = await listCollectedRuns(ORG_ID);
-  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(inQueryScope);
+  const promptRuns = runFiles.map((f) => f.promptRun).filter((run) => run.status === "success").filter(passes);
   if (promptRuns.length === 0) return null;
 
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });

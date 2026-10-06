@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Share2, Settings } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import { Dropdown } from "@/components/ui/Dropdown";
 import { FilterDropdown } from "@/components/overview/FilterDropdown";
+import { RangeDropdown } from "@/components/overview/RangeDropdown";
+import { MARKET_FILTER_OPTIONS, MODEL_FILTER_OPTIONS, QUERY_SCOPE_OPTIONS } from "@/lib/filterOptionLabels";
 import { InfoBanner } from "@/components/ui/InfoBanner";
 import { ChartPanel } from "@/components/overview/ChartPanel";
 import { StatCard } from "@/components/overview/StatCard";
@@ -26,14 +27,13 @@ import { downloadCsv } from "@/lib/csv";
 import {
   BrandPresenceData,
   DataInsightRow,
+  DateRange,
   Sentiment,
   SentimentMoverRow,
   ShareOfVoiceRow,
   StatCard as StatCardData,
 } from "@/lib/db";
 
-const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
-const MODEL_OPTIONS = ["전체", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Naver AI 브리핑", "Google AI 모드"];
 const MAX_COMPETITORS = 5;
 
 const SENTIMENT_LABEL: Record<Sentiment, string> = { positive: "긍정", neutral: "중립", negative: "부정" };
@@ -46,16 +46,26 @@ const SENTIMENT_COLOR: Record<Sentiment, string> = {
 export function BrandPresenceClient({
   statCards,
   data,
-  queryScopeLabel = "전체",
+  range,
+  marketLabel,
+  modelLabel,
+  queryScopeLabel,
+  serverFiltered,
 }: {
   statCards: StatCardData[];
   data: BrandPresenceData;
-  /** 질의 유형 필터("전체" | "브랜드 질의" | "일반 질의") — 서버가 이 값으로 다시 계산한다. */
-  queryScopeLabel?: string;
+  /** 상단 필터 값 — 주소(쿼리)에 두고, 실 데이터는 서버가 같은 값으로 다시 계산한다. */
+  range: DateRange;
+  marketLabel: string;
+  modelLabel: string;
+  queryScopeLabel: string;
+  /** true면 표·카드가 이미 서버에서 필터링돼 있다. false(샘플 데이터)면 아래에서 화면이 직접 거른다. */
+  serverFiltered: boolean;
 }) {
   const router = useRouter();
-  const [market, setMarket] = useState(MARKET_OPTIONS[0]);
-  const [model, setModel] = useState(MODEL_OPTIONS[0]);
+  // 샘플 데이터는 서버가 걸러주지 못하니 화면에서 거른다(실 데이터는 서버가 이미 걸렀으므로 "전체"로 취급).
+  const market = serverFiltered ? "전체" : marketLabel;
+  const model = serverFiltered ? "전체" : modelLabel;
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>(data.defaultSelectedCompetitors);
   const [detailRow, setDetailRow] = useState<DataInsightRow | null>(null);
 
@@ -220,9 +230,10 @@ export function BrandPresenceClient({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-neutral-900">브랜드 가시성</h1>
         <div className="flex gap-2">
-          <Dropdown variant="solid" label="마켓" value={market} options={MARKET_OPTIONS} onChange={setMarket} />
-          <Dropdown variant="solid" label="모델" value={model} options={MODEL_OPTIONS} onChange={setModel} />
-          <FilterDropdown label="질의" paramKey="scope" value={queryScopeLabel} options={["전체", "브랜드 질의", "일반 질의"]} variant="solid" />
+          <RangeDropdown value={range} variant="solid" label="기간" />
+          <FilterDropdown label="마켓" paramKey="market" value={marketLabel} options={MARKET_FILTER_OPTIONS} variant="solid" />
+          <FilterDropdown label="모델" paramKey="model" value={modelLabel} options={MODEL_FILTER_OPTIONS} variant="solid" />
+          <FilterDropdown label="질의" paramKey="scope" value={queryScopeLabel} options={QUERY_SCOPE_OPTIONS} variant="solid" />
         </div>
       </div>
 
@@ -243,7 +254,7 @@ export function BrandPresenceClient({
         <div>
           <h2 className="text-base font-bold text-neutral-900">마켓 트래킹</h2>
           <p className="mt-0.5 text-xs text-neutral-500">
-            언급 수와 인용 수를 기준으로 선택한 다른 브랜드 대비 우리 브랜드의 성과를 비교합니다. 상단 필터의 영향을 받지 않습니다.
+            {data.weeklyTrackingIsRate ? "언급률과 인용률" : "언급 수와 인용 수"}를 기준으로 선택한 다른 브랜드 대비 우리 브랜드의 성과를 비교합니다.{serverFiltered ? " 상단 필터(기간·마켓·모델·질의)가 그대로 적용됩니다." : " 상단 필터의 영향을 받지 않습니다."}
           </p>
         </div>
 

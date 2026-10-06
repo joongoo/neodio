@@ -1,6 +1,6 @@
 import { hostnameOfUrl } from "@/lib/normalizeUrl";
 import { VisibilityOverviewClient } from "@/components/visibility-overview/VisibilityOverviewClient";
-import { DateRange, db, VisibilityTableRow } from "@/lib/db";
+import { db, VisibilityTableRow } from "@/lib/db";
 import {
   getRealCitedPages,
   getRealCitedSources,
@@ -21,30 +21,21 @@ import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getLlmBridgeScope } from "@/lib/backend/llmBridgeStore";
 import { listDetectedBrandDecisions } from "@/lib/backend/detectedBrandDecisions";
 import { getCurrentTenant } from "@/lib/backend/tenant";
-import type { QueryScope } from "@/lib/queryScope";
+import { parseFilters } from "@/lib/filterOptions";
 
-const VALID_RANGES: DateRange[] = ["1w", "2w", "4w"];
 // 실 수집 데이터(.tmp/*-ai)가 새로 생길 수 있으므로 캐시하지 않는다 —
 // 개요/수집 로그 페이지와 동일한 이유.
 export const dynamic = "force-dynamic";
 
-// 자사 브랜드명이 들어간 질의는 언급되기 쉬워 가시성을 부풀리므로 따로 볼 수 있게 한다.
-const SCOPE_BY_LABEL: Record<string, QueryScope> = { "브랜드 질의": "brand", "일반 질의": "nonbrand" };
-
 export default async function VisibilityOverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; scope?: string }>;
+  searchParams: Promise<{ range?: string; market?: string; model?: string; scope?: string }>;
 }) {
   const tenant = await getCurrentTenant();
   const orgId = tenant.orgId;
-  const query = await searchParams;
-  const requestedRange = query.range;
-  const queryScope = query.scope ? SCOPE_BY_LABEL[query.scope] : undefined;
-  const filters = queryScope ? { queryScope } : {};
-  const range: DateRange = VALID_RANGES.includes(requestedRange as DateRange)
-    ? (requestedRange as DateRange)
-    : "4w";
+  // 기간·마켓·모델·질의 유형은 주소(쿼리)로 받아 모든 카드·표를 같은 필터로 서버에서 계산한다.
+  const { range, marketLabel, modelLabel, scopeLabel, filters } = parseFilters(await searchParams);
   const demo = await isDemoMode();
 
   const [org, statCardsSeed, mentionsByModelSeed, mentionsByMarketSeed, topicCategories, promptLibraryRowsRaw, trackedRows, deletedIds, targetUrls, ownBrand, sourceRecommendations, brandDecisions] =
@@ -84,9 +75,9 @@ export default async function VisibilityOverviewPage({
       ]);
 
   // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
-  // 질의 유형을 골랐는데 그 조건에 맞는 수집이 없으면 샘플(mock) 대신 빈 화면을 보여준다 —
+  // 필터를 골랐는데 그 조건에 맞는 수집이 없으면 샘플(mock) 대신 빈 화면을 보여준다 —
   // 수집 자체가 전혀 없을 때만 샘플로 되돌아간다.
-  const filteredEmpty = !!queryScope && !demo && realStats === null && (await getRealStatSeries(range)) !== null;
+  const filteredEmpty = Object.keys(filters).length > 0 && !demo && realStats === null && (await getRealStatSeries(range)) !== null;
   const statCards = statCardsSeed.map((stat) => {
     if (filteredEmpty && ["visibility-score", "brand-mentions", "citations"].includes(stat.id)) {
       return { ...stat, value: 0, decimals: undefined, suffix: undefined, trendUnit: undefined, caption: "선택한 조건에 맞는 수집 데이터가 없어요", trend: { direction: "flat" as const, percent: 0 }, sparkline: [] };
@@ -151,7 +142,10 @@ export default async function VisibilityOverviewPage({
     <VisibilityOverviewClient
       org={org}
       range={range}
-      queryScopeLabel={query.scope && SCOPE_BY_LABEL[query.scope] ? query.scope : "전체"}
+      marketLabel={marketLabel}
+      modelLabel={modelLabel}
+      queryScopeLabel={scopeLabel}
+      serverFiltered={!demo}
       statCards={statCards}
       mentionsByModel={mentionsByModel}
       mentionsByMarket={mentionsByMarket}

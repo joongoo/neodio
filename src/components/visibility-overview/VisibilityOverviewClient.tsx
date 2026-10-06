@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { FilterDropdown } from "@/components/overview/FilterDropdown";
+import { MARKET_FILTER_OPTIONS, MODEL_FILTER_OPTIONS, QUERY_SCOPE_OPTIONS } from "@/lib/filterOptionLabels";
 import type { BrandOptimizationContext } from "@/components/visibility-overview/TopicsTableSection";
 import { StatCard } from "@/components/overview/StatCard";
 import { RangeDropdown } from "@/components/overview/RangeDropdown";
@@ -23,8 +24,6 @@ const MODEL_TABS = [
   { id: "exposure", label: "노출" },
 ];
 
-const MARKET_OPTIONS = ["전체", "KR", "US", "GLOBAL"];
-const MODEL_OPTIONS = ["전체", "ChatGPT", "Gemini", "Claude", "Perplexity", "Naver AI검색", "Naver AI 브리핑", "Google AI 모드"];
 
 function hasMarket(row: VisibilityTableRow): row is Extract<VisibilityTableRow, { market: string }> {
   return "market" in row;
@@ -46,7 +45,10 @@ export function VisibilityOverviewClient({
   topicsByCategory,
   sourceOpportunityDomains,
   brandContext,
-  queryScopeLabel = "전체",
+  marketLabel,
+  modelLabel,
+  queryScopeLabel,
+  serverFiltered,
 }: {
   org: Organization;
   range: DateRange;
@@ -59,11 +61,15 @@ export function VisibilityOverviewClient({
   sourceOpportunityDomains?: string[];
   /** 브랜드 최적화(AI 브랜드 정리)가 쓰는 자사·등록 경쟁사 정보. 브랜드가 없으면 null. */
   brandContext: BrandOptimizationContext | null;
-  /** 질의 유형 필터("전체" | "브랜드 질의" | "일반 질의") — 서버가 이 값으로 다시 계산한다. */
-  queryScopeLabel?: string;
+  /** 상단 필터 값 — 주소(쿼리)에 두고, 실 데이터는 서버가 같은 값으로 다시 계산한다. */
+  marketLabel: string;
+  modelLabel: string;
+  queryScopeLabel: string;
+  /** true면 카드·표가 이미 서버에서 필터링돼 있다. false(샘플 데이터)면 아래에서 표를 직접 거른다. */
+  serverFiltered: boolean;
 }) {
-  const [market, setMarket] = useState("전체");
-  const [model, setModel] = useState("전체");
+  const market = serverFiltered ? "전체" : marketLabel;
+  const model = serverFiltered ? "전체" : modelLabel;
 
   const filteredTopicsByCategory = useMemo(() => {
     const result: Record<string, VisibilityTableRow[]> = {};
@@ -95,9 +101,9 @@ export function VisibilityOverviewClient({
         <div className="mt-3 flex flex-wrap gap-2">
           <RangeDropdown value={range} variant="solid" label="기간" />
           <Dropdown variant="solid" label="" value={org.domain} options={[org.domain]} />
-          <Dropdown variant="solid" label="마켓" value={market} options={MARKET_OPTIONS} onChange={setMarket} />
-          <Dropdown variant="solid" label="모델" value={model} options={MODEL_OPTIONS} onChange={setModel} />
-          <FilterDropdown label="질의" paramKey="scope" value={queryScopeLabel} options={["전체", "브랜드 질의", "일반 질의"]} variant="solid" />
+          <FilterDropdown label="마켓" paramKey="market" value={marketLabel} options={MARKET_FILTER_OPTIONS} variant="solid" />
+          <FilterDropdown label="모델" paramKey="model" value={modelLabel} options={MODEL_FILTER_OPTIONS} variant="solid" />
+          <FilterDropdown label="질의" paramKey="scope" value={queryScopeLabel} options={QUERY_SCOPE_OPTIONS} variant="solid" />
         </div>
       </div>
 
