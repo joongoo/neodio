@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TablePanel } from "@/components/ui/TablePanel";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
@@ -9,47 +9,30 @@ import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { Button } from "@/components/ui/Button";
 import { CollectionRunForm } from "@/components/collection-runs/CollectionRunForm";
-import { BrandSeed } from "@/lib/db";
-import { ProcessedPromptRuns } from "@/lib/backend/processing";
-import { CollectedRunFile, formatKst, isBotBlocked } from "@/lib/backend/collectionRunsTypes";
-import { useRouter } from "next/navigation";
+import { Pagination } from "@/components/ui/Pagination";
+import { formatKst } from "@/lib/backend/collectionRunsTypes";
+import type { CollectedRunDetail } from "@/lib/backend/collectionRuns";
+import { engineLabel, RUN_PAGE_SIZES, type RunListPage, type RunListRow } from "@/lib/collectionRunList";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
 
-const ENGINE_LABEL: Record<string, string> = {
-  "naver-ai-search": "네이버 AI검색",
-  "naver-overview": "네이버 AI 브리핑",
-  "google-ai-overview": "Google AI 모드",
-  "google-aio": "구글AIO",
-};
-
-// API로 수집한 실행(source "api")은 collectedBy(`<provider>-api`)로 어떤 LLM인지 구분한다.
-// 새 LLM을 붙이면(src/lib/backend/llm/registry.ts) 여기 한 줄 추가.
-const API_ENGINE_LABEL: Record<string, string> = {
-  "gemini-api": "Gemini",
-};
-
-function engineLabel({ source, collectedBy }: { source: string; collectedBy?: string }) {
-  if (source === "api") return API_ENGINE_LABEL[collectedBy ?? ""] ?? "API";
-  return ENGINE_LABEL[source] ?? source;
-}
-
-function StatusBadge({ file }: { file: CollectedRunFile }) {
-  if (isBotBlocked(file.promptRun)) {
+function StatusBadge({ file }: { file: RunListRow }) {
+  if (file.state === "blocked") {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">차단됨(캡차)</span>;
   }
-  if (file.promptRun.status === "success") {
+  if (file.state === "success") {
     return <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">성공</span>;
   }
   return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
 }
 
-function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColumn<CollectedRunFile>[] {
+function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
   return [
     {
       key: "runAt",
       label: "수집 시각 (KST)",
       width: "w-[170px]",
-      render: (file) => <span className="text-neutral-700">{formatKst(file.promptRun.runAt)}</span>,
+      render: (file) => <span className="text-neutral-700">{formatKst(file.runAt)}</span>,
     },
     {
       key: "engine",
@@ -57,7 +40,7 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
       width: "w-[150px]",
       render: (file) => (
         <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
-          {engineLabel(file.promptRun.rawMetadata)}
+          {engineLabel(file)}
         </span>
       ),
     },
@@ -65,7 +48,7 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
       key: "query",
       label: "키워드",
       width: "w-[140px]",
-      render: (file) => <span className="font-medium text-neutral-800">{file.promptRun.rawMetadata.query}</span>,
+      render: (file) => <span className="font-medium text-neutral-800">{file.query}</span>,
     },
     {
       key: "status",
@@ -77,22 +60,22 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
       key: "length",
       label: "답변 길이",
       width: "w-[90px]",
-      render: (file) => file.promptRun.rawMetadata.answerTextLength ?? file.promptRun.rawResponse.length,
+      render: (file) => file.answerLength,
     },
     {
       key: "citations",
       label: "인용 수",
       width: "w-[80px]",
-      render: (file) => file.promptRun.rawMetadata.citations?.length ?? 0,
+      render: (file) => file.citationCount,
     },
     {
       key: "category",
       label: "카테고리",
       width: "w-[130px]",
       render: (file) =>
-        file.promptRun.rawMetadata.category ? (
+        file.category ? (
           <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-            {file.promptRun.rawMetadata.category}
+            {file.category}
           </span>
         ) : (
           <span className="text-[11px] text-neutral-400">미분류</span>
@@ -118,21 +101,39 @@ function runColumns(onAnalyze: (file: CollectedRunFile) => void): DataTableColum
   ];
 }
 
-function RunDetail({ file }: { file: CollectedRunFile }) {
-  const { promptRun } = file;
+// 원문·인용은 행을 펼칠 때 처음 불러온다(목록 payload에는 싣지 않는다).
+function RunDetail({ file }: { file: RunListRow }) {
+  const [state, setState] = useState<{ detail?: CollectedRunDetail; error?: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/collection-runs/detail?dir=${encodeURIComponent(file.dir)}&filename=${encodeURIComponent(file.filename)}`)
+      .then(async (res) => (res.ok ? { detail: (await res.json()) as CollectedRunDetail } : { error: (await res.json().catch(() => null))?.error ?? "원문을 불러오지 못했습니다." }))
+      .catch(() => ({ error: "원문을 불러오지 못했습니다." }))
+      .then((result) => {
+        if (!cancelled) setState(result);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file.dir, file.filename]);
+
+  if (!state) return <p className="text-xs text-neutral-400">원문을 불러오는 중…</p>;
+  if (!state.detail) return <p className="text-xs text-red-600">{state.error}</p>;
+  const { detail } = state;
   return (
     <div className="flex flex-col gap-3 text-xs">
       <div>
         <p className="mb-1 font-bold text-neutral-500">저장된 답변 원문 (rawResponse)</p>
         <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md bg-neutral-50 p-3 leading-relaxed text-neutral-700">
-          {promptRun.rawResponse || "(내용 없음)"}
+          {detail.rawResponse || "(내용 없음)"}
         </pre>
       </div>
-      {(promptRun.rawMetadata.citations?.length ?? 0) > 0 && (
+      {detail.citations.length > 0 && (
         <div>
-          <p className="mb-1 font-bold text-neutral-500">인용 소스 ({promptRun.rawMetadata.citations!.length})</p>
+          <p className="mb-1 font-bold text-neutral-500">인용 소스 ({detail.citations.length})</p>
           <div className="flex flex-col gap-1">
-            {promptRun.rawMetadata.citations!.map((c) => (
+            {detail.citations.map((c) => (
               <div key={c.url} className="flex items-center gap-2 truncate text-neutral-600">
                 <span className={`size-2 shrink-0 rounded-full ${c.isOwnDomain ? "bg-emerald-500" : "bg-neutral-300"}`} aria-hidden />
                 <FaviconIcon domain={c.domain} />
@@ -144,44 +145,55 @@ function RunDetail({ file }: { file: CollectedRunFile }) {
         </div>
       )}
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-neutral-400">
-        <span>query URL: {promptRun.rawMetadata.queryUrl}</span>
-        {promptRun.rawMetadata.screenshotPath && <span>screenshot: {promptRun.rawMetadata.screenshotPath}</span>}
+        <span>query URL: {detail.queryUrl}</span>
+        {detail.screenshotPath && <span>screenshot: {detail.screenshotPath}</span>}
       </div>
     </div>
   );
 }
 
 export function CollectionRunsClient({
-  runFiles,
-  processed,
-  brands,
+  listPage,
+  search,
+  stats,
   categories,
 }: {
-  runFiles: CollectedRunFile[];
-  processed: ProcessedPromptRuns;
-  brands: BrandSeed[];
+  listPage: RunListPage;
+  search: string;
+  stats: { total: number; success: number; ownMentions: number; ownCitations: number };
   categories: string[];
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const tenantBase = useTenantBase();
-  const [analyzingFile, setAnalyzingFile] = useState<CollectedRunFile | null>(null);
-  const [search, setSearch] = useState("");
-  const ownBrand = brands.find((b) => b.isOwnBrand);
-  const ownMentions = processed.mentions.filter((m) => m.brandId === ownBrand?.id && m.isPresent);
-  const ownCitations = processed.citations.filter((c) => c.isOwnDomain);
+  const [analyzingFile, setAnalyzingFile] = useState<RunListRow | null>(null);
+  const [searchText, setSearchText] = useState(search);
   const columns = runColumns((file) => setAnalyzingFile(file));
 
-  const filteredRows = runFiles.filter((file) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    const { rawMetadata } = file.promptRun;
-    return (
-      (rawMetadata.query ?? "").toLowerCase().includes(q) ||
-      engineLabel(rawMetadata).toLowerCase().includes(q) ||
-      (rawMetadata.category ?? "").toLowerCase().includes(q) ||
-      (rawMetadata.topic ?? "").toLowerCase().includes(q)
-    );
-  });
+  // 페이지·검색은 주소(쿼리)에 두어 서버가 한 페이지만 보낸다.
+  function navigate(changes: Record<string, string | null>) {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
+    router.push(`${pathname}?${next.toString()}`);
+  }
+
+  // 입력할 때마다 서버를 부르지 않도록 잠깐 멈추면 검색한다.
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (searchText === search) return;
+    const timer = setTimeout(() => navigate({ q: searchText.trim() || null, page: null }), 350);
+    return () => clearTimeout(timer);
+    // navigate는 매 렌더 새로 만들어지지만 입력값이 바뀔 때만 다시 예약하면 된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText]);
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
@@ -196,41 +208,49 @@ export function CollectionRunsClient({
 
       <div className="h-px w-full bg-neutral-200" />
 
-      {runFiles.length === 0 ? (
+      {stats.total === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
           아직 수집된 실행이 없습니다. 위에서 키워드를 입력해 수집을 시작해 보세요.
         </p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <SimpleStatCard label="수집 실행 수" value={runFiles.length} tooltip="지금까지 저장된 수집 실행 수입니다." />
+            <SimpleStatCard label="수집 실행 수" value={stats.total} tooltip="지금까지 저장된 수집 실행 수입니다." />
             <SimpleStatCard
               label="성공한 실행"
-              value={runFiles.filter((f) => f.promptRun.status === "success" && !isBotBlocked(f.promptRun)).length}
+              value={stats.success}
               tooltip="봇 차단 없이 실제 답변 텍스트를 얻은 실행 수입니다."
             />
-            <SimpleStatCard label="브랜드 언급" value={ownMentions.length} tooltip="수집된 답변 중 우리 브랜드가 언급된 횟수입니다." />
-            <SimpleStatCard label="브랜드 인용" value={ownCitations.length} tooltip="수집된 답변이 우리 도메인을 인용한 횟수입니다." />
+            <SimpleStatCard label="브랜드 언급" value={stats.ownMentions} tooltip="수집된 답변 중 우리 브랜드가 언급된 횟수입니다." />
+            <SimpleStatCard label="브랜드 인용" value={stats.ownCitations} tooltip="수집된 답변이 우리 도메인을 인용한 횟수입니다." />
           </div>
 
           <TablePanel
             title="수집 실행 목록"
             description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
-            count={filteredRows.length}
-            total={runFiles.length}
-            searchValue={search}
-            onSearchChange={setSearch}
+            count={listPage.filteredTotal}
+            total={stats.total}
+            searchValue={searchText}
+            onSearchChange={setSearchText}
             searchPlaceholder="키워드/엔진/카테고리 검색"
           >
-            {filteredRows.length === 0 ? (
+            {listPage.filteredTotal === 0 ? (
               <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p>
             ) : (
-              <DataTable
-                columns={columns}
-                rows={filteredRows}
-                getRowId={(file) => `${file.dir}/${file.filename}`}
-                renderExpanded={(file) => <RunDetail file={file} />}
-              />
+              <>
+                <DataTable columns={columns} rows={listPage.rows} getRowId={(file) => file.key} renderExpanded={(file) => <RunDetail file={file} />} />
+                <div className="mt-3">
+                  <Pagination
+                    page={listPage.page}
+                    pageCount={listPage.pageCount}
+                    pageSize={listPage.pageSize}
+                    totalCount={listPage.filteredTotal}
+                    pageSizeOptions={RUN_PAGE_SIZES}
+                    onPageChange={(page) => navigate({ page: page === 1 ? null : String(page) })}
+                    onPageSizeChange={(size) => navigate({ size: String(size), page: null })}
+                  />
+                </div>
+              </>
             )}
           </TablePanel>
 
@@ -267,7 +287,7 @@ function CategorizeRunModal({
   onClose,
   onSaved,
 }: {
-  file: CollectedRunFile | null;
+  file: RunListRow | null;
   categories: string[];
   onClose: () => void;
   onSaved: () => void;
@@ -279,8 +299,8 @@ function CategorizeRunModal({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 선택한 수집 파일이 바뀌면 폼 초기화
-    setCategory(file?.promptRun.rawMetadata.category ?? "");
-    setTopic(file?.promptRun.rawMetadata.topic ?? "");
+    setCategory(file?.category ?? "");
+    setTopic(file?.topic ?? "");
     setError(null);
   }, [file]);
 
@@ -319,7 +339,7 @@ function CategorizeRunModal({
         <ModalCloseButton onClose={close} />
       </div>
       <p className="mt-1 text-sm text-neutral-500">
-        키워드 &quot;{file?.promptRun.rawMetadata.query}&quot;로 수집된 실행을 카테고리에 태그합니다.
+        키워드 &quot;{file?.query}&quot;로 수집된 실행을 카테고리에 태그합니다.
       </p>
       <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
