@@ -5,8 +5,8 @@
 
 ## 확정된 결정 (2026-10)
 
-- 회원가입 + **이메일 인증** + 권한 할당이 필요하다.
-- 인증은 **Auth.js(NextAuth v5) + 자체 DB 테이블**. 조직·브랜드 구조가 이미 직접 만든 스키마라 호스팅형 인증의 조직 기능과 겹치지 않게 한다.
+- 회원가입 + **권한 할당**이 필요하다. **이메일 인증은 하지 않는다**(2026-10 결정, 우선 권한 할당만). 가입한 사람은 권한이 없는 "대기" 상태이고, 오너 또는 네오다임 직원이 역할·브랜드를 할당해야 화면에 접근한다 — 권한 할당이 승인 단계를 대신한다.
+- 인증은 **이메일 + 비밀번호, 자체 세션**(비밀번호는 scrypt 해시, 세션 토큰은 해시로 DB 저장, httpOnly 쿠키). 외부 인증 라이브러리·메일 발송 서비스가 필요 없다. 소셜 로그인·이메일 인증이 필요해지면 그때 Auth.js를 붙인다.
 - 역할은 다음 넷이다. 표기는 영문 코드를 쓴다.
 
 | 역할 | 표기 | 범위 | 할 수 있는 일 |
@@ -30,13 +30,14 @@
 ## 스키마 초안
 
 ```sql
-users (id, email UNIQUE, name, email_verified_at, password_hash NULL,
+users (id, email UNIQUE, name, password_hash, must_change_password BOOLEAN DEFAULT false,
+       email_verified_at NULL,                           -- 지금은 사용하지 않는다(후속 단계)
        platform_role TEXT NOT NULL DEFAULT 'none',      -- 'none' | 'staff'
        status TEXT NOT NULL DEFAULT 'active',            -- active | disabled
        created_at, last_login_at, deleted_at)
 accounts (user_id, provider, provider_account_id, ...)   -- Google 등 OAuth 연결
 sessions (id, user_id, expires_at)
-verification_tokens (identifier, token_hash, expires_at, purpose)  -- 이메일 인증·로그인 링크
+-- verification_tokens: 이메일 인증·재설정을 붙일 때 추가 (지금은 만들지 않는다)
 
 memberships (user_id, organization_id,
              role TEXT NOT NULL CHECK(role IN ('admin','viewer')),
@@ -46,8 +47,7 @@ organizations ADD COLUMN owner_user_id TEXT REFERENCES users(id)   -- 오너(adm
 membership_brands (user_id, organization_id, brand_id, granted_by, granted_at,
                    PRIMARY KEY(user_id, organization_id, brand_id))
                    -- admin·viewer는 여기 있는 브랜드만 접근. 오너는 항상 전체.
-invitations (id, organization_id, email, role, brand_ids_json, token_hash,
-             expires_at, accepted_at, invited_by)
+-- invitations: 메일로 초대하는 흐름을 붙일 때 추가 (지금은 오너가 계정을 직접 발급한다)
 
 audit_log (id, organization_id, actor_user_id, action,   -- 로그인, 초대, 역할·브랜드 권한 변경, 연동 변경, 삭제 …
            target_type, target_id, before_json, after_json, ip, at)
@@ -61,15 +61,16 @@ ALTER TABLE actors ADD COLUMN user_id TEXT REFERENCES users(id);   -- created_by
 - 회원 탈퇴는 소프트 삭제 + 익명화(`deleted_at`, 표시 이름 제거)이고 `actors`·감사 로그는 남긴다. 오너는 이전 후에만 탈퇴할 수 있다.
 - 설정 변경 이력(`change_log`)의 `actor_id`는 `actors.user_id`로 사용자와 이어진다.
 
-## 이메일 인증
+## 가입과 계정 발급 (이메일 인증 없음)
 
-- 가입: 이메일 + (비밀번호 또는 매직 링크) → 인증 메일 발송 → 링크 클릭으로 `email_verified_at` 기록. **인증 전에는 조직 화면에 접근할 수 없다.**
-- 초대: 오너가 이메일·역할·브랜드를 지정해 초대 → 초대 메일의 링크로 가입하면 그 이메일은 인증된 것으로 본다. 초대 링크는 만료·1회용.
-- 메일 발송 서비스(Resend 또는 SMTP)가 필요하다. 개발 환경에서는 발송 대신 서버 로그에 링크를 출력한다. 서비스 키는 `scripts/secret.sh`로 키체인에 넣는다(채팅에 붙이지 않는다).
+- **자가 가입**: 이메일 + 비밀번호 → 계정 생성(대기). 소속 조직이 없으면 "권한 할당을 기다리는 중" 화면만 보인다.
+- **오너가 직접 계정 발급**: 조직 관리에서 이메일·역할·브랜드를 지정해 만들면 임시 비밀번호를 한 번 보여 주고(메일 발송 없음), 첫 로그인 때 비밀번호를 바꾸게 한다.
+- 이메일 소유 확인이 없어서 오타·도용 주소로 가입할 수 있다. 접근은 오너가 할당해야 열리므로 위험은 제한되지만, 비밀번호 재설정(이메일)은 불가능하다 — 분실 시 오너·직원이 임시 비밀번호를 다시 발급한다.
+- 이메일 인증·재설정 메일은 메일 발송 서비스를 붙이는 후속 단계에서 추가한다.
 
 ## 단계
 
-1. 로그인·이메일 인증 + 소속 조직만 접근 (스키마, Auth.js, 프록시 게이트)
-2. 조직 관리 화면: 초대, 역할 변경, 브랜드 접근 권한 부여(오너 전용)
+1. 가입·로그인·로그아웃, 대기 화면, 소속 조직·브랜드만 접근 (스키마, 세션, 프록시·테넌트 게이트)
+2. 조직 관리 화면: 계정 발급, 역할 변경, 브랜드 접근 권한 부여(오너 전용)
 3. 모든 API·화면 권한 점검 (조직·역할·브랜드 기준 전체 재검증)
-4. 소셜 로그인 추가, 2단계 인증
+4. 이메일 인증·비밀번호 재설정(메일 발송 서비스), 소셜 로그인, 2단계 인증
