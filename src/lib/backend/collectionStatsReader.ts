@@ -1,7 +1,8 @@
 import { cache } from "react";
-import { listCollectedRuns } from "./collectionRuns";
+import { listCollectedRuns as listCollectedRunsUncached } from "./collectionRuns";
 import { getRunOutcome } from "./collectionRunsTypes";
-import { processStoredPromptRuns as processPromptRuns } from "./database/analysis";
+import { processStoredPromptRuns as processPromptRunsUncached } from "./database/analysis";
+import type { ProcessedPromptRuns } from "./processing";
 import { formatWeekLabel, toUtcSundayWeekStart } from "./processing/date";
 import { brandPatterns, classifySentiment, sentimentEvidence } from "./processing/text";
 import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from "@/lib/placement";
@@ -12,7 +13,7 @@ import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLower
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
 import { getPromptTopicGroups } from "./promptTopics";
 import { seedLlmModels, seedMarkets } from "@/lib/db/data/seed";
-import { getRealBrandSeeds } from "./brandSeeds";
+import { getRealBrandSeeds as getRealBrandSeedsUncached } from "./brandSeeds";
 import { getCurrentTenant } from "./tenant";
 import {
   BrandRankRow,
@@ -29,6 +30,8 @@ import {
   MarketComparisonRow,
   OwnCitedUrlRow,
   PromptMetricsPoint,
+  BrandSeed,
+  MentionSeed,
   PromptRunSeed,
   RankedRow,
   Sentiment,
@@ -216,6 +219,42 @@ export interface RealDataFilters {
   queryScope?: QueryScope;
 }
 
+// ---- 요청 단위 공유 ----
+// 이 파일의 통계 함수들은 한 화면에서 십수 개가 동시에 불린다(브랜드 프레즌스만 12개). 각자 전체 실행을
+// 읽고(DB 왕복 + 수백 KB), 브랜드를 만들고, 답변 전체를 분석(해시 계산 + 캐시 조회)하면 같은 일을
+// 요청 하나에서 십수 번 반복한다. React의 요청 단위 cache로 한 번만 하고 나눠 쓴다. (요청 밖 — 스크립트나
+// 테스트 — 에서는 cache가 메모하지 않아 예전처럼 매번 계산한다.)
+const listCollectedRuns = cache(async (orgId: string) => listCollectedRunsUncached(orgId));
+const getRealBrandSeeds = cache(async (orgId: string, ownBrandId: string) => getRealBrandSeedsUncached(orgId, ownBrandId));
+
+// 성공한 모든 실행의 언급·인용 분석 — 요청당 한 번. 실행별 분석은 서로 독립이라 일부 실행만 분석한 결과는
+// 이 전체 결과를 실행 id로 거른 것과 같다.
+const analyzeAllRuns = cache(async (orgId: string, ownBrandId: string) => {
+  const brands = await getRealBrandSeeds(orgId, ownBrandId);
+  const promptRuns = (await listCollectedRuns(orgId)).map((f) => f.promptRun);
+  return processPromptRunsUncached({ organizationId: orgId, ownBrandId, promptRuns, brands });
+});
+
+async function processPromptRuns(params: {
+  organizationId: string;
+  ownBrandId: string;
+  promptRuns: PromptRunSeed[];
+  brands: BrandSeed[];
+}): Promise<ProcessedPromptRuns> {
+  // 이 요청에서 공유 중인 브랜드 목록과 같은 목록일 때만 공유 분석을 쓴다(다르면 직접 분석).
+  const shared = await getRealBrandSeeds(params.organizationId, params.ownBrandId);
+  if (params.brands !== shared) return processPromptRunsUncached(params);
+  const all = await analyzeAllRuns(params.organizationId, params.ownBrandId);
+  const ids = new Set(params.promptRuns.filter((run) => run.status === "success").map((run) => run.id));
+  return {
+    promptRuns: params.promptRuns,
+    mentions: all.mentions.filter((m) => ids.has(m.promptRunId)),
+    citations: all.citations.filter((c) => ids.has(c.promptRunId)),
+    // 점수는 호출한 쪽에서 필요할 때 buildVisibilityScores로 직접 만든다.
+    visibilityScores: [],
+  };
+}
+
 // 같은 주·프롬프트·엔진·마켓의 반복 실행을 관측 1건으로 합치는 가중치(전체 기간 집계용).
 function weightsForRuns(runs: PromptRunSeed[]) {
   return observationWeights(
@@ -236,7 +275,19 @@ function ownBrandKeywords(brands: { isOwnBrand: boolean; name: string; domain: s
 // (stat cards, sentiment, market comparison) with the same range+filters —
 // without this they'd each independently re-fetch and re-analyze every
 // collected run.
-const getProcessedWithWeeks = cache(async (range: DateRange, filters: RealDataFilters = {}) => {
+// React cache는 인자를 참조(Object.is)로 비교한다 — 필터 객체를 그대로 받으면 호출마다 새 `{}`가
+// 만들어져 캐시가 매번 빗나간다(브랜드 프레즌스의 5개 호출이 그랬다). 값(원시 인자)으로 풀어서 키를 맞춘다.
+function getProcessedWithWeeks(range: DateRange, filters: RealDataFilters = {}) {
+  return computeProcessedWithWeeks(range, filters.llmModelId ?? "", filters.category ?? "", filters.marketId ?? "", filters.queryScope ?? "");
+}
+
+const computeProcessedWithWeeks = cache(async (range: DateRange, llmModelId: string, category: string, marketId: string, queryScope: string) => {
+  const filters: RealDataFilters = {
+    ...(llmModelId ? { llmModelId } : {}),
+    ...(category ? { category } : {}),
+    ...(marketId ? { marketId } : {}),
+    ...(queryScope ? { queryScope: queryScope as QueryScope } : {}),
+  };
   const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
   const runFiles = await listCollectedRuns(ORG_ID);
   if (runFiles.length === 0) return null;
@@ -1023,6 +1074,30 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
 
   const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
+  return buildShareOfVoice(promptRuns, processed.mentions, brands, OWN_BRAND_ID);
+}
+
+// 엔진(모델) 이름별 쉐어 오브 보이스 — 전체 1번 분석한 결과를 엔진별로 나눠 계산한다(엔진마다 다시 읽고
+// 분석하지 않는다). 수집 데이터가 있는 엔진만 키가 있다.
+export async function getRealShareOfVoiceByModel(): Promise<Record<string, ShareOfVoiceRow[]>> {
+  const { orgId: ORG_ID, ownBrandId: OWN_BRAND_ID } = await currentScope();
+  const promptRuns = (await listCollectedRuns(ORG_ID)).map((f) => f.promptRun).filter((run) => run.status === "success");
+  if (promptRuns.length === 0) return {};
+  const brands = await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID);
+  const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands });
+
+  const result: Record<string, ShareOfVoiceRow[]> = {};
+  for (const model of seedLlmModels) {
+    const runs = promptRuns.filter((run) => run.llmModelId === model.id);
+    if (runs.length === 0) continue;
+    const ids = new Set(runs.map((run) => run.id));
+    const rows = buildShareOfVoice(runs, processed.mentions.filter((m) => ids.has(m.promptRunId)), brands, OWN_BRAND_ID);
+    if (rows) result[model.name] = rows;
+  }
+  return result;
+}
+
+function buildShareOfVoice(promptRuns: PromptRunSeed[], mentions: MentionSeed[], brands: BrandSeed[], OWN_BRAND_ID: string): ShareOfVoiceRow[] | null {
   const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
   const ownBrandName = brandNameById.get(OWN_BRAND_ID);
 
@@ -1033,7 +1108,7 @@ export async function getRealShareOfVoice(filters: RealDataFilters = {}): Promis
   }
 
   const byTopic = new Map<string, Map<string, number>>();
-  for (const mention of processed.mentions) {
+  for (const mention of mentions) {
     if (!mention.isPresent) continue;
     const topic = queryOfRun.get(mention.promptRunId);
     if (!topic) continue;

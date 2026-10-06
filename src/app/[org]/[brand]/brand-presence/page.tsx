@@ -12,12 +12,12 @@ import {
   getRealSentimentMovers,
   getRealSentimentSeries,
   getRealShareOfVoice,
+  getRealShareOfVoiceByModel,
   getRealStatSeries,
 } from "@/lib/backend/collectionStatsReader";
 import { isDemoMode } from "@/lib/backend/demoMode";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { EMPTY_BRAND_PRESENCE } from "@/lib/db/data/emptyOrg";
-import { seedLlmModels } from "@/lib/db/data/seed";
 
 const RANGE = "4w" as const;
 
@@ -50,14 +50,9 @@ export default async function BrandPresencePage() {
         getRealConsistency(),
       ]);
 
-  // 상단 "모델" 필터가 Share of Voice에도 걸리도록 모델별로 따로 계산해 둔다(수집 데이터가 있는 모델만).
-  const shareOfVoiceByModel = demo
-    ? undefined
-    : Object.fromEntries(
-        (await Promise.all(seedLlmModels.map(async (m) => [m.name, await getRealShareOfVoice({ llmModelId: m.id })] as const))).filter(
-          (entry): entry is readonly [string, NonNullable<(typeof entry)[1]>] => entry[1] !== null
-        )
-      );
+  // 상단 "모델" 필터가 Share of Voice에도 걸리도록 모델별로 계산해 둔다(수집 데이터가 있는 모델만) —
+  // 한 번 분석한 결과를 엔진별로 나누므로 엔진 수만큼 다시 읽지 않는다.
+  const shareOfVoiceByModel = demo ? undefined : await getRealShareOfVoiceByModel();
 
   // 개요/가시성 개요와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
   // 개선/하락 상위 항목(감성 무버)은 같은 (키워드, 모델) 조합을 최소 2개
