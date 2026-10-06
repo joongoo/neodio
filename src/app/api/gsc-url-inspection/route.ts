@@ -5,8 +5,9 @@ import { setCachedUrlIndexStatus } from "@/lib/backend/gscUrlInspectionStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { guardApi } from "@/lib/backend/auth/guard";
 
+// 조회·갱신 요청이라 읽기 권한으로 충분하다(viewer도 화면의 배지·차트를 볼 수 있어야 한다).
 export async function POST(request: NextRequest) {
-  const denied = await guardApi("write");
+  const denied = await guardApi("read");
   if (denied) return denied;
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
