@@ -199,6 +199,8 @@ function detectCompanyCandidates(text: string, knownBrandNames: Set<string>, cit
 }
 
 export interface RealDataFilters {
+  /** 기간 — 필터를 통과한 실행이 있는 주 중 최근 N주만 본다(카드와 같은 기준). 없으면 전체 기간. */
+  range?: DateRange;
   /** Overview's "플랫폼" 필터 — PromptRunSeed.llmModelId matches the seed
    *  LLM model list 1:1, so it's safe to apply directly to real runs. */
   llmModelId?: string;
@@ -260,6 +262,13 @@ async function queryScopeFilter(orgId: string, ownBrandId: string, scope?: Query
   if (!scope) return () => true;
   const keywords = ownBrandKeywords(await getRealBrandSeeds(orgId, ownBrandId));
   return (run) => queryScopeOf(run.rawMetadata.query, keywords) === scope;
+}
+
+// 기간 필터 — 실행이 있는 주(일요일 시작) 중 최근 N주의 주 목록. range가 없으면 null(전체 기간).
+function recentWeekSet(runs: PromptRunSeed[], range?: DateRange): Set<string> | null {
+  if (!range) return null;
+  const weeks = [...new Set(runs.map((run) => toUtcSundayWeekStart(run.runAt)))].sort();
+  return new Set(weeks.slice(-RANGE_WEEKS[range]));
 }
 
 // 엔진·마켓·카테고리·질의 유형 필터를 한 번에 — 범위를 지정하지 않으면 모두 통과.
@@ -695,7 +704,10 @@ export async function getRealTopicRows(
   const inScope = (run: PromptRunSeed) => !filters.queryScope || queryScopeOf(run.rawMetadata.query, topicBrandKeywords) === filters.queryScope;
   const scopedRuns = promptRuns.filter(inScope);
   if (scopedRuns.length === 0) return null;
-  promptRuns.splice(0, promptRuns.length, ...scopedRuns);
+  // 기간 필터 — 최근 N주에 실행된 것만.
+  const topicWeeks = recentWeekSet(scopedRuns, filters.range);
+  const windowedRuns = topicWeeks ? scopedRuns.filter((run) => topicWeeks.has(toUtcSundayWeekStart(run.runAt))) : scopedRuns;
+  promptRuns.splice(0, promptRuns.length, ...windowedRuns);
 
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: topicBrands });
   const runsById = new Map(promptRuns.map((run) => [run.id, run]));
@@ -740,6 +752,7 @@ export async function getRealTopicRows(
     if (filters.category && run.rawMetadata.category !== filters.category) continue;
     if (filters.marketId && run.marketId !== filters.marketId) continue;
     if (!inScope(run)) continue;
+    if (topicWeeks && !topicWeeks.has(toUtcSundayWeekStart(run.runAt))) continue;
     const query = run.rawMetadata.query?.trim();
     if (!query) continue;
     const list = allRunsByQuery.get(query) ?? [];
@@ -1742,13 +1755,15 @@ export async function getRealCitedPages(filters: RealDataFilters = {}): Promise<
   if (runFiles.length === 0) return null;
 
   const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, filters.queryScope);
-  const promptRuns = runFiles
+  const scopedRuns = runFiles
     .map((f) => f.promptRun)
     .filter((run) => run.status === "success")
     .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
     .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
     .filter((run) => !filters.marketId || run.marketId === filters.marketId)
     .filter(inQueryScope);
+  const citedWeeks = recentWeekSet(scopedRuns, filters.range);
+  const promptRuns = citedWeeks ? scopedRuns.filter((run) => citedWeeks.has(toUtcSundayWeekStart(run.runAt))) : scopedRuns;
   if (promptRuns.length === 0) return null;
 
   const processed = await processPromptRuns({ organizationId: ORG_ID, ownBrandId: OWN_BRAND_ID, promptRuns, brands: await getRealBrandSeeds(ORG_ID, OWN_BRAND_ID) });
@@ -1798,13 +1813,15 @@ export async function getRealCitedSources(
   const runFiles = await listCollectedRuns(ORG_ID);
 
   const inQueryScope = await queryScopeFilter(ORG_ID, OWN_BRAND_ID, filters.queryScope);
-  const promptRuns = runFiles
+  const scopedRuns = runFiles
     .map((f) => f.promptRun)
     .filter((run) => run.status === "success")
     .filter((run) => !filters.llmModelId || run.llmModelId === filters.llmModelId)
     .filter((run) => !filters.category || run.rawMetadata.category === filters.category)
     .filter((run) => !filters.marketId || run.marketId === filters.marketId)
     .filter(inQueryScope);
+  const citedWeeks = recentWeekSet(scopedRuns, filters.range);
+  const promptRuns = citedWeeks ? scopedRuns.filter((run) => citedWeeks.has(toUtcSundayWeekStart(run.runAt))) : scopedRuns;
 
   const processed =
     promptRuns.length > 0

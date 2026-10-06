@@ -67,11 +67,11 @@ export default async function VisibilityOverviewPage({
         getRealStatSeries(range, filters),
         getRealMentionsByModel(range, filters),
         getRealMentionsByMarket(range, filters),
-        getRealTopicRows(filters, { libraryPrompts, targetUrls }),
+        getRealTopicRows({ ...filters, range }, { libraryPrompts, targetUrls }),
         getRealTopBrands({ range, includeOwn: true, ...filters }),
-        getRealCitedPages(filters),
-        getRealCitedSources(filters, { trackedDomains }),
-        getRealSourceOpportunities(filters, { trackedDomains }),
+        getRealCitedPages({ ...filters, range }),
+        getRealCitedSources({ ...filters, range }, { trackedDomains }),
+        getRealSourceOpportunities({ ...filters, range }, { trackedDomains }),
       ]);
 
   // 개요 페이지와 동일한 "실 데이터가 있으면 mock을 이긴다" 패턴.
