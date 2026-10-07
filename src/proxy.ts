@@ -34,7 +34,8 @@ function authorized(request: NextRequest): boolean {
 // 같은 이름의 헤더를 보내도 항상 지우고 다시 쓴다. 나중에 사용자 권한이 생기면
 // "이 사용자가 이 조직을 볼 수 있는가"도 이 자리에서 막으면 된다.
 // 로그인 체계(AUTH_ENABLED=true)에서 로그인 없이 볼 수 있는 경로
-const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/signup"];
+// 소개·개인정보처리방침·서비스 약관은 Google OAuth 동의 화면에 등록하는 공개 주소라 로그인 없이 열려야 한다.
+const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/signup", "/about", "/privacy", "/terms"];
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.includes(pathname);
 
 export default function proxy(request: NextRequest) {

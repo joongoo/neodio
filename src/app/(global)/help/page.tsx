@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Compass } from "lucide-react";
 import { db } from "@/lib/db";
+import { PUBLIC_PAGES } from "@/lib/legal";
 
 export default async function HelpPage() {
   const [articles, roadmap] = await Promise.all([db.help.articles(), db.help.roadmap()]);
@@ -27,6 +28,18 @@ export default async function HelpPage() {
               <span className="flex items-center gap-1 text-[11px] font-bold text-slate-600">
                 자세히 보기 <ArrowRight size={12} />
               </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-base font-bold text-neutral-900">소개 · 약관 · 개인정보</h2>
+        <p className="text-xs text-neutral-500">로그인 없이 볼 수 있는 공개 페이지입니다. Google 연동 동의 화면에도 이 주소가 쓰입니다.</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {PUBLIC_PAGES.map((p) => (
+            <Link key={p.href} href={p.href} className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-4 text-sm font-bold text-neutral-900 transition-colors hover:border-neutral-300 hover:bg-neutral-50">
+              {p.label} <ArrowRight size={14} className="text-neutral-400" />
             </Link>
           ))}
         </div>

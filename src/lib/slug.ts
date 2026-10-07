@@ -13,6 +13,9 @@ export const RESERVED_ORG_SLUGS = new Set([
   "signup",
   "pending",
   "account",
+  "about",
+  "privacy",
+  "terms",
   "_next",
   "favicon.ico",
   // 조직·브랜드가 URL에 들어가기 전의 화면 주소 — 예전 링크를 새 주소로 보내는 데 쓴다.
