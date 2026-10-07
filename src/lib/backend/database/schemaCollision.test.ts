@@ -3,7 +3,8 @@ import test from "node:test";
 import { Pool } from "pg";
 import { getPromptStore } from "./index";
 import { schema } from "./schema";
-import { createUser, verifyLogin } from "../auth/authStore";
+import { audit, createUser, verifyLogin } from "../auth/authStore";
+import { getUserDetail } from "../auth/userAdminStore";
 
 // 운영 DB는 다른 앱과 공유돼 users·sessions 같은 이름이 이미 다른 구조로 쓰이고 있다. 새 테이블이 그 이름과 겹치면
 // 스키마 초기화 전체가 롤백돼 모든 화면이 오류가 나므로, 낯선 구조의 테이블이 먼저 있어도 초기화와 로그인 기능이 동작해야 한다.
@@ -55,4 +56,19 @@ test("옛 email 컬럼 테이블은 스키마 초기화 때 login_id로 바뀌�
   assert.equal(cols.some((c) => c.column_name === "email"), false);
   assert.equal((await verifyLogin(id, "legacy-password-1"))?.loginId, id);
   await store.query("DELETE FROM neodio_users WHERE lower(login_id)=$1", [id]);
+});
+
+// 로그인·로그아웃 기록은 유저 상세의 "최근 접속"에 최신순으로 보인다.
+test("접속 기록: 로그인·로그아웃이 최신순으로 유저 상세에 나온다", async () => {
+  const store = await getPromptStore();
+  const id = `access-${Date.now()}`;
+  const user = await createUser({ loginId: id, name: "접속 확인", password: "access-password-1" });
+  await audit(null, user.id, "auth.login", user.id, { userAgent: "TestBrowser/1.0" });
+  await new Promise((r) => setTimeout(r, 5)); // 같은 밀리초면 순서를 가릴 수 없다
+  await audit(null, user.id, "auth.logout", user.id);
+  const detail = await getUserDetail({ userId: "staff-x", platformRole: "staff", memberships: [] }, user.id);
+  assert.deepEqual(detail?.access.map((a) => a.action), ["logout", "login"]);
+  assert.equal(detail?.access[1].userAgent, "TestBrowser/1.0");
+  await store.query("DELETE FROM neodio_audit_log WHERE target_id=$1", [user.id]);
+  await store.query("DELETE FROM neodio_users WHERE id=$1", [user.id]);
 });

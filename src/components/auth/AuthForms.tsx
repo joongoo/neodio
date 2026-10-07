@@ -41,7 +41,7 @@ async function post(url: string, body: unknown): Promise<{ ok: boolean; data: Re
   return { ok: res.ok, data: (await res.json().catch(() => ({}))) as Record<string, unknown> };
 }
 
-export function LoginForm() {
+export function LoginForm({ signupEnabled = true }: { signupEnabled?: boolean }) {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
   const [loginId, setLoginId] = useState("");
@@ -76,9 +76,9 @@ export function LoginForm() {
           {busy ? "로그인 중..." : "로그인"}
         </Button>
       </form>
-      <p className="mt-4 text-center text-xs text-neutral-500">
+      {signupEnabled && <p className="mt-4 text-center text-xs text-neutral-500">
         계정이 없나요? <Link href="/signup" className="font-medium text-slate-800 underline">가입하기</Link>
-      </p>
+      </p>}
       <p className="mt-2 text-center text-[11px] text-neutral-400">비밀번호를 잊었다면 조직 오너에게 임시 비밀번호를 요청하세요.</p>
     </Panel>
   );

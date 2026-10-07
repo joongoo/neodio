@@ -96,6 +96,8 @@ export async function createSession(userId: string, userAgent?: string): Promise
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
   await store.query("INSERT INTO neodio_sessions(token_hash,user_id,created_at,expires_at,user_agent) VALUES ($1,$2,$3,$4,$5)", [
     hashToken(token), userId, now(), expiresAt.toISOString(), userAgent?.slice(0, 200) ?? null]);
+  // 로그아웃 없이 닫힌 세션은 만료돼도 남는다 — 로그인할 때 가끔 만료분을 지워 테이블이 불어나지 않게 한다.
+  if (Math.random() < 0.05) await store.query("DELETE FROM neodio_sessions WHERE expires_at < $1", [now()]);
   return { token, expiresAt };
 }
 

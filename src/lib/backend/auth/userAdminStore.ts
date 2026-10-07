@@ -41,6 +41,8 @@ export interface UserDetail extends UserRow {
   orgs: OrgChoice[];
   /** 이 유저에 대한 변경 이력(최신순) — 직원은 전체, 오너·admin은 내가 볼 수 있는 조직의 것만. */
   history: ChangeEntry[];
+  /** 최근 로그인·로그아웃 기록(최신순) — 누가 언제 어떤 기기로 들어왔는지. */
+  access: { at: string; action: "login" | "logout"; userAgent: string | null }[];
   /** 이 유저에 대해 내가 할 수 있는 일 — 화면이 버튼을 보이고 숨기는 데 쓴다(서버가 다시 검사한다). */
   can: { editProfile: boolean; assignOrg: boolean; changeRole: Record<string, boolean>; assignBrands: Record<string, boolean>; reissue: Record<string, boolean> };
 }
@@ -84,6 +86,22 @@ export async function listUsers(actor: Principal): Promise<UserRow[]> {
   return (await loadUsers(actor)).map((entry) => entry.row);
 }
 
+async function recentAccess(userId: string): Promise<UserDetail["access"]> {
+  const rows = await (await getPromptStore()).query<{ at: string; action: string; detail_json: string | { userAgent?: string } | null }>(
+    "SELECT at,action,detail_json FROM neodio_audit_log WHERE target_id=$1 AND action IN ('auth.login','auth.logout') ORDER BY at DESC LIMIT 10", [userId]);
+  return rows.map((r) => {
+    let userAgent: string | null = null;
+    try {
+      // 컬럼이 JSON이면 드라이버가 이미 객체로 돌려준다.
+      const detail = typeof r.detail_json === "string" ? (JSON.parse(r.detail_json) as { userAgent?: string }) : r.detail_json;
+      userAgent = detail?.userAgent ?? null;
+    } catch {
+      // 깨진 상세는 무시한다
+    }
+    return { at: r.at, action: r.action === "auth.login" ? "login" : "logout", userAgent };
+  });
+}
+
 export async function getUserDetail(actor: Principal, userId: string): Promise<UserDetail | null> {
   const [entry] = await loadUsers(actor, userId);
   if (!entry) return null;
@@ -100,6 +118,7 @@ export async function getUserDetail(actor: Principal, userId: string): Promise<U
   return {
     ...entry.row,
     history: await store.listUserChanges(userId, visible, 50),
+    access: await recentAccess(userId),
     orgs: choices,
     can: {
       editProfile: canEditUserProfile(actor, entry.full),

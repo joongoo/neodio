@@ -33,7 +33,7 @@ docs/production-readiness-checklist.md의 체크리스트를 하나씩 코드에
       실수로 우선하지 않는가.
 
 ### B. 보안 / 접근 제어
-- [ ] 프로덕션 URL에 인증(비밀번호, SSO, IP 제한 중 하나)이 있는가 — 없으면
+- [x] 프로덕션 URL에 인증(비밀번호, SSO, IP 제한 중 하나)이 있는가 — 2026-10 자체 로그인(`AUTH_ENABLED=true`)으로 대체, 공유 비밀번호는 운영에서 제거 — 없으면
       URL 아는 누구나 데이터를 보고 고칠 수 있음.
 - [ ] API 라우트(`src/app/api/**/route.ts`)가 인증 없이 쓰기 작업을 허용하지
       않는가.

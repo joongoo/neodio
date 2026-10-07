@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSession, normalizeLoginId, principalFor, verifyLogin } from "@/lib/backend/auth/authStore";
+import { audit, createSession, normalizeLoginId, principalFor, verifyLogin } from "@/lib/backend/auth/authStore";
 import { setSessionCookie } from "@/lib/backend/auth/session";
 import { checkAllowed, clearFailures, registerFailure } from "@/lib/backend/auth/throttleStore";
 import { isPending } from "@/lib/auth/permissions";
@@ -23,7 +23,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "아이디 또는 비밀번호가 맞지 않아요." }, { status: 401 });
   }
   await clearFailures(idKey);
-  const session = await createSession(user.id, request.headers.get("user-agent") ?? undefined);
+  const userAgent = request.headers.get("user-agent") ?? undefined;
+  const session = await createSession(user.id, userAgent);
+  await audit(null, user.id, "auth.login", user.id, { userAgent: userAgent?.slice(0, 200) });
   const response = NextResponse.json({ ok: true, mustChangePassword: user.mustChangePassword, pending: isPending(await principalFor(user)) });
   setSessionCookie(response, session.token, session.expiresAt);
   return response;

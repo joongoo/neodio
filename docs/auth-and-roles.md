@@ -89,7 +89,13 @@ ALTER TABLE actors ADD COLUMN user_id TEXT REFERENCES users(id);   -- created_by
    (비밀번호는 실행 중 숨겨서 입력). 조직 오너: `... --org <조직 slug> --owner`.
 2. 환경변수 `AUTH_ENABLED=true`를 설정하고 다시 배포한다. 켜면 로그인 없이는 아무 화면·API도 열리지 않는다.
 3. 직원 계정으로 로그인해 조직 관리에서 오너·구성원을 할당한다.
-4. 안정되면 공유 비밀번호(`SITE_PASSWORD`)를 제거한다(켜 둬도 동작은 하지만 브라우저가 이중으로 묻는다).
+4. 안정되면 공유 비밀번호(`SITE_PASSWORD`)를 제거한다(켜 둬도 동작은 하지만 브라우저가 이중으로 묻는다). 운영은 2026-10-07에 1~4를 모두 마쳤다(Preview 환경에는 `SITE_PASSWORD`가 남아 있다).
+
+운영 스위치:
+
+- `SIGNUP_ENABLED=false` — 자가 가입을 닫는다(기본은 열림). 닫으면 `/signup`은 안내만 보이고 가입 API는 403이며, 계정은 조직 관리·유저 관리의 계정 발급으로만 만든다.
+- 로그인·로그아웃은 `neodio_audit_log`(`auth.login`·`auth.logout`, 접속 기기 정보 포함)에 남고 유저 상세의 "최근 접속"에 보인다. 만료된 세션은 로그인할 때 가끔 정리한다.
+- "관리자 승인 대기"(`/pending`)는 소속 조직이 없거나, 조직은 있어도 볼 수 있는 브랜드가 하나도 없는 사람(오너·직원 제외)이 본다.
 
 API 권한 수준(`src/lib/backend/auth/guard.ts`): `read`(구성원이 이 조직·브랜드를 볼 수 있음), `write`(브랜드 편집 — admin은 지정 브랜드만),
 `manageOrg`(오너·직원), `staff`(직원만: 조직 생성·삭제). 조직 이름·slug 변경은 오너, 브랜드 생성·삭제는 오너, 브랜드 설정 편집은 지정받은 admin도 가능하다.

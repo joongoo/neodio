@@ -237,6 +237,24 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
         )}
       </Card>
 
+      <Card className="flex flex-col">
+        <h2 className="text-base font-bold text-neutral-900">최근 접속</h2>
+        <p className="mt-0.5 text-xs text-neutral-500">최근 로그인·로그아웃 10건이에요. 모르는 기기가 보이면 비밀번호 재발급을 고려하세요.</p>
+        {user.access.length === 0 ? (
+          <p className="mt-3 text-xs text-neutral-400">아직 기록된 접속이 없어요.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-neutral-100">
+            {user.access.map((a, i) => (
+              <li key={`${a.at}-${i}`} className="flex items-center justify-between gap-3 py-2 text-xs">
+                <span className="text-neutral-800">{a.action === "login" ? "로그인" : "로그아웃"}</span>
+                <span className="min-w-0 flex-1 truncate text-neutral-400" title={a.userAgent ?? undefined}>{a.userAgent ?? ""}</span>
+                <span className="shrink-0 tabular-nums text-neutral-500">{new Date(a.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short" })}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
       {user.can.assignOrg && addableOrgs.length > 0 && (
         <Card className="flex flex-col gap-3">
           <h2 className="text-base font-bold text-neutral-900">조직 할당</h2>
