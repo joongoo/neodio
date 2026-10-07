@@ -44,7 +44,7 @@ export function UserMenu({ name, email, roleLabel }: { name: string; email: stri
             <p className="mt-1 text-[11px] text-neutral-400">{roleLabel}</p>
           </div>
           <Link href="/account" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100">
-            내 계정 · 비밀번호 변경
+            내 정보 수정
           </Link>
           <button type="button" onClick={logout} className="block w-full px-4 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 cursor-pointer">
             로그아웃

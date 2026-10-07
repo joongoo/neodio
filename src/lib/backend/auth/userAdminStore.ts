@@ -176,3 +176,17 @@ export async function updateUser(actor: Principal, userId: string, update: UserU
   if (!canReissuePassword(actor, update.orgId, full)) throw deny("이 유저의 임시 비밀번호를 발급할 권한이 없어요.");
   return { tempPassword: await reissueTempPassword(update.orgId, userId, actor.userId) };
 }
+
+/** 본인 이름 변경 — 역할과 무관하게 누구나 자기 이름만 바꿀 수 있고, 변경 이력에 남는다. */
+export async function updateOwnName(userId: string, rawName: string): Promise<string> {
+  const name = rawName.trim();
+  if (!name || name.length > 50) throw new AuthError("이름은 1~50자로 입력해주세요.");
+  const store = await getPromptStore();
+  const [row] = await store.query("SELECT name,status FROM neodio_users WHERE id=$1", [userId]);
+  if (!row) throw new AuthError("유저를 찾을 수 없어요.", "not_found");
+  if (row.name === name) return name;
+  await store.query("UPDATE neodio_users SET name=$1 WHERE id=$2", [name, userId]);
+  await audit(null, userId, "user.profile", userId, { name });
+  await logUserChangeEverywhere(userId, userId, "update", "정보 변경(이름)", { name: row.name, status: row.status }, { name, status: row.status });
+  return name;
+}

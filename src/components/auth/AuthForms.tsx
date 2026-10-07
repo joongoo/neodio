@@ -31,6 +31,11 @@ function safeNext(value: string | null): string {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
 }
 
+async function send(method: string, url: string, body: unknown): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return { ok: res.ok, data: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+}
+
 async function post(url: string, body: unknown): Promise<{ ok: boolean; data: Record<string, unknown> }> {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return { ok: res.ok, data: (await res.json().catch(() => ({}))) as Record<string, unknown> };
@@ -166,6 +171,23 @@ export function AccountForm({ name, email, forced }: { name: string; email: stri
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const [nameInput, setNameInput] = useState(name);
+  const [savedName, setSavedName] = useState(name);
+  const [nameMsg, setNameMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [nameBusy, setNameBusy] = useState(false);
+
+  async function saveName(e: FormEvent) {
+    e.preventDefault();
+    setNameBusy(true);
+    setNameMsg(null);
+    const { ok, data } = await send("PATCH", "/api/auth/profile", { name: nameInput });
+    setNameBusy(false);
+    if (!ok) return setNameMsg({ ok: false, text: String(data.error ?? "저장하지 못했어요.") });
+    setSavedName(String(data.name));
+    setNameMsg({ ok: true, text: "이름을 바꿨어요." });
+    router.refresh();
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (nextPassword !== confirm) return setError("새 비밀번호가 서로 달라요.");
@@ -187,8 +209,20 @@ export function AccountForm({ name, email, forced }: { name: string; email: stri
   return (
     <Panel
       title={forced ? "비밀번호를 먼저 바꿔 주세요" : "내 계정"}
-      description={forced ? "임시 비밀번호로 로그인했어요. 새 비밀번호를 정해야 계속 쓸 수 있어요." : `${name} · ${email}`}
+      description={forced ? "임시 비밀번호로 로그인했어요. 새 비밀번호를 정해야 계속 쓸 수 있어요." : `${savedName} · ${email}`}
     >
+      {!forced && (
+        <form onSubmit={saveName} className="mb-5 flex flex-col gap-3 border-b border-neutral-100 pb-5">
+          <Field label="이름">
+            <input required maxLength={50} value={nameInput} onChange={(e) => setNameInput(e.target.value)} className={inputClass} />
+          </Field>
+          <p className="text-[11px] text-neutral-400">이메일({email})은 로그인 ID라 바꿀 수 없어요.</p>
+          {nameMsg && <p className={`text-xs ${nameMsg.ok ? "text-emerald-600" : "text-red-600"}`}>{nameMsg.text}</p>}
+          <Button type="submit" variant="primary" disabled={nameBusy || nameInput.trim() === savedName}>
+            {nameBusy ? "저장 중..." : "이름 저장"}
+          </Button>
+        </form>
+      )}
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="현재 비밀번호">
           <input type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} className={inputClass} />
