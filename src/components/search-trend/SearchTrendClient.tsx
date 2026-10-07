@@ -9,6 +9,7 @@ import type { BrandMentionWeek } from "@/lib/backend/collectionStatsReader";
 import { AGE_BUCKETS, defaultDateRange, fillPeriods, TrendResult, TrendTimeUnit } from "@/lib/searchTrend";
 import { fetchTrend, TrendGroupInput, TrendQuery } from "./trendApi";
 import { TrendKeywordCleanupModal } from "./TrendKeywordCleanupModal";
+import { EditOnly } from "@/components/auth/PermissionsProvider";
 import { TrendLlmCrossTab } from "./TrendLlmCrossTab";
 import { TrendOverviewTab } from "./TrendOverviewTab";
 import { TrendSegmentsTab } from "./TrendSegmentsTab";
@@ -185,10 +186,12 @@ export function SearchTrendClient({
                 그룹 추가
               </button>
             )}
-            <button type="button" onClick={openCleanup} className="flex w-fit items-center gap-1 text-xs font-medium text-slate-700 cursor-pointer hover:opacity-70">
-              <Sparkles size={14} />
-              AI로 검색어 정리
-            </button>
+            <EditOnly>
+              <button type="button" onClick={openCleanup} className="flex w-fit items-center gap-1 text-xs font-medium text-slate-700 cursor-pointer hover:opacity-70">
+                <Sparkles size={14} />
+                AI로 검색어 정리
+              </button>
+            </EditOnly>
           </div>
         </div>
 

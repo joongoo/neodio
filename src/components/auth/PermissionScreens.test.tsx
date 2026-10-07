@@ -56,3 +56,12 @@ test("viewer sees GSC connection status without OAuth write entry point", () => 
   assert.ok(!render(screen).includes("/oauth/start"));
   assert.ok(render(screen, true).includes("/oauth/start"));
 });
+
+test("프롬프트 리서치: viewer는 새 리서치를 실행할 수 없고, 편집 권한이 있으면 폼이 보인다", async () => {
+  const { LivePromptResearch } = await import("../prompt-research/LivePromptResearch");
+  const viewer = render(<LivePromptResearch />);
+  assert.ok(viewer.includes("읽기 전용 권한에서는 새 프롬프트 리서치를 실행할 수 없어요"));
+  for (const text of ["리서치하는 중", 'id="topic-input"', ">검색<"]) assert.ok(!viewer.includes(text), text);
+  const editor = render(<LivePromptResearch />, true, false);
+  assert.ok(editor.includes('id="topic-input"') && !editor.includes("읽기 전용 권한에서는"));
+});

@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { EditOnly } from "@/components/auth/PermissionsProvider";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { RelatedTopicsIntent } from "@/components/prompt-research/RelatedTopicsIntent";
@@ -65,6 +66,11 @@ export function LivePromptResearch() {
         </p>
       </div>
 
+      <EditOnly
+        fallback={
+          <Card className="text-sm text-neutral-600">읽기 전용 권한에서는 새 프롬프트 리서치를 실행할 수 없어요. 리서치가 필요하면 조직 오너나 admin에게 요청하세요.</Card>
+        }
+      >
       <form onSubmit={submit} className="flex flex-col gap-1.5">
         <label htmlFor="topic-input" className="text-xs font-medium text-neutral-500">
           토픽
@@ -89,6 +95,7 @@ export function LivePromptResearch() {
           </button>
         </div>
       </form>
+      </EditOnly>
 
       <div className="h-px w-full bg-neutral-200" />
 
@@ -105,15 +112,17 @@ export function LivePromptResearch() {
             <p className="text-xs text-neutral-500">
               &quot;{result.topic}&quot; · AI가 제안한 관련 토픽과 질문{formatGeneratedAt(result.generatedAt) && ` · ${formatGeneratedAt(result.generatedAt)} 생성`}
             </p>
-            <button
-              type="button"
-              onClick={() => void search(true)}
-              disabled={loading}
-              className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 cursor-pointer hover:bg-slate-200 disabled:cursor-default disabled:opacity-60"
-            >
-              <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-              다시 생성
-            </button>
+            <EditOnly>
+              <button
+                type="button"
+                onClick={() => void search(true)}
+                disabled={loading}
+                className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-800 cursor-pointer hover:bg-slate-200 disabled:cursor-default disabled:opacity-60"
+              >
+                <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+                다시 생성
+              </button>
+            </EditOnly>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <SimpleStatCard label="관련 토픽 수" value={result.relatedTopics.length} tooltip="AI가 이 토픽과 관련 있다고 제안한 하위 토픽의 수입니다." />
