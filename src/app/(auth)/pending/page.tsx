@@ -1,13 +1,15 @@
 import { redirect } from "next/navigation";
-import { PendingPanel } from "@/components/auth/AuthForms";
-import { isPending } from "@/lib/auth/permissions";
+import { PendingApproval } from "@/components/auth/PendingApproval";
+import { pendingReason } from "@/lib/auth/permissions";
+import { CONTACT_EMAIL } from "@/lib/legal";
 import { getCurrentPrincipal, getCurrentUser } from "@/lib/backend/auth/session";
 
-// 권한이 아직 할당되지 않은 가입자가 보는 화면 — 할당되면 서비스로 보낸다.
+// 관리자 승인 대기 — 권한이 아직 할당되지 않은 가입자가 보는 화면 — 할당되면 서비스로 보낸다.
 export default async function PendingPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const principal = await getCurrentPrincipal();
-  if (principal && !isPending(principal)) redirect("/");
-  return <PendingPanel name={user.name} loginId={user.loginId} />;
+  const reason = principal ? pendingReason(principal) : "org";
+  if (!reason) redirect("/");
+  return <PendingApproval name={user.name} loginId={user.loginId} reason={reason} contactEmail={CONTACT_EMAIL || undefined} />;
 }

@@ -146,21 +146,6 @@ export function LogoutButton({ variant = "secondary" }: { variant?: "primary" | 
   );
 }
 
-export function PendingPanel({ name, loginId }: { name: string; loginId: string }) {
-  const router = useRouter();
-  return (
-    <Panel title="권한 할당을 기다리고 있어요" description={`${name} (${loginId}) 계정으로 가입됐어요.`}>
-      <p className="text-sm text-neutral-600">조직 오너 또는 네오다임 담당자가 역할과 볼 수 있는 브랜드를 할당하면 화면을 이용할 수 있어요. 할당이 끝나면 다시 로그인하거나 새로고침해 주세요.</p>
-      <div className="mt-5 flex gap-2">
-        <Button type="button" variant="primary" onClick={() => router.replace("/")}>
-          새로고침
-        </Button>
-        <LogoutButton />
-      </div>
-    </Panel>
-  );
-}
-
 export function AccountForm({ name, loginId, forced }: { name: string; loginId: string; forced: boolean }) {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));

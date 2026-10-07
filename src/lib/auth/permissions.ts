@@ -59,10 +59,17 @@ export function filterViewableBrands<T extends { id: string }>(p: Principal, org
   return brands.filter((b) => canViewBrand(p, orgId, b.id));
 }
 
-/** 소속이 하나도 없는 가입자 — "권한 할당 대기" 화면만 본다. */
-export function isPending(p: Principal): boolean {
-  return !isStaff(p) && p.memberships.length === 0;
+/**
+ * 승인 대기 사유 — 조직에 아직 할당되지 않았거나("org"), 조직은 정해졌지만 볼 수 있는 브랜드가 하나도 없는("brand") 사람.
+ * 둘 다 "관리자 승인 대기" 화면만 본다(브랜드가 없으면 보여 줄 데이터가 없어 화면이 오류가 난다).
+ */
+export function pendingReason(p: Principal): "org" | "brand" | null {
+  if (isStaff(p)) return null;
+  if (p.memberships.length === 0) return "org";
+  return p.memberships.some((m) => m.isOwner || m.brandIds.length > 0) ? null : "brand";
 }
+
+export const isPending = (p: Principal): boolean => pendingReason(p) !== null;
 
 export const ROLE_LABEL: Record<OrgRole | "owner" | "staff", string> = {
   staff: "네오다임 직원",

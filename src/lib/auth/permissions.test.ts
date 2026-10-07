@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAccessOrg, canEditBrand, canManageOrg, canViewBrand, filterViewableBrands, isPending, roleLabel, type Principal } from "./permissions";
+import { canAccessOrg, canEditBrand, canManageOrg, canViewBrand, filterViewableBrands, isPending, pendingReason, roleLabel, type Principal } from "./permissions";
 
 const owner: Principal = { userId: "u-owner", platformRole: "none", memberships: [{ organizationId: "o1", role: "admin", isOwner: true, brandIds: [] }] };
 const adminA: Principal = { userId: "u-a", platformRole: "none", memberships: [{ organizationId: "o1", role: "admin", isOwner: false, brandIds: ["b1"] }] };
@@ -39,6 +39,16 @@ test("네오다임 직원은 모든 조직·브랜드를 편집하고 관리한�
 test("소속이 없는 가입자는 대기 상태이고 아무것도 못 본다", () => {
   assert.ok(isPending(pending));
   assert.ok(!canAccessOrg(pending, "o1") && !canViewBrand(pending, "o1", "b1"));
+});
+
+test("조직은 있지만 볼 수 있는 브랜드가 없으면 브랜드 할당 대기다(오너·직원은 아니다)", () => {
+  const noBrands: Principal = { userId: "u-n", platformRole: "none", memberships: [{ organizationId: "o1", role: "viewer", isOwner: false, brandIds: [] }] };
+  assert.equal(pendingReason(noBrands), "brand");
+  assert.equal(pendingReason(pending), "org");
+  assert.equal(pendingReason(viewer), null);
+  assert.equal(pendingReason(owner), null); // 오너는 브랜드 지정 없이 전체 접근
+  assert.equal(pendingReason(staff), null);
+  assert.ok(isPending(noBrands));
 });
 
 test("볼 수 있는 브랜드만 거르고, 역할 이름을 표기한다", () => {
