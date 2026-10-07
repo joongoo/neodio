@@ -217,6 +217,10 @@ CREATE TABLE IF NOT EXISTS change_log (
   actor_id TEXT REFERENCES actors(id), at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS change_log_org_at ON change_log(organization_id,at DESC);
+-- 유저 수정 이력: 로그인한 사용자가 한 변경은 actor_user_id로 남기고, 어느 조직에도 속하지 않은 유저의 변경(할당 대기자 수정 등)은 조직 없이 기록한다.
+ALTER TABLE change_log ALTER COLUMN organization_id DROP NOT NULL;
+ALTER TABLE change_log ADD COLUMN IF NOT EXISTS actor_user_id TEXT;
+CREATE INDEX IF NOT EXISTS change_log_entity ON change_log(entity_type,entity_id,at DESC);
 -- 이름 붙인 설정 버전 — 저장 시점의 설정 전체를 함께 보관해 나중에 비교·복원할 수 있다.
 CREATE TABLE IF NOT EXISTS config_versions (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), brand_id TEXT,

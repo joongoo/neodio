@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { OrgChoice, UserDetail } from "@/lib/backend/auth/userAdminStore";
+import type { ChangeEntry } from "@/lib/changeLog";
 
 // 유저 상세 — 직원: 조직 할당·브랜드 할당 / 오너·admin: 브랜드 할당(admin은 본인이 접근 가능한 브랜드 안에서만).
 // 버튼은 서버가 알려준 권한(can)대로 보이고, 서버가 다시 검사한다.
@@ -14,6 +15,37 @@ async function patch(userId: string, body: unknown) {
   const res = await fetch(`/api/users/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, data: data as { user?: UserDetail; tempPassword?: string; error?: string } };
+}
+
+function formatAt(iso: string) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+const show = (value: unknown) => (value === null || value === undefined ? "—" : typeof value === "string" ? value || "—" : Array.isArray(value) ? (value.length ? value.join(", ") : "—") : JSON.stringify(value));
+
+// 변경 전·후 값을 필드마다 한 줄씩(역할, 브랜드, 이름, 상태 …).
+function HistoryItem({ entry }: { entry: ChangeEntry }) {
+  const before = (entry.before && typeof entry.before === "object" ? entry.before : {}) as Record<string, unknown>;
+  const after = (entry.after && typeof entry.after === "object" ? entry.after : {}) as Record<string, unknown>;
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  return (
+    <li className="border-b border-neutral-100 py-3 last:border-b-0">
+      <p className="text-sm text-neutral-800">{entry.summary}</p>
+      <p className="mt-0.5 text-[11px] text-neutral-400">{entry.actorName ?? "본인(가입)"} · {formatAt(entry.at)}</p>
+      {keys.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1">
+          {keys.map((key) => (
+            <div key={key} className="grid grid-cols-[70px_1fr_1fr] gap-2 text-xs">
+              <span className="text-neutral-500">{key === "role" ? "역할" : key === "brands" ? "브랜드" : key === "name" ? "이름" : key === "status" ? "상태" : key}</span>
+              <span className="rounded bg-red-50 px-2 py-0.5 text-neutral-700">{show(before[key])}</span>
+              <span className="rounded bg-emerald-50 px-2 py-0.5 text-neutral-700">{show(after[key])}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </li>
+  );
 }
 
 export function UserDetailClient({ initial, currentUserId }: { initial: UserDetail; currentUserId: string }) {
@@ -190,6 +222,20 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
           );
         })}
       </div>
+
+      <Card className="flex flex-col">
+        <h2 className="text-base font-bold text-neutral-900">변경 이력</h2>
+        <p className="mt-0.5 text-xs text-neutral-500">이 유저의 정보·역할·조직·브랜드 변경을 변경 전후 값과 함께 기록해요. 비밀번호 값은 기록하지 않아요.</p>
+        {user.history.length === 0 ? (
+          <p className="mt-3 text-xs text-neutral-400">아직 기록된 변경이 없어요.</p>
+        ) : (
+          <ul className="mt-2">
+            {user.history.map((entry) => (
+              <HistoryItem key={entry.id} entry={entry} />
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {user.can.assignOrg && addableOrgs.length > 0 && (
         <Card className="flex flex-col gap-3">

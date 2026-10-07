@@ -252,28 +252,43 @@ export class PromptStore {
   // ---- 설정 변경 이력 ----
 
   /** 같은 트랜잭션 안에서 변경을 기록한다 — 쓰기가 롤백되면 이력도 함께 사라진다. */
-  private async logChange(orgId: string, entry: {
+  async logChange(orgId: string | null, entry: {
     brandId?: string | null; entityType: ChangeEntity; entityId: string; op: ChangeOp;
-    summary: string; before?: unknown; after?: unknown; actorId?: string | null;
+    summary: string; before?: unknown; after?: unknown; actorId?: string | null; actorUserId?: string | null;
   }): Promise<void> {
-    await this.run("INSERT INTO change_log VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", [
+    await this.run(`INSERT INTO change_log(id,organization_id,brand_id,entity_type,entity_id,op,summary,before_json,after_json,actor_id,at,actor_user_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [
       id("change"), orgId, entry.brandId ?? null, entry.entityType, entry.entityId, entry.op, entry.summary,
       entry.before === undefined ? null : JSON.stringify(entry.before), entry.after === undefined ? null : JSON.stringify(entry.after),
-      entry.actorId ?? null, now()]);
+      entry.actorId ?? null, now(), entry.actorUserId ?? null]);
   }
 
-  async listChanges(orgId: string, options: { brandId?: string; limit?: number; before?: string } = {}): Promise<ChangeEntry[]> {
+  async listChanges(orgId: string, options: { brandId?: string; limit?: number; before?: string; includeUsers?: boolean } = {}): Promise<ChangeEntry[]> {
     const rows = await this.query<Record<string, unknown>>(
-      `SELECT c.*,a.display_name AS actor_name FROM change_log c LEFT JOIN actors a ON a.id=c.actor_id
+      `SELECT c.*,coalesce(a.display_name,u.name) AS actor_name FROM change_log c LEFT JOIN actors a ON a.id=c.actor_id LEFT JOIN neodio_users u ON u.id=c.actor_user_id
        WHERE c.organization_id=$1 AND ($2::text IS NULL OR c.brand_id=$2 OR c.brand_id IS NULL) AND ($3::text IS NULL OR c.at<$3)
+         AND ($5::boolean OR c.entity_type<>'user')
        ORDER BY c.at DESC,c.id LIMIT $4`,
-      [orgId, options.brandId ?? null, options.before ?? null, Math.min(options.limit ?? 50, 200)]);
-    return rows.map((row) => ({
-      id: row.id as string, organizationId: row.organization_id as string, brandId: (row.brand_id as string | null) ?? null,
+      [orgId, options.brandId ?? null, options.before ?? null, Math.min(options.limit ?? 50, 200), options.includeUsers ?? true]);
+    return rows.map((row) => this.toChangeEntry(row));
+  }
+
+  /** 한 유저에 대한 변경 이력 — orgIds가 null이면 모든 조직(조직 없는 변경 포함), 아니면 그 조직들의 것만. */
+  async listUserChanges(userId: string, orgIds: string[] | null, limit = 50): Promise<ChangeEntry[]> {
+    const rows = await this.query<Record<string, unknown>>(
+      `SELECT c.*,coalesce(a.display_name,u.name) AS actor_name FROM change_log c LEFT JOIN actors a ON a.id=c.actor_id LEFT JOIN neodio_users u ON u.id=c.actor_user_id
+       WHERE c.entity_type='user' AND c.entity_id=$1 AND ($2::text[] IS NULL OR c.organization_id = ANY($2))
+       ORDER BY c.at DESC,c.id LIMIT $3`, [userId, orgIds, Math.min(limit, 200)]);
+    return rows.map((row) => this.toChangeEntry(row));
+  }
+
+  private toChangeEntry(row: Record<string, unknown>): ChangeEntry {
+    return {
+      id: row.id as string, organizationId: (row.organization_id as string | null) ?? null, brandId: (row.brand_id as string | null) ?? null,
       entityType: row.entity_type as ChangeEntity, entityId: row.entity_id as string, op: row.op as ChangeOp,
       summary: row.summary as string, before: row.before_json, after: row.after_json,
-      actorId: (row.actor_id as string | null) ?? null, actorName: (row.actor_name as string | null) ?? null, at: row.at as string,
-    }));
+      actorId: (row.actor_id as string | null) ?? (row.actor_user_id as string | null) ?? null, actorName: (row.actor_name as string | null) ?? null, at: row.at as string,
+    };
   }
 
   /** 지금 설정 전체 — 이름 붙인 버전에 함께 저장한다. */

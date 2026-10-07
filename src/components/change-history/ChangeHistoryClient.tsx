@@ -14,6 +14,7 @@ const ENTITY_LABEL: Record<ChangeEntity, string> = {
   tracking: "프롬프트 상태",
   topic_groups: "토픽 묶음",
   brand: "브랜드 설정",
+  user: "유저",
 };
 
 const OP_STYLE: Record<ChangeEntry["op"], string> = {

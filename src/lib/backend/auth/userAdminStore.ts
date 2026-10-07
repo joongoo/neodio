@@ -3,7 +3,8 @@ import type { OrgRole, Principal } from "@/lib/auth/permissions";
 import {
   assignableBrandIds, canAssignBrands, canAssignOrg, canChangeRole, canEditUserProfile, canReissuePassword, canSeeUser, mergeBrandAssignment, visibleOrgIds, type UserTarget,
 } from "@/lib/auth/userManagement";
-import { assignMember, AuthError, audit, deleteUserSessions, removeMember, reissueTempPassword, setMemberBrands } from "./authStore";
+import { assignMember, AuthError, audit, brandNamesOf, deleteUserSessions, logUserChange, logUserChangeEverywhere, removeMember, reissueTempPassword, setMemberBrands } from "./authStore";
+import { describeMembershipChange, describeProfileChange, type ChangeEntry } from "@/lib/changeLog";
 
 // 유저 관리 — 목록·상세 조회와 수정. 모든 쓰기는 src/lib/auth/userManagement.ts의 규칙으로 막는다. 서버 전용.
 
@@ -38,6 +39,8 @@ export interface OrgChoice {
 
 export interface UserDetail extends UserRow {
   orgs: OrgChoice[];
+  /** 이 유저에 대한 변경 이력(최신순) — 직원은 전체, 오너·admin은 내가 볼 수 있는 조직의 것만. */
+  history: ChangeEntry[];
   /** 이 유저에 대해 내가 할 수 있는 일 — 화면이 버튼을 보이고 숨기는 데 쓴다(서버가 다시 검사한다). */
   can: { editProfile: boolean; assignOrg: boolean; changeRole: Record<string, boolean>; assignBrands: Record<string, boolean>; reissue: Record<string, boolean> };
 }
@@ -96,6 +99,7 @@ export async function getUserDetail(actor: Principal, userId: string): Promise<U
   const flags = (fn: (orgId: string) => boolean) => Object.fromEntries(orgIds.map((id) => [id, fn(id)]));
   return {
     ...entry.row,
+    history: await store.listUserChanges(userId, visible, 50),
     orgs: choices,
     can: {
       editProfile: canEditUserProfile(actor, entry.full),
@@ -131,6 +135,8 @@ export async function updateUser(actor: Principal, userId: string, update: UserU
     await store.query("UPDATE neodio_users SET name=$1,status=$2 WHERE id=$3", [name, status, userId]);
     if (status === "disabled") await deleteUserSessions(userId);
     await audit(null, actor.userId, "user.profile", userId, { name, status });
+    const changed = describeProfileChange({ name: row.name, status: row.status }, { name, status });
+    if (changed) await logUserChangeEverywhere(actor.userId, userId, "update", `정보 변경(${changed})`, { name: row.name, status: row.status }, { name, status });
     return {};
   }
 
@@ -160,6 +166,10 @@ export async function updateUser(actor: Principal, userId: string, update: UserU
     const next = mergeBrandAssignment(existing?.brandIds ?? [], update.brandIds, scope);
     await setMemberBrands(update.orgId, userId, next, actor.userId);
     await audit(update.orgId, actor.userId, "user.brands", userId, { brandIds: next });
+    const before = { role: existing?.role ?? "viewer", brands: await brandNamesOf(update.orgId, existing?.brandIds ?? []) };
+    const after = { role: before.role, brands: await brandNamesOf(update.orgId, next) };
+    const change = describeMembershipChange(before, after);
+    if (change) await logUserChange(update.orgId, actor.userId, userId, change.op, `${row.memberships.find((m) => m.organizationId === update.orgId)?.organizationName ?? ""} ${change.text}`.trim(), before, after);
     return {};
   }
 

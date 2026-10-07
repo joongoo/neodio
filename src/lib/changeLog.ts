@@ -1,12 +1,13 @@
 // 설정 변경 이력(프롬프트 세트·토픽 묶음·브랜드 설정)의 순수 로직 — 저장소(store.ts)가 쓰기 직전·직후 값을 넘기면
 // 무엇이 바뀌었는지 요약하고, 같은 값이면 기록하지 않는다. 서버·클라이언트 양쪽에서 쓸 수 있다.
 
-export type ChangeEntity = "prompt" | "tracking" | "topic_groups" | "brand";
+export type ChangeEntity = "prompt" | "tracking" | "topic_groups" | "brand" | "user";
 export type ChangeOp = "create" | "update" | "delete";
 
 export interface ChangeEntry {
   id: string;
-  organizationId: string;
+  /** 어느 조직에도 속하지 않은 유저의 변경은 null. */
+  organizationId: string | null;
   brandId: string | null;
   entityType: ChangeEntity;
   entityId: string;
@@ -122,4 +123,39 @@ export function diffSnapshots(from: ConfigSnapshot, to: ConfigSnapshot) {
     return old && (old.category !== p.category || old.topic !== p.topic || old.status !== p.status || stable([...old.surfaces].sort()) !== stable([...p.surfaces].sort()));
   });
   return { added, removed, changed, brandChanged: !!diffFields(from.brand ?? {}, to.brand ?? {}), topicGroupsChanged: !groupsEqual(from.topicGroups, to.topicGroups) };
+}
+
+// ---- 유저 변경(권한 할당·프로필) ----
+
+export const userLabel = (user: { name: string; email: string }) => `${user.name}(${user.email})`;
+
+export interface MembershipState {
+  role: string;
+  /** 브랜드 이름(보기 좋게) — 순서와 무관하게 비교한다. */
+  brands: string[];
+}
+
+const sameSet = (a: string[], b: string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+/** 한 조직에서의 역할·브랜드 변경을 짧은 문구로. 바뀐 것이 없으면 null(기록하지 않는다). */
+export function describeMembershipChange(before: MembershipState | null, after: MembershipState | null): { op: ChangeOp; text: string } | null {
+  if (!before && after) return { op: "create", text: `조직에 할당 — ${after.role}${after.brands.length ? `, 브랜드 ${after.brands.length}개` : ""}` };
+  if (before && !after) return { op: "delete", text: "조직에서 제거" };
+  if (!before || !after) return null;
+  const parts: string[] = [];
+  if (before.role !== after.role) parts.push(`역할 ${before.role}→${after.role}`);
+  if (!sameSet(before.brands, after.brands)) {
+    const added = after.brands.filter((b) => !before.brands.includes(b));
+    const removed = before.brands.filter((b) => !after.brands.includes(b));
+    parts.push(`브랜드 ${[added.length ? `+${added.join(", ")}` : "", removed.length ? `−${removed.join(", ")}` : ""].filter(Boolean).join(" ")}`);
+  }
+  return parts.length ? { op: "update", text: parts.join(", ") } : null;
+}
+
+/** 프로필(이름·상태) 변경 — 바뀐 필드만. 바뀐 것이 없으면 null. */
+export function describeProfileChange(before: { name: string; status: string }, after: { name: string; status: string }) {
+  const parts: string[] = [];
+  if (before.name !== after.name) parts.push("이름");
+  if (before.status !== after.status) parts.push(after.status === "disabled" ? "계정 중지" : "계정 다시 사용");
+  return parts.length ? parts.join("·") : null;
 }

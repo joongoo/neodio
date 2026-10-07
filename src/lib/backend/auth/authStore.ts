@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getPromptStore } from "../database";
 import type { Membership, OrgRole, PlatformRole, Principal } from "@/lib/auth/permissions";
 import { generateTempPassword, hashPassword, passwordProblem, verifyPassword } from "./password";
+import { describeMembershipChange, userLabel, type ChangeOp } from "@/lib/changeLog";
 
 // 회원·세션·역할 저장소 — 서버 전용. 이메일 인증은 하지 않는다(docs/auth-and-roles.md).
 
@@ -44,6 +45,8 @@ async function db() {
 
 export async function createUser(input: {
   email: string; name: string; password: string; platformRole?: PlatformRole; mustChangePassword?: boolean;
+  /** "signup"이면 스스로 가입한 것으로 변경 이력에 남긴다(오너·직원이 만든 계정은 발급 쪽에서 남긴다). */
+  source?: "signup";
 }): Promise<AuthUser> {
   const email = normalizeEmail(input.email);
   if (!EMAIL_PATTERN.test(email)) throw new AuthError("이메일 형식이 올바르지 않아요.");
@@ -57,6 +60,7 @@ export async function createUser(input: {
   const userId = id("user");
   await store.query("INSERT INTO neodio_users(id,email,name,password_hash,must_change_password,platform_role,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,'active',$7)", [
     userId, email, name, await hashPassword(input.password), !!input.mustChangePassword, input.platformRole ?? "none", now()]);
+  if (input.source === "signup") await logUserChange(null, null, userId, "create", "가입", undefined, { email, name });
   return (await getUser(userId))!;
 }
 
@@ -124,6 +128,7 @@ export async function changePassword(userId: string, current: string, next: stri
   if (await verifyPassword(next, row.password_hash as string)) throw new AuthError("현재 비밀번호와 다른 비밀번호를 입력해주세요.");
   await store.query("UPDATE neodio_users SET password_hash=$1,must_change_password=false WHERE id=$2", [await hashPassword(next), userId]);
   await deleteUserSessions(userId, keepToken); // 다른 기기의 로그인은 끊는다
+  await logUserChangeEverywhere(userId, userId, "update", "비밀번호 변경(본인)");
 }
 
 // ---- 권한(Principal) ----
@@ -169,6 +174,44 @@ export async function listMembers(orgId: string): Promise<MemberRow[]> {
   }));
 }
 
+// ---- 유저 변경 이력(change_log) — 변경 이력 화면과 유저 상세에 보인다. 비밀번호 같은 비밀 값은 절대 담지 않는다. ----
+
+async function userInfo(userId: string): Promise<{ id: string; email: string; name: string } | null> {
+  const [row] = await (await db()).query<{ id: string; email: string; name: string }>("SELECT id,email,name FROM neodio_users WHERE id=$1", [userId]);
+  return row ?? null;
+}
+
+/** 이 유저가 속한 조직 — 유저 변경은 조직마다 한 줄씩 남긴다(조직이 없으면 조직 없이 한 줄). */
+export async function memberOrgIds(userId: string): Promise<string[]> {
+  return (await (await db()).query<{ organization_id: string }>("SELECT organization_id FROM neodio_memberships WHERE user_id=$1", [userId])).map((r) => r.organization_id);
+}
+
+export async function brandNamesOf(orgId: string, brandIds: string[]): Promise<string[]> {
+  if (brandIds.length === 0) return [];
+  const rows = await (await db()).query<{ name: string }>("SELECT name FROM brands WHERE organization_id=$1 AND id = ANY($2) ORDER BY name", [orgId, brandIds]);
+  return rows.map((r) => r.name);
+}
+
+async function orgNameOf(orgId: string): Promise<string> {
+  const [row] = await (await db()).query<{ name: string }>("SELECT name FROM organizations WHERE id=$1", [orgId]);
+  return row?.name ?? orgId;
+}
+
+/** 유저에 대한 변경 한 건을 change_log에 남긴다. orgId가 null이면 조직 없는 변경. */
+export async function logUserChange(orgId: string | null, actorUserId: string | null, userId: string, op: ChangeOp, summary: string, before?: unknown, after?: unknown): Promise<void> {
+  const target = await userInfo(userId);
+  await (await db()).logChange(orgId, {
+    entityType: "user", entityId: userId, op, actorUserId,
+    summary: `${summary} — ${target ? userLabel(target) : userId}`, before, after,
+  });
+}
+
+/** 여러 조직에 걸친 변경(프로필·비밀번호)을 조직마다 한 줄씩 남긴다. */
+export async function logUserChangeEverywhere(actorUserId: string | null, userId: string, op: ChangeOp, summary: string, before?: unknown, after?: unknown): Promise<void> {
+  const orgs = await memberOrgIds(userId);
+  for (const orgId of orgs.length ? orgs : [null]) await logUserChange(orgId, actorUserId, userId, op, summary, before, after);
+}
+
 export async function audit(orgId: string | null, actorUserId: string | null, action: string, targetId: string | null, detail?: unknown) {
   await (await db()).query("INSERT INTO neodio_audit_log(id,organization_id,actor_user_id,action,target_type,target_id,detail_json,at) VALUES ($1,$2,$3,$4,'user',$5,$6,$7)", [
     id("audit"), orgId, actorUserId, action, targetId, detail === undefined ? null : JSON.stringify(detail), now()]);
@@ -182,11 +225,17 @@ export async function assignMember(orgId: string, input: { email: string; role: 
   await store.transaction(async () => {
     const [existing] = await store.query<{ role: string }>("SELECT role FROM neodio_memberships WHERE user_id=$1 AND organization_id=$2", [user.id, orgId]);
     const [org] = await store.query<{ owner_user_id: string | null }>("SELECT owner_user_id FROM organizations WHERE id=$1", [orgId]);
+    const beforeBrandIds = (await store.query<{ brand_id: string }>("SELECT brand_id FROM neodio_membership_brands WHERE user_id=$1 AND organization_id=$2", [user.id, orgId])).map((r) => r.brand_id);
+    const before = existing ? { role: existing.role, brands: await brandNamesOf(orgId, beforeBrandIds) } : null;
     if (org?.owner_user_id === user.id && input.role !== "admin") throw new AuthError("오너는 admin이어야 해요. 먼저 오너를 다른 admin에게 이전해주세요.", "denied");
     if (existing) await store.query("UPDATE neodio_memberships SET role=$1 WHERE user_id=$2 AND organization_id=$3", [input.role, user.id, orgId]);
     else await store.query("INSERT INTO neodio_memberships(user_id,organization_id,role,created_at,created_by) VALUES ($1,$2,$3,$4,$5)", [user.id, orgId, input.role, now(), actorUserId]);
     await setMemberBrands(orgId, user.id, input.brandIds, actorUserId);
     await audit(orgId, actorUserId, existing ? "member.update" : "member.add", user.id, { role: input.role, brandIds: input.brandIds });
+    const grantedBrandIds = (await store.query<{ brand_id: string }>("SELECT brand_id FROM neodio_membership_brands WHERE user_id=$1 AND organization_id=$2", [user.id, orgId])).map((r) => r.brand_id);
+    const after = { role: input.role, brands: await brandNamesOf(orgId, grantedBrandIds) };
+    const change = describeMembershipChange(before, after);
+    if (change) await logUserChange(orgId, actorUserId, user.id, change.op, `${await orgNameOf(orgId)} ${change.text}`, before ?? undefined, after);
   });
   return (await listMembers(orgId)).find((m) => m.userId === user.id)!;
 }
@@ -205,9 +254,14 @@ export async function removeMember(orgId: string, userId: string, actorUserId: s
   const [org] = await store.query<{ owner_user_id: string | null }>("SELECT owner_user_id FROM organizations WHERE id=$1", [orgId]);
   if (org?.owner_user_id === userId) throw new AuthError("오너는 제거할 수 없어요. 먼저 오너를 다른 admin에게 이전해주세요.", "denied");
   await store.transaction(async () => {
+    const [existing] = await store.query<{ role: string }>("SELECT role FROM neodio_memberships WHERE user_id=$1 AND organization_id=$2", [userId, orgId]);
+    const brandIds = (await store.query<{ brand_id: string }>("SELECT brand_id FROM neodio_membership_brands WHERE user_id=$1 AND organization_id=$2", [userId, orgId])).map((r) => r.brand_id);
+    const before = existing ? { role: existing.role, brands: await brandNamesOf(orgId, brandIds) } : null;
     await store.query("DELETE FROM neodio_membership_brands WHERE user_id=$1 AND organization_id=$2", [userId, orgId]);
     await store.query("DELETE FROM neodio_memberships WHERE user_id=$1 AND organization_id=$2", [userId, orgId]);
     await audit(orgId, actorUserId, "member.remove", userId);
+    const change = describeMembershipChange(before, null);
+    if (change) await logUserChange(orgId, actorUserId, userId, change.op, `${await orgNameOf(orgId)} ${change.text}`, before ?? undefined, undefined);
   });
 }
 
@@ -217,8 +271,13 @@ export async function setOwner(orgId: string, newOwnerUserId: string, actorUserI
   const [member] = await store.query<{ role: string }>("SELECT role FROM neodio_memberships WHERE user_id=$1 AND organization_id=$2", [newOwnerUserId, orgId]);
   if (!member) throw new AuthError("이 조직의 구성원이 아니에요.", "not_found");
   if (member.role !== "admin") throw new AuthError("오너는 admin 중에서만 정할 수 있어요.", "denied");
+  const [prev] = await store.query<{ owner_user_id: string | null }>("SELECT owner_user_id FROM organizations WHERE id=$1", [orgId]);
   await store.query("UPDATE organizations SET owner_user_id=$1 WHERE id=$2", [newOwnerUserId, orgId]);
   await audit(orgId, actorUserId, "owner.set", newOwnerUserId);
+  if (prev?.owner_user_id !== newOwnerUserId) {
+    const previousOwner = prev?.owner_user_id ? await userInfo(prev.owner_user_id) : null;
+    await logUserChange(orgId, actorUserId, newOwnerUserId, "update", `${await orgNameOf(orgId)} 오너 지정`, { owner: previousOwner ? userLabel(previousOwner) : null }, { owner: userLabel((await userInfo(newOwnerUserId))!) });
+  }
 }
 
 /** 오너·직원이 계정을 직접 만들어 준다 — 임시 비밀번호를 돌려주고(메일 발송 없음), 첫 로그인 때 바꾸게 한다. */
@@ -227,6 +286,7 @@ export async function issueAccount(orgId: string | null, input: { email: string;
   const user = await createUser({ email: input.email, name: input.name, password: tempPassword, mustChangePassword: true });
   if (orgId) await assignMember(orgId, { email: user.email, role: input.role ?? "viewer", brandIds: input.brandIds ?? [] }, actorUserId);
   await audit(orgId, actorUserId, "account.issue", user.id);
+  await logUserChange(orgId, actorUserId, user.id, "create", "계정 발급", undefined, { email: user.email, name: user.name, role: input.role ?? "viewer" });
   return { user, tempPassword };
 }
 
@@ -239,5 +299,6 @@ export async function reissueTempPassword(orgId: string, userId: string, actorUs
   await store.query("UPDATE neodio_users SET password_hash=$1,must_change_password=true WHERE id=$2", [await hashPassword(tempPassword), userId]);
   await deleteUserSessions(userId);
   await audit(orgId, actorUserId, "password.reissue", userId);
+  await logUserChange(orgId, actorUserId, userId, "update", "임시 비밀번호 재발급"); // 비밀번호 값은 남기지 않는다
   return tempPassword;
 }
