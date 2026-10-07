@@ -79,5 +79,5 @@ export default function proxy(request: NextRequest) {
 export const config = {
   // 정적 자산/이미지 최적화 경로는 게이트에서 제외 — 안 그러면 브라우저가
   // Basic Auth 프롬프트를 여러 번 띄우거나 폰트/청크가 깨져 보인다.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico$|neodio(?:-192|-512)?\\.png$|icon\\.png$|apple-icon\\.png$|opengraph-image\\.png$|manifest\\.webmanifest$).*)"],
 };

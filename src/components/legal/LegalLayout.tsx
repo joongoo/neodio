@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { NeodioLogo } from "@/components/ui/NeodioLogo";
 import { CONTACT_EMAIL, OPERATOR_NAME, PUBLIC_PAGES, SERVICE_NAME } from "@/lib/legal";
 
 // 로그인 없이 볼 수 있는 공개 페이지의 공통 틀 — 헤더·사이드바 없이 본문과 하단 링크만 둔다.
@@ -8,7 +9,7 @@ export function LegalLayout({ title, updated, children }: { title: string; updat
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <Link href="/about" className="flex items-center gap-2 text-base font-bold text-neutral-900">
-            <span className="grid size-7 place-items-center rounded bg-slate-800 text-sm text-white">N</span>
+            <NeodioLogo size={28} />
             Neodio
           </Link>
           <Link href="/login" className="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-bold text-white hover:opacity-90">로그인</Link>

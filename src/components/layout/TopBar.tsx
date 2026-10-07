@@ -1,4 +1,5 @@
 import { Bell, User } from "lucide-react";
+import { NeodioLogo } from "@/components/ui/NeodioLogo";
 import { OrgBrandSwitcher } from "@/components/layout/OrgBrandSwitcher";
 import { UserMenu } from "@/components/layout/UserMenu";
 import { getCurrentTenant } from "@/lib/backend/tenant";
@@ -23,9 +24,7 @@ export async function TopBar() {
 
   return (
     <header className="flex items-center gap-3 border-b border-neutral-200 bg-[#fbfbfb] px-6 py-3 print:hidden">
-      <div className="grid size-8 shrink-0 place-items-center rounded bg-slate-800 text-sm font-bold text-white">
-        N
-      </div>
+      <NeodioLogo />
       <p className="text-base font-bold text-black">Neodio</p>
       <div className="mx-2 h-6 w-px bg-neutral-200" />
       <OrgBrandSwitcher
