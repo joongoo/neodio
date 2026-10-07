@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { canAccessOrg, canEditBrand, canManageOrg, canViewBrand, isPending, isStaff } from "@/lib/auth/permissions";
+import { canAccessOrg, canEditBrand, canManageOrg, canViewBrand, isPending, isStaff, type Principal } from "@/lib/auth/permissions";
+import { canManageUsers } from "@/lib/auth/userManagement";
 import { getCurrentPrincipal, getCurrentUser, isAuthEnabled } from "./session";
 import { getCurrentTenant } from "../tenant";
 
@@ -51,4 +52,15 @@ export async function filterAccessibleOrgs<T extends { id: string }>(orgs: T[]):
   if (!isAuthEnabled()) return orgs;
   const principal = await getCurrentPrincipal();
   return principal ? orgs.filter((o) => canAccessOrg(principal, o.id)) : [];
+}
+
+/** 유저 관리 API — 직원·오너·admin만(viewer 불가). 통과하면 호출한 사용자의 권한(principal)을 돌려준다. */
+export async function requireUserManager(): Promise<{ principal: Principal } | { denied: NextResponse }> {
+  if (!isAuthEnabled()) return { denied: deny(403, "로그인 체계가 켜져 있지 않아요.") };
+  const user = await getCurrentUser();
+  if (!user) return { denied: deny(401, "로그인이 필요해요.") };
+  if (user.mustChangePassword) return { denied: deny(403, "비밀번호를 먼저 바꿔주세요.") };
+  const principal = await getCurrentPrincipal();
+  if (!principal || !canManageUsers(principal)) return { denied: deny(403, "유저 관리 권한이 없어요.") };
+  return { principal };
 }

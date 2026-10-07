@@ -8,6 +8,7 @@ export const RESERVED_ORG_SLUGS = new Set([
   "api",
   "help",
   "organizations",
+  "users",
   "login",
   "signup",
   "pending",

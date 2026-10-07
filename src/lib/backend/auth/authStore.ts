@@ -169,7 +169,7 @@ export async function listMembers(orgId: string): Promise<MemberRow[]> {
   }));
 }
 
-async function audit(orgId: string | null, actorUserId: string | null, action: string, targetId: string | null, detail?: unknown) {
+export async function audit(orgId: string | null, actorUserId: string | null, action: string, targetId: string | null, detail?: unknown) {
   await (await db()).query("INSERT INTO neodio_audit_log(id,organization_id,actor_user_id,action,target_type,target_id,detail_json,at) VALUES ($1,$2,$3,$4,'user',$5,$6,$7)", [
     id("audit"), orgId, actorUserId, action, targetId, detail === undefined ? null : JSON.stringify(detail), now()]);
 }
