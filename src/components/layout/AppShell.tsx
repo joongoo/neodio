@@ -13,12 +13,12 @@ export async function AppShell({ children }: { children: ReactNode }) {
   return (
     <PermissionsProvider canEdit={tenant.canEdit} canManageOrg={tenant.canManageOrg}>
       <TopBar />
-      <div className="flex min-h-0 flex-1">
+      <div data-app-shell className="flex min-h-0 flex-1">
         <Sidebar base={tenant.base} showUsers={!!tenant.principal && canManageUsers(tenant.principal)} />
-        <main className="flex-1 overflow-y-auto bg-neutral-50">
+        <main data-app-main className="flex-1 overflow-y-auto bg-neutral-50">
           {/* 로그인한 사용자가 이 브랜드를 볼 수만 있을 때 안내한다. */}
           {tenant.principal && !tenant.canEdit && (
-            <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs text-amber-800">
+            <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs text-amber-800 print:hidden">
               읽기 전용이에요 — 이 브랜드는 볼 수만 있고 변경할 수 없어요. 편집이 필요하면 조직 오너에게 요청하세요.
             </div>
           )}

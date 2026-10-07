@@ -1368,6 +1368,39 @@ export async function getRealConsistency(maxFlaky = 10, filters: RealDataFilters
   };
 }
 
+// 리포트 부록용 측정 개요 — 선택 기간의 수집 규모(실행·관측), 엔진·마켓, 질의 구성(브랜드/일반)과 카테고리별 실행 수.
+export async function getRealReportFacts(range: DateRange, filters: RealDataFilters = {}): Promise<{
+  runs: number; observations: number; engines: string[]; markets: string[];
+  brandQueryRuns: number; generalQueryRuns: number; categories: { name: string; runs: number }[];
+} | null> {
+  const result = await getProcessedWithWeeks(range, filters);
+  if (!result) return null;
+  const { weekOfRun, weightOfRun, currentWeeks, runsById, brandKeywords } = result;
+  const weeks = new Set(currentWeeks);
+  const engines = new Set<string>();
+  const markets = new Set<string>();
+  const categories = new Map<string, number>();
+  let runs = 0, observations = 0, brandQueryRuns = 0, generalQueryRuns = 0;
+  for (const [runId, week] of weekOfRun) {
+    if (!weeks.has(week)) continue;
+    const run = runsById.get(runId);
+    if (!run) continue;
+    runs += 1;
+    observations += weightOfRun.get(runId) ?? 1;
+    engines.add(seedLlmModels.find((m) => m.id === run.llmModelId)?.name ?? run.llmModelId);
+    markets.add(seedMarkets.find((m) => m.id === run.marketId)?.label ?? run.marketId);
+    const scope = queryScopeOf(run.rawMetadata.query, brandKeywords);
+    if (scope === "brand") brandQueryRuns += 1;
+    else if (scope === "nonbrand") generalQueryRuns += 1;
+    const category = run.rawMetadata.category || "미분류";
+    categories.set(category, (categories.get(category) ?? 0) + 1);
+  }
+  return {
+    runs, observations: Math.round(observations), engines: [...engines].sort(), markets: [...markets].sort(), brandQueryRuns, generalQueryRuns,
+    categories: [...categories.entries()].map(([name, count]) => ({ name, runs: count })).sort((a, b) => b.runs - a.runs),
+  };
+}
+
 const SENTIMENT_RANK: Record<Sentiment, number> = { negative: 0, neutral: 1, positive: 2 };
 
 // "개선/하락 상위 항목" — 같은 (수집 키워드, 모델) 조합을 여러 주에 걸쳐

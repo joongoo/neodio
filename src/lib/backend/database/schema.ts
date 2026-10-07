@@ -221,6 +221,16 @@ CREATE INDEX IF NOT EXISTS change_log_org_at ON change_log(organization_id,at DE
 ALTER TABLE change_log ALTER COLUMN organization_id DROP NOT NULL;
 ALTER TABLE change_log ADD COLUMN IF NOT EXISTS actor_user_id TEXT;
 CREATE INDEX IF NOT EXISTS change_log_entity ON change_log(entity_type,entity_id,at DESC);
+-- 클라이언트 보고용 리포트 — 생성 시점의 지표를 snapshot_json에 고정해 나중에 데이터·설정이 바뀌어도 이미 보낸 보고서 숫자가 달라지지 않게 한다.
+-- 운영 DB는 다른 앱과 공유돼 reports 같은 이름이 겹칠 수 있어 neodio_ 접두사를 쓴다.
+CREATE TABLE IF NOT EXISTS neodio_reports (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), brand_id TEXT NOT NULL,
+  title TEXT NOT NULL, range TEXT NOT NULL, filters_json JSONB NOT NULL,
+  snapshot_json JSONB NOT NULL, sections_json JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','final')),
+  created_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finalized_at TEXT
+);
+CREATE INDEX IF NOT EXISTS neodio_reports_brand ON neodio_reports(organization_id,brand_id,created_at DESC);
 -- 이름 붙인 설정 버전 — 저장 시점의 설정 전체를 함께 보관해 나중에 비교·복원할 수 있다.
 CREATE TABLE IF NOT EXISTS config_versions (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), brand_id TEXT,

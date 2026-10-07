@@ -16,3 +16,30 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* 인쇄·PDF 저장 — 리포트 화면에서 헤더·사이드바를 빼고 본문이 여러 쪽으로 이어지게 한다. */
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body {
+    display: block !important;
+  }
+  [data-app-shell],
+  [data-app-main] {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

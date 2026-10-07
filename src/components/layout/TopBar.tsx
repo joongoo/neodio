@@ -22,7 +22,7 @@ export async function TopBar() {
     : [...tenant.activeBrands, { name: tenant.brand.name, slug: tenant.brandSlug }];
 
   return (
-    <header className="flex items-center gap-3 border-b border-neutral-200 bg-[#fbfbfb] px-6 py-3">
+    <header className="flex items-center gap-3 border-b border-neutral-200 bg-[#fbfbfb] px-6 py-3 print:hidden">
       <div className="grid size-8 shrink-0 place-items-center rounded bg-slate-800 text-sm font-bold text-white">
         N
       </div>

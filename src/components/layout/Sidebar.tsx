@@ -65,7 +65,10 @@ const NAV: NavGroup[] = [
     label: "브랜드 관리",
     href: "#",
     icon: CheckCircle2,
-    children: [{ label: "브랜드 가시성", href: "/brand-presence" }],
+    children: [
+      { label: "브랜드 가시성", href: "/brand-presence" },
+      { label: "리포트", href: "/reports" },
+    ],
   },
   {
     label: "도메인",
@@ -107,7 +110,7 @@ export function Sidebar({ base, showUsers = false }: { base: string; showUsers?:
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto bg-[#fbfbfb] pb-2">
+    <aside className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto bg-[#fbfbfb] pb-2 print:hidden">
       {NAV.map((item) => {
         const href = resolveHref(item.href, base);
         return (
