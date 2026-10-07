@@ -548,7 +548,14 @@ async function runJob(job: CollectorJob) {
       }
       if (hasRunSearch) {
         const [min, max] = ENGINE_DELAY_MS[engine] ?? [0, 0];
-        if (max > 0) await interruptibleSleep(min + Math.floor(Math.random() * (max - min + 1)));
+        if (max > 0) {
+          const delay = min + Math.floor(Math.random() * (max - min + 1));
+          job.waitUntil = Date.now() + delay;
+          saveJob(job);
+          await interruptibleSleep(delay);
+          job.waitUntil = null;
+          saveJob(job);
+        }
         if (cur()?.cancelled) break;
       }
       hasRunSearch = true;

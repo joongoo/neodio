@@ -11,7 +11,7 @@ export const COLLECTOR_AGENT_PORT = 17380;
 export const COLLECTOR_AGENT_URL = `http://127.0.0.1:${COLLECTOR_AGENT_PORT}`;
 
 /** 수집기 버전 — 수집 스크립트나 이 약속이 바뀌면 올리고, 웹은 MIN보다 낮으면 업데이트를 안내한다. */
-export const COLLECTOR_VERSION = "0.4.5";
+export const COLLECTOR_VERSION = "0.4.6";
 export const MIN_COLLECTOR_VERSION = "0.1.0";
 /** 사이트맵 크롤 작업을 받을 수 있는 최소 수집기 버전 — 0.1.x 수집기는 이 작업을 모른다. */
 export const SITEMAP_CRAWL_MIN_VERSION = "0.2.0";
@@ -73,6 +73,8 @@ export interface CollectorJob {
   /** kind === "aio-collect"일 때만 */
   aio?: CollectorAioSpec;
   aioState?: CollectorAioState;
+  /** 다음 검색까지 쉬는 중이면 끝나는 시각(ms) — 화면이 카운트다운을 보여 준다. 0.4.6부터. */
+  waitUntil?: number | null;
   /** 어느 조직 화면에서 시킨 수집인지 — 반영할 때 확인용으로 보여 준다. */
   label: string;
   engines: CollectorEngine[];

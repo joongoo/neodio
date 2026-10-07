@@ -20,7 +20,7 @@ const POLL_MS = 2000;
 const IMPORT_CHUNK = 20;
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 
-type PanelState = { label: string; done: number; total: number; current: string | null; phase: "running" | "done" | "stopped" | "error"; note: string | null };
+type PanelState = { label: string; done: number; total: number; current: string | null; waitUntil: number | null; phase: "running" | "done" | "stopped" | "error"; note: string | null };
 
 function stepLabel(step: CollectStep): string {
   if (step.kind === "aio") return "구글AIO";
@@ -51,7 +51,7 @@ export function ParallelCollectModal({
   const needsAgent = steps.some((s) => s.kind !== "gemini");
   const [gate, setGate] = useState<"checking" | "ready" | { problem: Problem; status: CollectorAgentStatus | null }>(needsAgent ? "checking" : "ready");
   const [states, setStates] = useState<PanelState[]>(() =>
-    steps.map((s) => ({ label: stepLabel(s), done: 0, total: stepTotal(s), current: null, phase: "running", note: null }))
+    steps.map((s) => ({ label: stepLabel(s), done: 0, total: stepTotal(s), current: null, waitUntil: null, phase: "running", note: null }))
   );
   const cancels = useRef<(() => void)[]>(steps.map(() => () => {}));
   const doneNotified = useRef(false);
@@ -143,7 +143,23 @@ export function ParallelCollectModal({
   );
 }
 
+// 다음 검색까지 남은 대기 시간 — 1초마다 줄어든다. 대기 중이 아니면 null.
+function useCountdown(waitUntil: number | null): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!waitUntil) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 대기가 시작된 순간의 시각으로 맞춘다
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [waitUntil]);
+  if (!waitUntil) return null;
+  const seconds = Math.max(0, Math.ceil((waitUntil - now) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function PanelShell({ state, onCancel, children }: { state: PanelState; onCancel: () => void; children: React.ReactNode }) {
+  const countdown = useCountdown(state.phase === "running" ? state.waitUntil : null);
   const percent = state.total > 0 ? Math.min(100, Math.round((state.done / state.total) * 100)) : state.phase === "running" ? 0 : 100;
   const warn = state.phase === "stopped" || state.phase === "error";
   return (
@@ -161,6 +177,7 @@ function PanelShell({ state, onCancel, children }: { state: PanelState; onCancel
           {state.current && state.phase === "running" && <span className="truncate text-xs font-normal text-neutral-500">{state.current}</span>}
         </span>
         <span className="flex shrink-0 items-center gap-2">
+          {countdown && <span className="tabular-nums text-xs text-neutral-400" title="다음 검색까지 대기 시간">다음 검색 {countdown}</span>}
           <span className="tabular-nums text-xs text-neutral-500">
             {state.done}/{state.total || "…"}
           </span>
@@ -211,7 +228,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
           job = await getAgentJob(created.id).catch(() => job);
           const finished = job.items.filter((it) => it.status === "done" || it.status === "error" || it.status === "cancelled").length;
           const running = job.items.find((it) => it.status === "running");
-          patch(index, { done: finished, total: job.items.length, current: running ? `${running.keyword}` : null });
+          patch(index, { done: finished, total: job.items.length, current: running ? `${running.keyword}` : null, waitUntil: job.waitUntil ?? null });
           if (job.status === "done" || job.status === "cancelled") break;
           await new Promise((r) => setTimeout(r, POLL_MS));
         }
@@ -231,6 +248,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
         patch(index, {
           phase: job.status === "cancelled" ? "stopped" : "done",
           current: null,
+          waitUntil: null,
           note: `${runs.length}건을 반영했습니다${failed > 0 ? ` · 실패 ${failed}개` : ""}.`,
         });
         router.refresh();
@@ -271,7 +289,8 @@ function AioRunner({ brandId, promptIds, index, patch, setCancel }: RunnerProps 
         patch(index, {
           done: job.results.length,
           total: job.total,
-          current: job.current ? job.current.keyword : job.waitUntil ? "다음 검색 대기 중" : null,
+          current: job.current ? job.current.keyword : null,
+          waitUntil: job.waitUntil,
         });
         if (job.status !== "running") break;
         await new Promise((r) => setTimeout(r, POLL_MS));
@@ -283,6 +302,7 @@ function AioRunner({ brandId, promptIds, index, patch, setCancel }: RunnerProps 
         done: job.results.length,
         total: job.total,
         current: null,
+        waitUntil: null,
         phase: job.status === "done" ? "done" : job.status === "cancelled" ? "stopped" : "error",
         note:
           job.status === "done"
