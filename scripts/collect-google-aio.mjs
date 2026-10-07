@@ -200,6 +200,8 @@ async function main() {
   }
 
   let result;
+  // 캡차가 뜬 시각과 풀렸는지를 결과에 남긴다 — 수집기가 캡차 이벤트 로그를 쓰는 근거(언제·얼마 간격에서 걸리는지 보려는 용도).
+  let captchaInfo = null;
   try {
     await warmUp(page, `https://www.google.com/?hl=${language}&gl=${country}`);
     await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
@@ -213,11 +215,15 @@ async function main() {
     // 캡차는 이 창(실제 Chrome)에서 사람이 풀면 검색 결과로 돌아온다 — 풀 때까지 기다렸다가 이어서 수집한다.
     if (extracted.state === "captcha") {
       console.error(`Google 캡차가 떴습니다. 열린 Chrome 창에서 풀어 주세요 (최대 ${Math.round(captchaWaitMs / 1000)}초 대기).`);
-      const until = Date.now() + captchaWaitMs;
+      const detectedAtMs = Date.now();
+      captchaInfo = { detectedAt: new Date(detectedAtMs).toISOString(), solved: false, waitedMs: 0 };
+      const until = detectedAtMs + captchaWaitMs;
       while (extracted.state === "captcha" && Date.now() < until) {
         await page.waitForTimeout(2_000);
         extracted = await page.evaluate(extractAioInPage, {}).catch(() => ({ state: "captcha" }));
       }
+      captchaInfo.waitedMs = Date.now() - detectedAtMs;
+      captchaInfo.solved = extracted.state !== "captcha";
       if (extracted.state !== "captcha") {
         await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
         await waitForAio(page, { timeoutMs, minWaitMs });
@@ -283,6 +289,7 @@ async function main() {
     }
   }
 
+  if (captchaInfo) result.captcha = captchaInfo;
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
   console.log(JSON.stringify({ status: result.status, errorKind: result.errorKind, sources: result.sources?.length ?? 0, outputPath }));
   if (result.status === "failed") process.exitCode = 1;

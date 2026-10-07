@@ -390,6 +390,65 @@ async function runAioScriptWithRetry(job: CollectorJob, spec: CollectorAioSpec, 
   return code;
 }
 
+// ---- 캡차 이벤트 로그 — 언제·몇 번째 검색·어떤 간격에서 캡차가 뜨는지 쌓아 간격을 데이터로 정하려는 기록 ----
+const CAPTCHA_LOG = path.join(LOG_DIR, "captcha-events.jsonl");
+const CAPTCHA_STATE_FILE = path.join(HOME_DIR, "captcha-state.json");
+let lastGoogleSearchAt: number | null = null;
+
+function searchesSinceCaptcha(): number {
+  try {
+    return (JSON.parse(readFileSync(CAPTCHA_STATE_FILE, "utf8")) as { since: number }).since || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 구글 검색을 시작할 때 부른다 — 직전 검색 시작과의 간격(ms)을 돌려주고 캡차 없이 지난 검색 수를 올린다. */
+function noteGoogleSearch(): number | null {
+  const now = Date.now();
+  const gap = lastGoogleSearchAt === null ? null : now - lastGoogleSearchAt;
+  lastGoogleSearchAt = now;
+  try {
+    writeFileSync(CAPTCHA_STATE_FILE, JSON.stringify({ since: searchesSinceCaptcha() + 1 }));
+  } catch {
+    // 기록 실패가 수집을 막지 않는다
+  }
+  return gap;
+}
+
+/** 방금 끝난 검색에서 캡차가 떴으면 한 줄 기록한다(logs/captcha-events.jsonl + 작업 로그). */
+function recordCaptchaEvent(job: CollectorJob, spec: CollectorAioSpec, index: number, gapMs: number | null) {
+  const result = jobAioResults(job).find((r) => r.index === index)?.result as { captcha?: { detectedAt: string; solved: boolean; waitedMs: number } } | undefined;
+  const captcha = result?.captcha;
+  if (!captcha) return;
+  const task = spec.tasks[index];
+  const event = {
+    at: captcha.detectedAt,
+    jobId: job.id,
+    keyword: task.keyword,
+    device: task.device,
+    indexInJob: index + 1,
+    jobSize: spec.tasks.length,
+    searchesToday: googleCountToday(),
+    searchesSinceLastCaptcha: searchesSinceCaptcha(),
+    sincePreviousSearchMs: gapMs,
+    configuredDelayMs: [spec.minDelayMs, spec.maxDelayMs],
+    solved: captcha.solved,
+    waitedMs: captcha.waitedMs,
+  };
+  try {
+    mkdirSync(LOG_DIR, { recursive: true });
+    if (existsSync(CAPTCHA_LOG) && statSync(CAPTCHA_LOG).size > 2 * 1024 * 1024) renameSync(CAPTCHA_LOG, `${CAPTCHA_LOG}.1`);
+    appendFileSync(CAPTCHA_LOG, `${JSON.stringify(event)}\n`);
+    writeFileSync(CAPTCHA_STATE_FILE, JSON.stringify({ since: 0 }));
+  } catch {
+    // 기록 실패가 수집을 막지 않는다
+  }
+  const gap = gapMs === null ? "첫 검색" : `직전 검색 후 ${Math.round(gapMs / 1000)}초`;
+  appendJobLog(job, `캡차 기록: ${event.at} · ${task.device} · 오늘 ${event.searchesToday}번째 · 지난 캡차 후 ${event.searchesSinceLastCaptcha}번째 · ${gap} · ${captcha.solved ? `사람이 ${Math.round(captcha.waitedMs / 1000)}초 만에 풂` : "풀리지 않음"}`);
+  log(`캡차 이벤트 ${JSON.stringify(event)}`);
+}
+
 async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
   const state = (job.aioState ??= { waitUntil: null, captcha: false });
   log(`▶ AI Overview 수집 시작 ${job.id} — ${spec.tasks.length}건`);
@@ -417,8 +476,10 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     appendJobLog(job, `"${task.keyword}" (${task.device}) 검색`);
     const outDir = aioTaskDir(job, index);
     mkdirSync(outDir, { recursive: true });
+    const gapMs = noteGoogleSearch();
     const code = await runAioScriptWithRetry(job, spec, task, outDir);
     addGoogleCount(1);
+    recordCaptchaEvent(job, spec, index, gapMs);
     const written = jsonFiles(outDir).length > 0;
     if (cur()?.cancelled) item.status = "cancelled";
     else if (!written) {
@@ -454,7 +515,9 @@ async function runAioJob(job: CollectorJob, spec: CollectorAioSpec) {
     appendJobLog(job, `"${task.keyword}" (${task.device}) 실패 건 다시 시도`);
     const outDir = aioTaskDir(job, index);
     mkdirSync(outDir, { recursive: true });
+    const gapMs = noteGoogleSearch();
     const code = await runAioScriptWithRetry(job, spec, task, outDir);
+    recordCaptchaEvent(job, spec, index, gapMs);
     if (cur()?.cancelled) item.status = "cancelled";
     else if (jsonFiles(outDir).length === 0) {
       item.status = "error";

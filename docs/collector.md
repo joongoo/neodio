@@ -138,3 +138,20 @@ NEODIO_COLLECTION_MODE=agent npm run dev          # 선택 수집이 수집기 �
 수집기 데이터: macOS `~/.neodio-collector`, Windows `%LOCALAPPDATA%\NeodioCollector`
 (`jobs/` 작업 기록, `results/<작업>/` 수집 결과 JSON·캡처, `work/` Chrome 임시 프로필, `logs/`).
 반영한 작업은 최근 30개까지만 남기고 수집기 시작 때 지운다.
+
+## 캡차 이벤트 로그 (0.4.7~)
+
+구글 AI Overview 수집 중 캡차가 뜨면 `logs/captcha-events.jsonl`에 한 줄씩 남기고(2MB가 넘으면 `.1`로 돌려 쓴다), 같은 내용을 작업 로그에도 보여 준다. 간격·한도를 감이 아니라 데이터로 정하려는 기록이다.
+
+| 필드 | 뜻 |
+|---|---|
+| `at` | 캡차가 뜬 시각(ISO) |
+| `device`, `keyword`, `jobId` | 어떤 검색에서 떴는지 |
+| `indexInJob` / `jobSize` | 이 작업의 몇 번째 / 전체 몇 건 |
+| `searchesToday` | 오늘(KST) 구글 검색 누적 수 |
+| `searchesSinceLastCaptcha` | 직전 캡차 이후 지난 검색 수 |
+| `sincePreviousSearchMs` | 직전 검색을 시작한 뒤 이 검색을 시작하기까지 걸린 시간 |
+| `configuredDelayMs` | 설정된 검색 간격 [최소, 최대] |
+| `solved`, `waitedMs` | 사람이 풀었는지, 풀 때까지 기다린 시간 |
+
+예) 최근 캡차 이벤트 보기: `tail -n 20 ~/.neodio-collector/logs/captcha-events.jsonl` (설치 위치는 위 폴더 구성 참고). 다른 플랫폼의 `google` 일반 검색 엔진 캡차는 아직 기록하지 않는다.
