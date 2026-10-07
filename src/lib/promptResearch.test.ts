@@ -31,3 +31,10 @@ test("parse rejects garbage and empty results", () => {
   assert.ok("error" in parsePromptResearch(JSON.stringify({ relatedTopics: [] }), "x"));
   assert.ok("error" in parsePromptResearch(JSON.stringify({ relatedTopics: [{ topic: "a", prompts: [] }] }), "x"));
 });
+
+test("제안된 질문은 마침표·괄호 없는 검색어 형태로 정리하고 프롬프트에 규칙을 넣는다", () => {
+  assert.match(buildPromptResearchPrompt("토픽", "한국 (KR)"), /마침표\(\.\)와 괄호/);
+  const parsed = parsePromptResearch(JSON.stringify({ intent: {}, relatedTopics: [{ topic: "자동화", prompts: ["도구 추천해줘 (무료 위주)."] }] }), "토픽");
+  assert.ok("relatedTopics" in parsed);
+  assert.equal(parsed.relatedTopics[0].subPrompts[0].prompt, "도구 추천해줘");
+});

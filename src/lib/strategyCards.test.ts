@@ -23,3 +23,10 @@ test("buildStrategyPrompt embeds digest and warns that trend values are relative
   assert.match(trend, /상대값/);
   assert.match(buildStrategyPrompt("sitemap", "DIGEST", "TOPICS"), /페이지 주소는 주제 파악의 단서/);
 });
+
+test("카드의 질문은 마침표·괄호 없는 검색어 형태로 정리하고 프롬프트에 규칙을 넣는다", () => {
+  assert.match(buildStrategyPrompt("trend", "digest", ""), /마침표\(\.\)와 괄호/);
+  const parsed = parseStrategyCards(JSON.stringify([{ ...card, topics: [{ ...card.topics[0], prompt: "자동화 도구 비교(가격 포함)." }] }]), "trend", 1);
+  assert.ok("cards" in parsed);
+  assert.equal(parsed.cards[0].topics[0].prompt, "자동화 도구 비교");
+});

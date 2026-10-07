@@ -1,3 +1,4 @@
+import { SEARCH_QUERY_RULE, toSearchQueryText } from "@/lib/searchQueryText";
 import type { LlmBrainstormCard } from "@/lib/db/types";
 
 // "검색어 트렌드 분석"·"사이트맵 크롤 분석" 마법사의 공통 부분 — 종류별 설정, 프롬프트 만들기, LLM 답변 검증.
@@ -38,7 +39,7 @@ const CARD_FORMAT =
 
 export function buildStrategyPrompt(kind: StrategyKind, digest: string, existingTopicsBlock: string): string {
   const cardRules =
-    "카드마다 (1) 한 줄 제목, (2) 왜 중요한지 2~3문장 요약, (3) 근거가 되는 한 줄(stat), (4) 이 전략을 확인할 자연어 질문 3~5개(topics)가 필요합니다. 질문은 사용자가 ChatGPT·Gemini 같은 AI에게 실제로 물을 법한 문장으로, 브랜드명을 넣지 않은 일반 질문 위주로 만드세요.";
+    "카드마다 (1) 한 줄 제목, (2) 왜 중요한지 2~3문장 요약, (3) 근거가 되는 한 줄(stat), (4) 이 전략을 확인할 자연어 질문 3~5개(topics)가 필요합니다. 질문은 사용자가 ChatGPT·Gemini 같은 AI에게 실제로 물을 법한 문장으로, 브랜드명을 넣지 않은 일반 질문 위주로 만드세요. " + SEARCH_QUERY_RULE;
   const closing = `\n\n${existingTopicsBlock}\n\n반드시 아래 JSON 배열 형식으로만 답변해주세요. 다른 설명 없이 JSON만 출력하세요:\n\n${CARD_FORMAT}\n\n주의: 위 데이터에 없는 숫자는 만들어내지 마세요. stat과 summary의 수치는 위 데이터에서 그대로 가져오세요.`;
   if (kind === "trend") {
     return `다음은 우리 브랜드와 우리가 다루는 주제들의 네이버 검색 관심도 추세입니다.\n\n${digest}\n\n이 추세에서 "관심이 오르거나 시즌이 다가오는데 우리가 AI 답변에서 놓칠 수 있는 기회 주제(coverage_gap)" 2~3개와 "관심이 꾸준해서 계속 강하게 가져가야 할 주제(strength)" 1~2개를 찾아 카드로 만들어주세요. 관심이 줄어드는 주제는 우선순위를 낮추라는 설명으로만 언급하세요. 값은 상대값이라 "검색량이 몇 배"처럼 절대 검색량으로 해석하지 마세요.\n\n${cardRules}${closing}`;
@@ -93,7 +94,7 @@ export function parseStrategyCards(answer: string, kind: StrategyKind, batchId =
       title: card.title.trim(),
       summary: card.summary.trim(),
       stat: card.stat,
-      topics: card.topics.map((t) => ({ prompt: t.prompt.trim(), category: t.category.trim(), topic: t.topic.trim() })),
+      topics: card.topics.map((t) => ({ prompt: toSearchQueryText(t.prompt.trim()), category: t.category.trim(), topic: t.topic.trim() })),
     })),
   };
 }

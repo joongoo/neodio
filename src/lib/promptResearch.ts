@@ -1,4 +1,5 @@
 import type { Relevancy, RelatedTopicRow } from "@/lib/db/types";
+import { SEARCH_QUERY_RULE, toSearchQueryText } from "@/lib/searchQueryText";
 
 // 프롬프트 리서치 — 토픽 하나를 넣으면 AI가 "사람들이 이 토픽에 대해 AI에게 실제로 물어볼 관련 토픽과 질문"을
 // 제안한다(웹 검색 없이 모델 지식만 쓰므로 무료 등급으로 동작). 프롬프트 만들기와 응답 검증은 순수 함수로 두어
@@ -25,6 +26,7 @@ export function buildPromptResearchPrompt(topic: string, market: string): string
 
 규칙:
 - 질문은 특정 브랜드명을 넣지 않은 카테고리/방법/비교/추천형 질문 위주로, 해당 마켓 언어의 자연스러운 문장으로 작성하세요.
+- ${SEARCH_QUERY_RULE}
 - relevancy는 입력 토픽과의 관련도입니다: "Best" | "높음" | "중간" | "낮음".
 - intent는 제안한 전체 질문을 검색 의도별로 분류한 개수입니다(정보성 informational, 상업성 commercial, 거래성 transactional).
 - 반드시 JSON 하나만 답하세요.
@@ -64,7 +66,7 @@ export function parsePromptResearch(raw: string, topic: string): { relatedTopics
     const seenPrompts = new Set<string>();
     const prompts = (Array.isArray(entry.prompts) ? entry.prompts : [])
       .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
-      .map((p) => p.trim())
+      .map((p) => toSearchQueryText(p.trim()))
       .filter((p) => !seenPrompts.has(p) && seenPrompts.add(p))
       .slice(0, MAX_PROMPTS_PER_TOPIC);
     if (prompts.length === 0) continue;

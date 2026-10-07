@@ -38,3 +38,10 @@ test("parse reports unusable answers", () => {
   assert.ok("error" in parseVideoPromptSuggestions('{"items":[]}', { videos, perVideo: 3 }));
   assert.ok("error" in parseVideoPromptSuggestions('{"videos":[{"videoId":"aaaaaaaaaaa","prompts":[]}]}', { videos, perVideo: 3 }));
 });
+
+test("예상 프롬프트는 마침표·괄호 없는 검색어 형태로 정리하고 요청에 규칙을 넣는다", () => {
+  assert.match(buildVideoPromptRequest({ brandName: "B", videos, perVideo: 2 }), /마침표\(\.\)와 괄호/);
+  const parsed = parseVideoPromptSuggestions(JSON.stringify({ videos: [{ videoId: "aaaaaaaaaaa", prompts: ["CRM 연동 방법(슬랙 기준)."] }] }), { videos, perVideo: 2 });
+  assert.ok("byVideo" in parsed);
+  assert.deepEqual(parsed.byVideo.aaaaaaaaaaa, ["CRM 연동 방법"]);
+});

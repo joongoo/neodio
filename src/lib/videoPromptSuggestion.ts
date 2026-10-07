@@ -1,3 +1,5 @@
+import { SEARCH_QUERY_RULE, toSearchQueryText } from "@/lib/searchQueryText";
+
 // YouTube 관리 — 체크한 영상마다 "이 영상이 AI 답변에 인용될 만한" 예상 프롬프트를 만든다.
 // 프롬프트 만들기(build) → 응답 검증(parse)을 순수 함수로 둔다. 서버(/api/llm-generate)가 답을 받아오고,
 // 화면이 검증한 뒤 사람이 고른 것만 프롬프트 라이브러리에 등록한다. 클라이언트에서도 쓰므로 서버 전용 코드를 가져오지 않는다.
@@ -36,6 +38,7 @@ export function buildVideoPromptRequest({ brandName, industry, videos, perVideo,
     "- 영상 내용이 실제로 답이 되는 질문·검색어만 만든다. 영상에 없는 내용을 전제로 하지 않는다.",
     "- 짧은 검색어형(2~5단어)과 완전한 질문형을 섞는다. 영상 제목을 그대로 복사하지 않는다.",
     "- 사용자가 브랜드를 이미 알고 묻는 경우가 아니면 브랜드명은 넣지 않는다(브랜드를 모르는 사람이 문제를 검색하는 상황이 목표).",
+    `- ${SEARCH_QUERY_RULE}`,
     `- 프롬프트는 한국어, ${MAX_PROMPT_LENGTH}자 이하. 영상끼리, 그리고 아래 "이미 있는 프롬프트"와 같은 문장을 만들지 않는다.`,
     "",
     "영상:",
@@ -89,7 +92,7 @@ export function parseVideoPromptSuggestions(raw: string, input: Pick<VideoSugges
     }
     for (const item of prompts) {
       const text = typeof item === "string" ? item : typeof (item as { text?: unknown })?.text === "string" ? (item as { text: string }).text : "";
-      const clean = text.replace(/\s+/g, " ").trim();
+      const clean = toSearchQueryText(text.replace(/\s+/g, " ").trim());
       const key = normalizePromptText(clean);
       const mine = (byVideo[videoId] ??= []);
       if (!clean || clean.length > MAX_PROMPT_LENGTH || seen.has(key) || mine.length >= Math.min(input.perVideo, MAX_PER_VIDEO)) {
