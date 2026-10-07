@@ -18,7 +18,7 @@ test("깨진 해시 문자열은 검증 실패", async () => {
 
 test("비밀번호 규칙", () => {
   assert.match(passwordProblem("short")!, /8자/);
-  assert.match(passwordProblem("user@example.com", "USER@example.com")!, /이메일/);
+  assert.match(passwordProblem("user@example.com", "USER@example.com")!, /아이디/);
   assert.equal(passwordProblem("a-long-enough-password", "user@example.com"), null);
 });
 

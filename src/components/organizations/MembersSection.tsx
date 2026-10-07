@@ -191,7 +191,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
           <ModalCloseButton onClose={() => setMode(null)} />
         </div>
         <p className="mt-1 text-sm text-neutral-500">
-          {mode?.kind === "issue" ? "계정을 만들고 임시 비밀번호를 한 번 보여드려요(메일은 발송되지 않아요)." : mode?.kind === "edit" ? mode.member.email : "이미 가입한 사용자의 이메일로 이 조직에 역할을 할당해요."}
+          {mode?.kind === "issue" ? "계정을 만들고 임시 비밀번호를 한 번 보여드려요(메일은 발송되지 않아요)." : mode?.kind === "edit" ? mode.member.email : "이미 가입한 사용자의 아이디로 이 조직에 역할을 할당해요."}
         </p>
         <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
           {mode?.kind !== "edit" && (
@@ -203,8 +203,8 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
                 </div>
               )}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-neutral-500">이메일 *</label>
-                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+                <label className="text-xs font-medium text-neutral-500">아이디 *</label>
+                <input type="text" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
               </div>
             </>
           )}

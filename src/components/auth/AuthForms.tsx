@@ -65,8 +65,8 @@ export function LoginForm() {
   return (
     <Panel title="로그인">
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="이메일">
-          <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+        <Field label="아이디">
+          <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50} required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
         </Field>
         <Field label="비밀번호">
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
@@ -111,8 +111,8 @@ export function SignupForm() {
         <Field label="이름">
           <input autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
         </Field>
-        <Field label="이메일">
-          <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+        <Field label="아이디">
+          <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50} required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
         </Field>
         <Field label="비밀번호 (8자 이상)">
           <input type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
@@ -216,7 +216,7 @@ export function AccountForm({ name, email, forced }: { name: string; email: stri
           <Field label="이름">
             <input required maxLength={50} value={nameInput} onChange={(e) => setNameInput(e.target.value)} className={inputClass} />
           </Field>
-          <p className="text-[11px] text-neutral-400">이메일({email})은 로그인 ID라 바꿀 수 없어요.</p>
+          <p className="text-[11px] text-neutral-400">아이디({email})는 바꿀 수 없어요.</p>
           {nameMsg && <p className={`text-xs ${nameMsg.ok ? "text-emerald-600" : "text-red-600"}`}>{nameMsg.text}</p>}
           <Button type="submit" variant="primary" disabled={nameBusy || nameInput.trim() === savedName}>
             {nameBusy ? "저장 중..." : "이름 저장"}

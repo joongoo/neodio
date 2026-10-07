@@ -30,7 +30,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
 /** 비밀번호 규칙 — 통과하면 null, 아니면 사용자에게 보일 이유. */
 export function passwordProblem(password: string, email?: string): string | null {
   if (password.length < MIN_PASSWORD_LENGTH) return `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 해요.`;
-  if (email && password.toLowerCase() === email.trim().toLowerCase()) return "이메일과 같은 비밀번호는 쓸 수 없어요.";
+  if (email && password.toLowerCase() === email.trim().toLowerCase()) return "아이디와 같은 비밀번호는 쓸 수 없어요.";
   if (/^\s+$/.test(password)) return "공백만으로는 비밀번호를 만들 수 없어요.";
   return null;
 }

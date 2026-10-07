@@ -21,3 +21,16 @@ test("다른 앱의 users·sessions 테이블이 있어도 스키마 초기화�
   assert.equal((await verifyLogin(email, "collision-password-1"))?.email, email);
   await store.query("DELETE FROM neodio_users WHERE lower(email)=$1", [email]);
 });
+
+// 이메일을 아직 쓰지 않아 로그인 키는 아이디다 — 이메일 형식이 아니어도 가입되고, 대소문자는 구분하지 않으며, 규칙에 맞지 않으면 거절한다.
+test("로그인 아이디: 이메일 형식 없이 가입·로그인되고 형식이 틀리거나 중복이면 거절한다", async () => {
+  const store = await getPromptStore();
+  const id = `id-test-${Date.now()}`;
+  await createUser({ email: id, name: "아이디 확인", password: "id-test-password-1" });
+  assert.equal((await verifyLogin(id.toUpperCase(), "id-test-password-1"))?.email, id);
+  await assert.rejects(createUser({ email: id.toUpperCase(), name: "중복", password: "id-test-password-1" }), /이미 사용 중인 아이디/);
+  for (const bad of ["ab", "한글아이디", "has space", "-start", "x".repeat(51)]) {
+    await assert.rejects(createUser({ email: bad, name: "형식", password: "id-test-password-1" }), /아이디는/, bad);
+  }
+  await store.query("DELETE FROM neodio_users WHERE lower(email)=$1", [id]);
+});

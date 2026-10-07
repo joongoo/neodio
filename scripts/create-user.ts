@@ -1,8 +1,8 @@
 // 첫 계정(네오다임 직원·조직 오너)을 만드는 스크립트 — 로그인 체계를 켜기 전에 한 번 실행한다.
 //
-//   npx tsx scripts/create-user.ts --email a@b.com --name "홍길동" --staff
-//   npx tsx scripts/create-user.ts --email a@b.com --name "홍길동" --org <조직 slug> --owner
-//   npx tsx scripts/create-user.ts --email a@b.com --name "홍길동" --org <조직 slug> --role viewer --brands <브랜드id,...>
+//   npx tsx scripts/create-user.ts --id hong --name "홍길동" --staff
+//   npx tsx scripts/create-user.ts --id hong --name "홍길동" --org <조직 slug> --owner
+//   npx tsx scripts/create-user.ts --id hong --name "홍길동" --org <조직 slug> --role viewer --brands <브랜드id,...>
 //
 // 비밀번호는 실행 중에 숨겨서 입력받는다(인자·셸 기록에 남지 않는다). NEODIO_NEW_PASSWORD 환경변수로도 줄 수 있다.
 import { createInterface } from "node:readline";
@@ -32,9 +32,9 @@ function askHidden(question: string): Promise<string> {
 }
 
 async function main() {
-  const email = value("email");
+  const email = value("id") ?? value("email"); // 로그인 아이디(예전 --email도 받는다)
   const name = value("name");
-  if (!email || !name) throw new Error("--email 과 --name 이 필요합니다.");
+  if (!email || !name) throw new Error("--id 와 --name 이 필요합니다.");
   const password = process.env.NEODIO_NEW_PASSWORD ?? (await askHidden("비밀번호(8자 이상): "));
   const user = await createUser({ email, name, password, platformRole: flag("staff") ? "staff" : "none" });
   console.log(`계정 생성: ${user.email}${flag("staff") ? " (네오다임 직원)" : ""}`);

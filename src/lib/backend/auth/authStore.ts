@@ -12,8 +12,9 @@ const id = (prefix: string) => `${prefix}-${randomUUID()}`;
 const now = () => new Date().toISOString();
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-export const normalizeEmail = (email: string) => email.trim().toLowerCase();
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 로그인 아이디 — 아직 이메일을 쓰지 않아 영문 소문자·숫자·`.`·`_`·`-`·`@`로 3~50자. 저장 컬럼 이름은 email 그대로 두고 아이디를 담는다(이메일 인증을 붙일 때 별도 컬럼을 추가한다).
+export const normalizeEmail = (loginId: string) => loginId.trim().toLowerCase();
+const LOGIN_ID_PATTERN = /^[a-z0-9][a-z0-9._@-]{2,49}$/;
 
 export interface AuthUser {
   id: string;
@@ -49,14 +50,14 @@ export async function createUser(input: {
   source?: "signup";
 }): Promise<AuthUser> {
   const email = normalizeEmail(input.email);
-  if (!EMAIL_PATTERN.test(email)) throw new AuthError("이메일 형식이 올바르지 않아요.");
+  if (!LOGIN_ID_PATTERN.test(email)) throw new AuthError("아이디는 영문 소문자·숫자·. _ - 로 3~50자여야 하고 첫 글자는 영문이나 숫자여야 해요.");
   const name = input.name.trim();
   if (!name) throw new AuthError("이름을 입력해주세요.");
   const problem = passwordProblem(input.password, email);
   if (problem) throw new AuthError(problem);
   const store = await db();
   const [existing] = await store.query("SELECT id FROM neodio_users WHERE lower(email)=$1", [email]);
-  if (existing) throw new AuthError("이미 가입된 이메일이에요.", "exists");
+  if (existing) throw new AuthError("이미 사용 중인 아이디예요.", "exists");
   const userId = id("user");
   await store.query("INSERT INTO neodio_users(id,email,name,password_hash,must_change_password,platform_role,status,created_at) VALUES ($1,$2,$3,$4,$5,$6,'active',$7)", [
     userId, email, name, await hashPassword(input.password), !!input.mustChangePassword, input.platformRole ?? "none", now()]);
@@ -70,7 +71,7 @@ export async function getUser(userId: string): Promise<AuthUser | null> {
   return row ? toUser(row) : null;
 }
 
-// 존재하지 않는 이메일에도 같은 시간이 걸리게 더미 해시와 비교한다(이메일 존재 여부 노출 방지).
+// 존재하지 않는 아이디에도 같은 시간이 걸리게 더미 해시와 비교한다(아이디 존재 여부 노출 방지).
 let dummyHash: Promise<string> | null = null;
 
 export async function verifyLogin(emailInput: string, password: string): Promise<AuthUser | null> {

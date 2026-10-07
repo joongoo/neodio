@@ -41,12 +41,12 @@ export function UsersClient({ users, isStaff }: { users: UserRow[]; isStaff: boo
 
       <div className="flex h-9 w-[320px] items-center gap-2 rounded-full border border-neutral-300 bg-white px-3">
         <Search size={16} className="shrink-0 text-neutral-400" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름·이메일·조직 검색" aria-label="유저 검색" className="min-w-0 flex-1 text-[13px] text-neutral-700 outline-none placeholder:text-neutral-400" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름·아이디·조직 검색" aria-label="유저 검색" className="min-w-0 flex-1 text-[13px] text-neutral-700 outline-none placeholder:text-neutral-400" />
       </div>
 
       <Card className="p-0">
         <div className="flex items-center gap-3 border-b border-neutral-200 px-5 py-2.5 text-xs font-medium text-neutral-500">
-          <span className="min-w-0 flex-1">이름 · 이메일</span>
+          <span className="min-w-0 flex-1">이름 · 아이디</span>
           <span className="w-[280px] shrink-0">조직 · 역할</span>
           <span className="w-[70px] shrink-0">상태</span>
           <span className="w-[90px] shrink-0">마지막 로그인</span>
