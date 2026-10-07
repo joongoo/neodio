@@ -5,6 +5,7 @@ import { Copy, Check, Sparkles, Trash2, Pencil, ShieldCheck, Loader2, Wand2 } fr
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { PromptLibraryRow } from "@/lib/db";
+import { needsSearchQueryCleanup, toSearchQueryText } from "@/lib/searchQueryText";
 
 type Action = "keep" | "delete" | "modify";
 
@@ -27,7 +28,7 @@ const VALID_ACTIONS = new Set<Action>(["keep", "delete", "modify"]);
 
 function buildPromptText(rows: PromptLibraryRow[]): string {
   const dump = rows.map((r) => `${r.id}\t${r.category}\t${r.topic}\t${r.prompt}`).join("\n");
-  return `다음은 우리 프롬프트 라이브러리 전체입니다 (형식: id\\t카테고리\\t토픽\\t프롬프트 원문, 총 ${rows.length}개):\n\n${dump}\n\n각 프롬프트를 검토해서 다음 중 하나로 판단해주세요:\n- keep: 그대로 유지할 것 (좋은 프롬프트)\n- delete: 삭제 권장 (중복, 브랜드명이 과도하게 들어감, 의도가 불분명, 실효성이 낮음 등)\n- modify: 문구/카테고리/토픽을 다듬으면 더 좋아질 것\n\n반드시 라이브러리의 모든 ${rows.length}개 id 각각에 대해 정확히 하나의 항목을 포함한 JSON 배열로만 답변하세요. 다른 설명은 쓰지 마세요.\n\n각 항목의 형식:\n{"id": "위 목록의 id 그대로", "action": "keep | delete | modify", "reason": "이 판단의 짧은 이유(한 문장)", "prompt": "action이 modify일 때만, 수정된 프롬프트 전문", "category": "action이 modify이고 카테고리를 바꿀 때만", "topic": "action이 modify이고 토픽을 바꿀 때만"}\n\nkeep 항목에는 prompt/category/topic을 넣지 마세요. modify 항목은 prompt/category/topic 중 실제로 바뀌는 필드만 넣어도 됩니다(안 바뀌는 필드는 생략).`;
+  return `다음은 우리 프롬프트 라이브러리 전체입니다 (형식: id\\t카테고리\\t토픽\\t프롬프트 원문, 총 ${rows.length}개):\n\n${dump}\n\n각 프롬프트를 검토해서 다음 중 하나로 판단해주세요:\n- keep: 그대로 유지할 것 (좋은 프롬프트)\n- delete: 삭제 권장 (중복, 브랜드명이 과도하게 들어감, 의도가 불분명, 실효성이 낮음 등)\n- modify: 문구/카테고리/토픽을 다듬으면 더 좋아질 것\n\n반드시 라이브러리의 모든 ${rows.length}개 id 각각에 대해 정확히 하나의 항목을 포함한 JSON 배열로만 답변하세요. 다른 설명은 쓰지 마세요.\n\n프롬프트 작성 규칙: 프롬프트는 실제 사용자가 검색창에 입력할 텍스트로 쓰세요. 마침표(.)와 괄호(( ))는 쓰지 마세요. 설명이 필요한 말은 괄호로 덧붙이지 말고 문장 안에 풀어 쓰거나 빼세요. Next.js, v2.0처럼 이름에 포함된 점은 괜찮습니다.\n\n각 항목의 형식:\n{"id": "위 목록의 id 그대로", "action": "keep | delete | modify", "reason": "이 판단의 짧은 이유(한 문장)", "prompt": "action이 modify일 때만, 수정된 프롬프트 전문", "category": "action이 modify이고 카테고리를 바꿀 때만", "topic": "action이 modify이고 토픽을 바꿀 때만"}\n\nkeep 항목에는 prompt/category/topic을 넣지 마세요. modify 항목은 prompt/category/topic 중 실제로 바뀌는 필드만 넣어도 됩니다(안 바뀌는 필드는 생략).`;
 }
 
 // 서버가 API로 물을 때 쓰는 프롬프트 — 유지(keep)는 검토 목록에 들어가지 않으므로 답변에서 생략하게 해
@@ -36,7 +37,7 @@ const CHUNK_SIZE = 60;
 
 function buildApiPromptText(chunk: PromptLibraryRow[]): string {
   const dump = chunk.map((r) => `${r.id}\t${r.category}\t${r.topic}\t${r.prompt}`).join("\n");
-  return `다음은 우리 프롬프트 라이브러리의 일부입니다 (형식: id\\t카테고리\\t토픽\\t프롬프트 원문, ${chunk.length}개):\n\n${dump}\n\n각 프롬프트를 검토해서 삭제하거나 수정할 것만 골라주세요:\n- delete: 삭제 권장 (중복, 브랜드명이 과도하게 들어감, 의도가 불분명, 실효성이 낮음 등)\n- modify: 문구/카테고리/토픽을 다듬으면 더 좋아질 것\n그대로 유지할 프롬프트는 답변에 포함하지 마세요.\n\n반드시 JSON 배열로만 답변하세요(설명 금지). 바꿀 게 없으면 [] 만 답하세요.\n\n각 항목의 형식:\n{"id": "위 목록의 id 그대로", "action": "delete | modify", "reason": "이 판단의 짧은 이유(한 문장)", "prompt": "action이 modify일 때만, 수정된 프롬프트 전문", "category": "action이 modify이고 카테고리를 바꿀 때만", "topic": "action이 modify이고 토픽을 바꿀 때만"}\n\nmodify 항목은 prompt/category/topic 중 실제로 바뀌는 필드만 넣어도 됩니다.`;
+  return `다음은 우리 프롬프트 라이브러리의 일부입니다 (형식: id\\t카테고리\\t토픽\\t프롬프트 원문, ${chunk.length}개):\n\n${dump}\n\n각 프롬프트를 검토해서 삭제하거나 수정할 것만 골라주세요:\n- delete: 삭제 권장 (중복, 브랜드명이 과도하게 들어감, 의도가 불분명, 실효성이 낮음 등)\n- modify: 문구/카테고리/토픽을 다듬으면 더 좋아질 것\n그대로 유지할 프롬프트는 답변에 포함하지 마세요.\n\n반드시 JSON 배열로만 답변하세요(설명 금지). 바꿀 게 없으면 [] 만 답하세요.\n\n프롬프트 작성 규칙: 프롬프트는 실제 사용자가 검색창에 입력할 텍스트로 쓰세요. 마침표(.)와 괄호(( ))는 쓰지 마세요. 설명이 필요한 말은 괄호로 덧붙이지 말고 문장 안에 풀어 쓰거나 빼세요. Next.js, v2.0처럼 이름에 포함된 점은 괜찮습니다.\n\n각 항목의 형식:\n{"id": "위 목록의 id 그대로", "action": "delete | modify", "reason": "이 판단의 짧은 이유(한 문장)", "prompt": "action이 modify일 때만, 수정된 프롬프트 전문", "category": "action이 modify이고 카테고리를 바꿀 때만", "topic": "action이 modify이고 토픽을 바꿀 때만"}\n\nmodify 항목은 prompt/category/topic 중 실제로 바뀌는 필드만 넣어도 됩니다.`;
 }
 
 function extractJsonArray(raw: string): unknown[] | null {
@@ -68,7 +69,7 @@ function parseResponse(raw: string, rows: PromptLibraryRow[]): ParsedResult | { 
       return { error: "JSON 배열로 해석할 수 없습니다. LLM이 JSON만 답하도록 다시 시도해주세요." };
     }
   }
-  if (!Array.isArray(parsed) || parsed.length === 0) return { error: "빈 배열이거나 배열이 아닙니다." };
+  if (!Array.isArray(parsed)) return { error: "JSON 배열이 아닙니다." };
 
   const byId = new Map(rows.map((r) => [r.id, r]));
   const recommendations: Recommendation[] = [];
@@ -84,7 +85,8 @@ function parseResponse(raw: string, rows: PromptLibraryRow[]): ParsedResult | { 
     }
     if (action === "modify") {
       const row = byId.get(id)!;
-      const prompt = typeof it.prompt === "string" && it.prompt.trim() ? it.prompt.trim() : row.prompt;
+      // LLM이 규칙을 어겨도 마침표·괄호가 들어가지 않게 한 번 더 정리한다.
+      const prompt = toSearchQueryText(typeof it.prompt === "string" && it.prompt.trim() ? it.prompt.trim() : row.prompt);
       const category = typeof it.category === "string" && it.category.trim() ? it.category.trim() : row.category;
       const topic = typeof it.topic === "string" && it.topic.trim() ? it.topic.trim() : row.topic;
       // 실제로 바뀌는 게 하나도 없으면 keep과 다를 게 없다 — 검토 목록을 깔끔하게 유지.
@@ -94,6 +96,13 @@ function parseResponse(raw: string, rows: PromptLibraryRow[]): ParsedResult | { 
       recommendations.push({ id, action, reason: typeof it.reason === "string" ? it.reason : undefined });
     }
     // keep은 검토 목록에 넣지 않는다 — 액션이 필요 없으므로.
+  }
+
+  // 라이브러리에 이미 마침표·괄호가 들어간 프롬프트는 AI가 짚지 않아도 정리 후보로 올린다(삭제로 판단한 항목은 제외).
+  const decided = new Set(recommendations.map((r) => r.id));
+  for (const row of rows) {
+    if (decided.has(row.id) || !needsSearchQueryCleanup(row.prompt)) continue;
+    recommendations.push({ id: row.id, action: "modify", reason: "마침표·괄호를 빼서 실제 검색어 형태로 정리", prompt: toSearchQueryText(row.prompt), category: row.category, topic: row.topic });
   }
 
   if (recommendations.length === 0) return { error: "적용할 만한 변경 권장(삭제/수정)이 없습니다 — 전부 유지 권장이거나 형식을 인식하지 못했습니다." };
@@ -189,11 +198,7 @@ export function PromptLibraryOptimizeModal({
       }
       const raw = JSON.stringify(merged);
       setPasted(raw);
-      if (merged.length === 0) {
-        setParseError("AI가 바꿀 프롬프트를 찾지 못했습니다(전부 유지).");
-        return;
-      }
-      goToReview(raw);
+      goToReview(raw); // AI가 바꿀 게 없다고 해도 마침표·괄호 정리 후보는 여기서 올라온다
     } catch {
       setParseError("자동 생성하지 못했습니다. 네트워크를 확인해 주세요.");
     } finally {
