@@ -44,7 +44,7 @@ async function post(url: string, body: unknown): Promise<{ ok: boolean; data: Re
 export function LoginForm() {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,7 +53,7 @@ export function LoginForm() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { ok, data } = await post("/api/auth/login", { email, password });
+    const { ok, data } = await post("/api/auth/login", { loginId, password });
     setBusy(false);
     if (!ok) return setError(String(data.error ?? "로그인에 실패했어요."));
     // 임시 비밀번호로 처음 들어온 사람은 비밀번호부터 바꾼다.
@@ -66,7 +66,7 @@ export function LoginForm() {
     <Panel title="로그인">
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="아이디">
-          <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50} required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+          <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50} required value={loginId} onChange={(e) => setLoginId(e.target.value)} className={inputClass} />
         </Field>
         <Field label="비밀번호">
           <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
@@ -87,7 +87,7 @@ export function LoginForm() {
 export function SignupForm() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +98,7 @@ export function SignupForm() {
     if (password !== confirm) return setError("비밀번호가 서로 달라요.");
     setBusy(true);
     setError(null);
-    const { ok, data } = await post("/api/auth/signup", { name, email, password });
+    const { ok, data } = await post("/api/auth/signup", { name, loginId, password });
     setBusy(false);
     if (!ok) return setError(String(data.error ?? "가입에 실패했어요."));
     router.replace("/pending");
@@ -112,7 +112,7 @@ export function SignupForm() {
           <input autoComplete="name" required value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
         </Field>
         <Field label="아이디">
-          <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50} required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+          <input type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50} required value={loginId} onChange={(e) => setLoginId(e.target.value)} className={inputClass} />
         </Field>
         <Field label="비밀번호 (8자 이상)">
           <input type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
@@ -146,10 +146,10 @@ export function LogoutButton({ variant = "secondary" }: { variant?: "primary" | 
   );
 }
 
-export function PendingPanel({ name, email }: { name: string; email: string }) {
+export function PendingPanel({ name, loginId }: { name: string; loginId: string }) {
   const router = useRouter();
   return (
-    <Panel title="권한 할당을 기다리고 있어요" description={`${name} (${email}) 계정으로 가입됐어요.`}>
+    <Panel title="권한 할당을 기다리고 있어요" description={`${name} (${loginId}) 계정으로 가입됐어요.`}>
       <p className="text-sm text-neutral-600">조직 오너 또는 네오다임 담당자가 역할과 볼 수 있는 브랜드를 할당하면 화면을 이용할 수 있어요. 할당이 끝나면 다시 로그인하거나 새로고침해 주세요.</p>
       <div className="mt-5 flex gap-2">
         <Button type="button" variant="primary" onClick={() => router.replace("/")}>
@@ -161,7 +161,7 @@ export function PendingPanel({ name, email }: { name: string; email: string }) {
   );
 }
 
-export function AccountForm({ name, email, forced }: { name: string; email: string; forced: boolean }) {
+export function AccountForm({ name, loginId, forced }: { name: string; loginId: string; forced: boolean }) {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
   const [current, setCurrent] = useState("");
@@ -209,14 +209,14 @@ export function AccountForm({ name, email, forced }: { name: string; email: stri
   return (
     <Panel
       title={forced ? "비밀번호를 먼저 바꿔 주세요" : "내 계정"}
-      description={forced ? "임시 비밀번호로 로그인했어요. 새 비밀번호를 정해야 계속 쓸 수 있어요." : `${savedName} · ${email}`}
+      description={forced ? "임시 비밀번호로 로그인했어요. 새 비밀번호를 정해야 계속 쓸 수 있어요." : `${savedName} · ${loginId}`}
     >
       {!forced && (
         <form onSubmit={saveName} className="mb-5 flex flex-col gap-3 border-b border-neutral-100 pb-5">
           <Field label="이름">
             <input required maxLength={50} value={nameInput} onChange={(e) => setNameInput(e.target.value)} className={inputClass} />
           </Field>
-          <p className="text-[11px] text-neutral-400">아이디({email})는 바꿀 수 없어요.</p>
+          <p className="text-[11px] text-neutral-400">아이디({loginId})는 바꿀 수 없어요.</p>
           {nameMsg && <p className={`text-xs ${nameMsg.ok ? "text-emerald-600" : "text-red-600"}`}>{nameMsg.text}</p>}
           <Button type="submit" variant="primary" disabled={nameBusy || nameInput.trim() === savedName}>
             {nameBusy ? "저장 중..." : "이름 저장"}

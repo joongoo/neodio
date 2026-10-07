@@ -87,7 +87,7 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
           {user.name}
           {user.platformRole === "staff" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">네오다임</span>}
         </h1>
-        <p className="mt-1 text-sm text-neutral-500">{user.email} · {user.status === "active" ? "사용 중" : "중지됨"}</p>
+        <p className="mt-1 text-sm text-neutral-500">{user.loginId} · {user.status === "active" ? "사용 중" : "중지됨"}</p>
       </div>
 
       {message && <p className={`text-sm ${message.kind === "ok" ? "text-emerald-600" : "text-red-600"}`}>{message.text}</p>}

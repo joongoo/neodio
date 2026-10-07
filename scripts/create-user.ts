@@ -32,12 +32,12 @@ function askHidden(question: string): Promise<string> {
 }
 
 async function main() {
-  const email = value("id") ?? value("email"); // 로그인 아이디(예전 --email도 받는다)
+  const loginId = value("id");
   const name = value("name");
-  if (!email || !name) throw new Error("--id 와 --name 이 필요합니다.");
+  if (!loginId || !name) throw new Error("--id 와 --name 이 필요합니다.");
   const password = process.env.NEODIO_NEW_PASSWORD ?? (await askHidden("비밀번호(8자 이상): "));
-  const user = await createUser({ email, name, password, platformRole: flag("staff") ? "staff" : "none" });
-  console.log(`계정 생성: ${user.email}${flag("staff") ? " (네오다임 직원)" : ""}`);
+  const user = await createUser({ loginId, name, password, platformRole: flag("staff") ? "staff" : "none" });
+  console.log(`계정 생성: ${user.loginId}${flag("staff") ? " (네오다임 직원)" : ""}`);
 
   const orgSlug = value("org");
   if (orgSlug) {
@@ -46,7 +46,7 @@ async function main() {
     if (!org) throw new Error(`조직을 찾을 수 없습니다: ${orgSlug}`);
     const owner = flag("owner");
     const brandIds = owner ? [] : (value("brands") ?? "").split(",").filter(Boolean);
-    await assignMember(org.id, { email: user.email, role: owner ? "admin" : ((value("role") as "admin" | "viewer") ?? "viewer"), brandIds }, null);
+    await assignMember(org.id, { loginId: user.loginId, role: owner ? "admin" : ((value("role") as "admin" | "viewer") ?? "viewer"), brandIds }, null);
     if (owner) await setOwner(org.id, user.id, null);
     console.log(`조직 ${org.name}: ${owner ? "오너" : (value("role") ?? "viewer")}로 할당`);
   }

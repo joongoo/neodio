@@ -18,7 +18,7 @@ export interface ThrottlePolicy {
 }
 
 const MINUTE = 60 * 1000;
-export const EMAIL_POLICY: ThrottlePolicy = { maxFailures: 8, windowMs: 15 * MINUTE, lockMs: 15 * MINUTE };
+export const LOGIN_ID_POLICY: ThrottlePolicy = { maxFailures: 8, windowMs: 15 * MINUTE, lockMs: 15 * MINUTE };
 export const IP_POLICY: ThrottlePolicy = { maxFailures: 30, windowMs: 15 * MINUTE, lockMs: 15 * MINUTE };
 /** 가입은 한 IP에서 시간당 몇 건까지 — 계정 대량 생성 방지(실패가 아니라 시도 자체를 센다). */
 export const SIGNUP_POLICY: ThrottlePolicy = { maxFailures: 10, windowMs: 60 * MINUTE, lockMs: 60 * MINUTE };

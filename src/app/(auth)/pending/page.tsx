@@ -9,5 +9,5 @@ export default async function PendingPage() {
   if (!user) redirect("/login");
   const principal = await getCurrentPrincipal();
   if (principal && !isPending(principal)) redirect("/");
-  return <PendingPanel name={user.name} email={user.email} />;
+  return <PendingPanel name={user.name} loginId={user.loginId} />;
 }

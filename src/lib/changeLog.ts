@@ -127,7 +127,7 @@ export function diffSnapshots(from: ConfigSnapshot, to: ConfigSnapshot) {
 
 // ---- 유저 변경(권한 할당·프로필) ----
 
-export const userLabel = (user: { name: string; email: string }) => `${user.name}(${user.email})`;
+export const userLabel = (user: { name: string; loginId: string }) => `${user.name}(${user.loginId})`;
 
 export interface MembershipState {
   role: string;

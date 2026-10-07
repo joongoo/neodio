@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!isRole(body?.role)) return NextResponse.json({ error: "역할은 admin 또는 viewer여야 해요." }, { status: 400 });
   try {
-    const member = await assignMember(tenant.orgId, { email: String(body?.email ?? ""), role: body.role, brandIds: brandIdsOf(body?.brandIds) }, (await getCurrentUser())?.id ?? null);
+    const member = await assignMember(tenant.orgId, { loginId: String(body?.loginId ?? ""), role: body.role, brandIds: brandIdsOf(body?.brandIds) }, (await getCurrentUser())?.id ?? null);
     return NextResponse.json({ member });
   } catch (error) {
     return errorResponse(error);
@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest) {
     if (body?.role !== undefined && !isRole(body.role)) return NextResponse.json({ error: "역할은 admin 또는 viewer여야 해요." }, { status: 400 });
     const role = isRole(body?.role) ? body.role : current.role;
     const brandIds = body?.brandIds !== undefined ? brandIdsOf(body.brandIds) : current.brandIds;
-    return NextResponse.json({ member: await assignMember(tenant.orgId, { email: current.email, role, brandIds }, actor) });
+    return NextResponse.json({ member: await assignMember(tenant.orgId, { loginId: current.loginId, role, brandIds }, actor) });
   } catch (error) {
     return errorResponse(error);
   }

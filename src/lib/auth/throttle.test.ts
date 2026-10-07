@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkThrottle, clientIp, EMAIL_POLICY, EMPTY_STATE, recordFailure, throttleMessage, type ThrottleState } from "./throttle";
+import { checkThrottle, clientIp, LOGIN_ID_POLICY, EMPTY_STATE, recordFailure, throttleMessage, type ThrottleState } from "./throttle";
 
 const T0 = 1_000_000;
 const MIN = 60 * 1000;
 
 test("한도 전에는 막지 않고, 한도에 닿으면 잠근다", () => {
   let state: ThrottleState | undefined;
-  for (let i = 0; i < EMAIL_POLICY.maxFailures - 1; i++) {
-    state = recordFailure(state, T0 + i * 1000, EMAIL_POLICY);
+  for (let i = 0; i < LOGIN_ID_POLICY.maxFailures - 1; i++) {
+    state = recordFailure(state, T0 + i * 1000, LOGIN_ID_POLICY);
     assert.equal(checkThrottle(state, T0 + i * 1000).blocked, false);
   }
-  state = recordFailure(state, T0 + 10_000, EMAIL_POLICY);
+  state = recordFailure(state, T0 + 10_000, LOGIN_ID_POLICY);
   const check = checkThrottle(state, T0 + 10_000);
   assert.equal(check.blocked, true);
   assert.equal(check.retryAfterSec, 15 * 60);
@@ -19,16 +19,16 @@ test("한도 전에는 막지 않고, 한도에 닿으면 잠근다", () => {
 
 test("잠금은 시간이 지나면 풀린다", () => {
   let state: ThrottleState | undefined;
-  for (let i = 0; i < EMAIL_POLICY.maxFailures; i++) state = recordFailure(state, T0, EMAIL_POLICY);
+  for (let i = 0; i < LOGIN_ID_POLICY.maxFailures; i++) state = recordFailure(state, T0, LOGIN_ID_POLICY);
   assert.equal(checkThrottle(state, T0 + 14 * MIN).blocked, true);
   assert.equal(checkThrottle(state, T0 + 16 * MIN).blocked, false);
 });
 
 test("윈도우가 지나면 실패 횟수를 처음부터 센다", () => {
-  let state = recordFailure(undefined, T0, EMAIL_POLICY);
-  for (let i = 0; i < 5; i++) state = recordFailure(state, T0 + i, EMAIL_POLICY);
+  let state = recordFailure(undefined, T0, LOGIN_ID_POLICY);
+  for (let i = 0; i < 5; i++) state = recordFailure(state, T0 + i, LOGIN_ID_POLICY);
   assert.equal(state.failCount, 6);
-  state = recordFailure(state, T0 + 20 * MIN, EMAIL_POLICY);
+  state = recordFailure(state, T0 + 20 * MIN, LOGIN_ID_POLICY);
   assert.equal(state.failCount, 1);
   assert.equal(checkThrottle(state, T0 + 20 * MIN).blocked, false);
 });

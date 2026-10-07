@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { AuthError, changePassword } from "@/lib/backend/auth/authStore";
 import { currentSessionToken, getCurrentUser } from "@/lib/backend/auth/session";
 import { checkAllowed, clearFailures, registerFailure } from "@/lib/backend/auth/throttleStore";
-import { EMAIL_POLICY, throttleMessage } from "@/lib/auth/throttle";
+import { LOGIN_ID_POLICY, throttleMessage } from "@/lib/auth/throttle";
 
 // 비밀번호 변경 — 로그인한 본인이 현재 비밀번호를 입력해야 바꿀 수 있다(이메일 재설정은 없다). 다른 기기의 로그인은 끊긴다.
 export async function POST(request: NextRequest) {
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     await clearFailures(key);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof AuthError && error.code === "denied") await registerFailure(key, EMAIL_POLICY);
+    if (error instanceof AuthError && error.code === "denied") await registerFailure(key, LOGIN_ID_POLICY);
     if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: error.code === "denied" ? 403 : 400 });
     throw error;
   }

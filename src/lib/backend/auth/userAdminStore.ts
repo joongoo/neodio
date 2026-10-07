@@ -18,7 +18,7 @@ export interface UserMembership {
 
 export interface UserRow {
   userId: string;
-  email: string;
+  loginId: string;
   name: string;
   status: "active" | "disabled";
   platformRole: "none" | "staff";
@@ -48,7 +48,7 @@ export interface UserDetail extends UserRow {
 async function loadUsers(actor: Principal, onlyUserId?: string): Promise<{ row: UserRow; full: UserTarget }[]> {
   const store = await getPromptStore();
   const users = await store.query<Record<string, unknown>>(
-    "SELECT id,email,name,status,platform_role,must_change_password,last_login_at,created_at FROM neodio_users WHERE deleted_at IS NULL AND ($1::text IS NULL OR id=$1) ORDER BY created_at DESC", [onlyUserId ?? null]);
+    "SELECT id,login_id,name,status,platform_role,must_change_password,last_login_at,created_at FROM neodio_users WHERE deleted_at IS NULL AND ($1::text IS NULL OR id=$1) ORDER BY created_at DESC", [onlyUserId ?? null]);
   const memberships = await store.query<{ user_id: string; organization_id: string; role: OrgRole; org_name: string; owner_user_id: string | null }>(
     `SELECT m.user_id,m.organization_id,m.role,o.name AS org_name,o.owner_user_id FROM neodio_memberships m JOIN organizations o ON o.id=m.organization_id`);
   const brandRows = await store.query<{ user_id: string; organization_id: string; brand_id: string }>("SELECT user_id,organization_id,brand_id FROM neodio_membership_brands");
@@ -65,7 +65,7 @@ async function loadUsers(actor: Principal, onlyUserId?: string): Promise<{ row: 
     result.push({
       full,
       row: {
-        userId: user.id as string, email: user.email as string, name: user.name as string, status: user.status as UserRow["status"],
+        userId: user.id as string, loginId: user.login_id as string, name: user.name as string, status: user.status as UserRow["status"],
         platformRole: user.platform_role as UserRow["platformRole"], mustChangePassword: !!user.must_change_password,
         lastLoginAt: (user.last_login_at as string | null) ?? null, createdAt: user.created_at as string,
         memberships: own
@@ -150,11 +150,11 @@ export async function updateUser(actor: Principal, userId: string, update: UserU
     if (update.role !== "admin" && update.role !== "viewer") throw new AuthError("역할은 admin 또는 viewer여야 해요.");
     if (!existing) {
       if (!canAssignOrg(actor)) throw deny("조직 할당은 네오다임 직원만 할 수 있어요.");
-      await assignMember(update.orgId, { email: row.email, role: update.role, brandIds: [] }, actor.userId);
+      await assignMember(update.orgId, { loginId: row.loginId, role: update.role, brandIds: [] }, actor.userId);
       return {};
     }
     if (!canChangeRole(actor, update.orgId, full)) throw deny("이 유저의 역할을 바꿀 권한이 없어요.");
-    await assignMember(update.orgId, { email: row.email, role: update.role, brandIds: existing.brandIds }, actor.userId);
+    await assignMember(update.orgId, { loginId: row.loginId, role: update.role, brandIds: existing.brandIds }, actor.userId);
     return {};
   }
 

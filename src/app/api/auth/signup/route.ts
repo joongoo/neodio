@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   }
   await registerFailure(ipKey, SIGNUP_POLICY);
   try {
-    const user = await createUser({ email: String(body?.email ?? ""), name: String(body?.name ?? ""), password: String(body?.password ?? ""), source: "signup" });
+    const user = await createUser({ loginId: String(body?.loginId ?? ""), name: String(body?.name ?? ""), password: String(body?.password ?? ""), source: "signup" });
     const session = await createSession(user.id, request.headers.get("user-agent") ?? undefined);
     const response = NextResponse.json({ ok: true });
     setSessionCookie(response, session.token, session.expiresAt);

@@ -43,7 +43,7 @@ export async function TopBar() {
         <Bell size={16} />
       </button>
       {user ? (
-        <UserMenu name={user.name} email={user.email} roleLabel={role} />
+        <UserMenu name={user.name} loginId={user.loginId} roleLabel={role} />
       ) : (
         <button
           type="button"

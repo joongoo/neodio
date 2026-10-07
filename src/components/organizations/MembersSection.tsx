@@ -27,7 +27,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
   const [members, setMembers] = useState<MemberRow[] | null>(null);
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [mode, setMode] = useState<Mode>(null);
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<"admin" | "viewer">("viewer");
   const [brandIds, setBrandIds] = useState<string[]>([]);
@@ -53,7 +53,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
   function open(next: Mode) {
     setMode(next);
     setError(null);
-    setEmail("");
+    setLoginId("");
     setName("");
     setRole(next?.kind === "edit" ? next.member.role : "viewer");
     setBrandIds(next?.kind === "edit" ? next.member.brandIds : []);
@@ -76,18 +76,18 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
     e.preventDefault();
     if (!mode) return;
     if (mode.kind === "issue") {
-      const data = await call("/api/members/issue", { method: "POST", body: JSON.stringify({ email, name, role, brandIds }) });
+      const data = await call("/api/members/issue", { method: "POST", body: JSON.stringify({ loginId, name, role, brandIds }) });
       if (!data) return;
-      setNotice({ title: `${data.email} 계정을 발급했어요`, password: String(data.tempPassword) });
+      setNotice({ title: `${data.loginId} 계정을 발급했어요`, password: String(data.tempPassword) });
     } else if (mode.kind === "assign") {
-      if (!(await call("/api/members", { method: "POST", body: JSON.stringify({ email, role, brandIds }) }))) return;
+      if (!(await call("/api/members", { method: "POST", body: JSON.stringify({ loginId, role, brandIds }) }))) return;
     } else if (!(await call("/api/members", { method: "PATCH", body: JSON.stringify({ userId: mode.member.userId, role, brandIds }) }))) return;
     setMode(null);
     await reload();
   }
 
   async function remove(m: MemberRow) {
-    if (!window.confirm(`${m.name}(${m.email})을(를) 이 조직에서 제거할까요? 계정은 남고 이 조직에는 접근할 수 없게 돼요.`)) return;
+    if (!window.confirm(`${m.name}(${m.loginId})을(를) 이 조직에서 제거할까요? 계정은 남고 이 조직에는 접근할 수 없게 돼요.`)) return;
     if (await call(`/api/members?userId=${encodeURIComponent(m.userId)}`, { method: "DELETE" })) await reload();
     else window.alert(error ?? "제거하지 못했어요.");
   }
@@ -95,7 +95,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
   async function reissue(m: MemberRow) {
     if (!window.confirm(`${m.name}의 임시 비밀번호를 다시 발급할까요? 기존 비밀번호와 로그인은 모두 해제돼요.`)) return;
     const data = await call("/api/members/reissue", { method: "POST", body: JSON.stringify({ userId: m.userId }) });
-    if (data) setNotice({ title: `${m.email}의 임시 비밀번호`, password: String(data.tempPassword) });
+    if (data) setNotice({ title: `${m.loginId}의 임시 비밀번호`, password: String(data.tempPassword) });
   }
 
   async function makeOwner(m: MemberRow) {
@@ -156,7 +156,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
                     {m.mustChangePassword && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">임시 비밀번호</span>}
                     {m.userId === currentUserId && <span className="text-[11px] text-neutral-400">(나)</span>}
                   </p>
-                  <p className="text-xs text-neutral-500">{m.email}</p>
+                  <p className="text-xs text-neutral-500">{m.loginId}</p>
                 </div>
                 <p className="min-w-[160px] flex-1 text-xs text-neutral-500">
                   {m.isOwner ? "모든 브랜드" : m.brandIds.length === 0 ? <span className="text-amber-600">지정된 브랜드 없음</span> : m.brandIds.map(brandName).join(", ")}
@@ -191,7 +191,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
           <ModalCloseButton onClose={() => setMode(null)} />
         </div>
         <p className="mt-1 text-sm text-neutral-500">
-          {mode?.kind === "issue" ? "계정을 만들고 임시 비밀번호를 한 번 보여드려요(메일은 발송되지 않아요)." : mode?.kind === "edit" ? mode.member.email : "이미 가입한 사용자의 아이디로 이 조직에 역할을 할당해요."}
+          {mode?.kind === "issue" ? "계정을 만들고 임시 비밀번호를 한 번 보여드려요(메일은 발송되지 않아요)." : mode?.kind === "edit" ? mode.member.loginId : "이미 가입한 사용자의 아이디로 이 조직에 역할을 할당해요."}
         </p>
         <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
           {mode?.kind !== "edit" && (
@@ -204,7 +204,7 @@ export function MembersSection({ orgName, currentUserId }: { orgName: string; cu
               )}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-neutral-500">아이디 *</label>
-                <input type="text" autoCapitalize="none" spellCheck={false} required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+                <input type="text" autoCapitalize="none" spellCheck={false} required value={loginId} onChange={(e) => setLoginId(e.target.value)} className={inputClass} />
               </div>
             </>
           )}

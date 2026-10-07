@@ -27,7 +27,7 @@ export function UsersClient({ users, isStaff }: { users: UserRow[]; isStaff: boo
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return users;
-    return users.filter((u) => `${u.name} ${u.email} ${u.memberships.map((m) => m.organizationName).join(" ")}`.toLowerCase().includes(q));
+    return users.filter((u) => `${u.name} ${u.loginId} ${u.memberships.map((m) => m.organizationName).join(" ")}`.toLowerCase().includes(q));
   }, [users, search]);
 
   return (
@@ -63,7 +63,7 @@ export function UsersClient({ users, isStaff }: { users: UserRow[]; isStaff: boo
                       {u.name}
                       {u.platformRole === "staff" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">네오다임</span>}
                     </p>
-                    <p className="truncate text-xs text-neutral-500">{u.email}</p>
+                    <p className="truncate text-xs text-neutral-500">{u.loginId}</p>
                   </div>
                   <div className="flex w-[280px] shrink-0 flex-wrap gap-1">
                     {u.memberships.length > 0 ? u.memberships.map(roleBadge) : <span className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">할당 대기</span>}

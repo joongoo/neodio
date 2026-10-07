@@ -239,15 +239,23 @@ CREATE TABLE IF NOT EXISTS config_versions (
 );
 CREATE INDEX IF NOT EXISTS config_versions_org ON config_versions(organization_id,brand_id,version DESC);
 -- 회원·권한(docs/auth-and-roles.md) — 운영 DB는 다른 앱과 공유돼 users·sessions 같은 이름이 이미 쓰이고 있어, 새 테이블은 모두 neodio_ 접두사를 쓴다(이름 충돌로 스키마 초기화가 통째로 실패한 적이 있다).
--- 이메일 인증 없이 이메일+비밀번호로 가입하고, 오너·직원이 역할·브랜드를 할당해야 접근한다.
+-- 이메일 없이 아이디+비밀번호로 가입하고, 오너·직원이 역할·브랜드를 할당해야 접근한다.
 CREATE TABLE IF NOT EXISTS neodio_users (
-  id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL,
+  id TEXT PRIMARY KEY, login_id TEXT NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL,
   must_change_password BOOLEAN NOT NULL DEFAULT false,
   platform_role TEXT NOT NULL DEFAULT 'none' CHECK(platform_role IN ('none','staff')),
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled')),
   created_at TEXT NOT NULL, last_login_at TEXT, deleted_at TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS neodio_users_email ON neodio_users(lower(email));
+-- 처음엔 로그인 키 컬럼이 email이었다 — 이미 만들어진 테이블은 login_id로 이름을 바꾸고 옛 인덱스를 지운다(여러 번 실행돼도 안전).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='neodio_users' AND column_name='email')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='neodio_users' AND column_name='login_id') THEN
+    ALTER TABLE neodio_users RENAME COLUMN email TO login_id;
+  END IF;
+END $$;
+DROP INDEX IF EXISTS neodio_users_email;
+CREATE UNIQUE INDEX IF NOT EXISTS neodio_users_login_id ON neodio_users(lower(login_id));
 -- 세션 토큰은 해시로만 저장한다(DB가 새도 쿠키 값을 알 수 없다).
 CREATE TABLE IF NOT EXISTS neodio_sessions (
   token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES neodio_users(id) ON DELETE CASCADE,

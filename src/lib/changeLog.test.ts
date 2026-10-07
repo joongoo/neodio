@@ -37,7 +37,7 @@ test("버전 비교는 추가·삭제·변경을 센다", () => {
 
 test("유저 역할·브랜드 변경 요약", async () => {
   const { describeMembershipChange, describeProfileChange, userLabel } = await import("./changeLog");
-  assert.equal(userLabel({ name: "홍", email: "a@b.com" }), "홍(a@b.com)");
+  assert.equal(userLabel({ name: "홍", loginId: "a@b.com" }), "홍(a@b.com)");
   assert.deepEqual(describeMembershipChange(null, { role: "viewer", brands: ["A"] }), { op: "create", text: "조직에 할당 — viewer, 브랜드 1개" });
   assert.deepEqual(describeMembershipChange({ role: "viewer", brands: ["A"] }, null), { op: "delete", text: "조직에서 제거" });
   assert.deepEqual(describeMembershipChange({ role: "viewer", brands: ["A", "B"] }, { role: "admin", brands: ["B", "C"] }), { op: "update", text: "역할 viewer→admin, 브랜드 +C −A" });

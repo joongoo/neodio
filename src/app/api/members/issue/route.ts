@@ -14,10 +14,10 @@ export async function POST(request: NextRequest) {
   try {
     const { user, tempPassword } = await issueAccount(
       tenant.orgId,
-      { email: String(body?.email ?? ""), name: String(body?.name ?? ""), role, brandIds: Array.isArray(body?.brandIds) ? body.brandIds.filter((v: unknown): v is string => typeof v === "string") : [] },
+      { loginId: String(body?.loginId ?? ""), name: String(body?.name ?? ""), role, brandIds: Array.isArray(body?.brandIds) ? body.brandIds.filter((v: unknown): v is string => typeof v === "string") : [] },
       (await getCurrentUser())?.id ?? null
     );
-    return NextResponse.json({ email: user.email, tempPassword });
+    return NextResponse.json({ loginId: user.loginId, tempPassword });
   } catch (error) {
     if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: error.code === "exists" ? 409 : 400 });
     throw error;

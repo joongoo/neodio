@@ -9,7 +9,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const forced = (await searchParams).force === "1" || user.mustChangePassword;
   return (
     <Suspense>
-      <AccountForm name={user.name} email={user.email} forced={forced} />
+      <AccountForm name={user.name} loginId={user.loginId} forced={forced} />
     </Suspense>
   );
 }
