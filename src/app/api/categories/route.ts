@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteCategory, listCategories, saveCategory } from "@/lib/backend/categoryStore";
+import { deleteCategory, listCategories, renameCategories, saveCategory } from "@/lib/backend/categoryStore";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { guardApi } from "@/lib/backend/auth/guard";
 
@@ -7,7 +7,29 @@ export async function GET() {
   const denied = await guardApi("read");
   if (denied) return denied;
   const tenant = await getCurrentTenant();
-  return NextResponse.json({ categories: await listCategories(tenant.orgId) });
+  return NextResponse.json({ categories: await listCategories(tenant.orgId, tenant.brandId) });
+}
+
+export async function PUT(request: NextRequest) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
+  const tenant = await getCurrentTenant();
+  const body = await request.json().catch(() => null);
+  const changes = body?.changes;
+  if (!Array.isArray(changes) || !changes.length || changes.some(change =>
+    typeof change?.id !== "string" || typeof change?.name !== "string" || !change.name.trim())) {
+    return NextResponse.json({ error: "변경할 카테고리 정보가 필요합니다." }, { status: 400 });
+  }
+  try {
+    await renameCategories(tenant.orgId, changes);
+    return GET();
+  } catch (error) {
+    if (error instanceof Error && error.message === "Category already exists")
+      return NextResponse.json({ error: "동일한 카테고리가 있습니다." }, { status: 409 });
+    if (error instanceof Error && error.message === "Invalid categories")
+      return NextResponse.json({ error: "카테고리 정보가 올바르지 않습니다." }, { status: 400 });
+    throw error;
+  }
 }
 
 async function save(request: NextRequest, editing: boolean) {

@@ -13,7 +13,7 @@ export default async function BrandsManagementPage() {
   const [data, realBrands, categories] = await Promise.all([
     db.brandsManagement.get(tenant.orgId),
     getManagedBrands(tenant.orgId),
-    listCategories(tenant.orgId),
+    listCategories(tenant.orgId, tenant.brandId),
   ]);
   // 목업(db.brandsManagement)은 기본 조직에만 있다 — 새 조직은 실데이터만으로 그린다.
   return <BrandsManagementClient initial={{ ...(data ?? { brands: [], categories: [] }), brands: realBrands, categories }} />;

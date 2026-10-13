@@ -26,6 +26,9 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
   const [deletingBrand, setDeletingBrand] = useState<ManagedBrand | null>(null);
   const [deletingBrandBusy, setDeletingBrandBusy] = useState(false);
   const [createCategoryOpen, setCreateCategoryOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkNames, setBulkNames] = useState<Record<string, string>>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [editingCategory, setEditingCategory] = useState<ManagedCategory | null>(null);
   const [deletingCategory, setDeletingCategory] = useState<ManagedCategory | null>(null);
 
@@ -46,9 +49,32 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
     }
   }
 
+  async function saveBulkCategories() {
+    const changes = categories.filter(category => bulkNames[category.id]?.trim() !== category.name)
+      .map(category => ({ id: category.id, name: bulkNames[category.id].trim() }));
+    if (!changes.length) { setBulkEditOpen(false); return; }
+    setBulkSaving(true);
+    try {
+      const res = await fetch("/api/categories", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changes }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCategories(data.categories);
+      setBulkEditOpen(false);
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "카테고리를 저장하지 못했습니다.");
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
   const brands = initial.brands;
   const activeBrands = brands.filter((b) => b.status === "active");
   const pendingBrands = brands.filter((b) => b.status === "pending");
+  const usedCategories = categories.filter(category => Number(category.promptCount) > 0);
+  const unusedCategories = categories.filter(category => Number(category.promptCount) === 0);
 
   async function addBrand(brand: Omit<ManagedBrand, "id" | "organizationId">) {
     setAddBrandSaving(true);
@@ -128,11 +154,18 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-neutral-900">카테고리</h2>
           <EditOnly>
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setCreateCategoryOpen(true)}>
-              카테고리 생성
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => {
+                setBulkNames(Object.fromEntries(categories.map(category => [category.id, category.name])));
+                setBulkEditOpen(true);
+              }}>한번에 편집</Button>
+              <Button variant="secondary" icon={<Plus size={14} />} onClick={() => setCreateCategoryOpen(true)}>
+                카테고리 생성
+              </Button>
+            </div>
           </EditOnly>
         </div>
+        <p className="mt-2 text-xs text-neutral-500">현재 브랜드의 프롬프트 라이브러리에서 사용 중인 카테고리입니다.</p>
         <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200 bg-white">
           <div className="grid grid-cols-[minmax(0,1fr)_64px_64px] items-center gap-2 border-b border-neutral-100 px-3 py-3 text-xs font-semibold text-neutral-500 sm:grid-cols-[minmax(0,1fr)_100px_80px_80px] sm:gap-3 sm:px-5">
             <span>이름</span>
@@ -140,7 +173,7 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
             <span className="hidden text-right sm:block">출처</span>
             <span className="text-right">액션</span>
           </div>
-          {categories.map((cat) => {
+          {usedCategories.map((cat) => {
             const expanded = expandedCategories.has(cat.id);
             const topics = cat.topics ?? [];
             return (
@@ -206,8 +239,44 @@ export function BrandsManagementClient({ initial }: { initial: BrandsManagementD
             </div>
             );
           })}
+          {usedCategories.length === 0 && <p className="p-5 text-sm text-neutral-500">사용 중인 카테고리가 없습니다.</p>}
         </div>
+        {unusedCategories.length > 0 && <div className="mt-5">
+          <h3 className="text-sm font-semibold text-neutral-700">현재 브랜드에서 미사용</h3>
+          <p className="mt-1 text-xs text-neutral-500">새로 만든 카테고리와 다른 브랜드에서만 쓰는 카테고리도 여기에 표시됩니다.</p>
+          <div className="mt-2 divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white">
+            {unusedCategories.map(cat => <div key={cat.id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <span>{cat.name}</span>
+              <EditOnly><span className="flex gap-2">
+                <button type="button" aria-label={`${cat.name} 편집`} onClick={() => setEditingCategory(cat)} className="text-neutral-500 hover:text-neutral-900"><Pencil size={14} /></button>
+                <button type="button" aria-label={`${cat.name} 삭제`} onClick={() => setDeletingCategory(cat)} className="text-neutral-500 hover:text-red-600"><Trash2 size={14} /></button>
+              </span></EditOnly>
+            </div>)}
+          </div>
+        </div>}
       </section>
+
+      <Modal open={bulkEditOpen} onClose={() => setBulkEditOpen(false)}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-neutral-900">카테고리 한번에 편집</h2>
+          <ModalCloseButton onClose={() => setBulkEditOpen(false)} />
+        </div>
+        <p className="mt-2 text-xs text-neutral-600">이름 변경은 모든 브랜드의 해당 카테고리 프롬프트에 반영됩니다.</p>
+        <form onSubmit={event => { event.preventDefault(); void saveBulkCategories(); }} className="mt-4 flex flex-col gap-3">
+          <div className="max-h-96 space-y-3 overflow-y-auto">
+            {categories.map(category => <label key={category.id} className="flex items-center gap-3 text-sm">
+              <span className="min-w-0 flex-1 truncate text-neutral-500" title={category.name}>{category.name}</span>
+              <input required value={bulkNames[category.id] ?? category.name}
+                onChange={event => setBulkNames(previous => ({ ...previous, [category.id]: event.target.value }))}
+                className="h-9 min-w-0 flex-[2] rounded-md border border-neutral-300 px-3" />
+            </label>)}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setBulkEditOpen(false)}>취소</Button>
+            <Button type="submit" variant="primary" disabled={bulkSaving}>{bulkSaving ? "저장 중…" : "변경 사항 저장"}</Button>
+          </div>
+        </form>
+      </Modal>
 
       <AddBrandWizardModal open={addBrandOpen} onClose={() => setAddBrandOpen(false)} onAdd={addBrand} saving={addBrandSaving} />
       <Modal open={deletingBrand !== null} onClose={() => setDeletingBrand(null)}>
