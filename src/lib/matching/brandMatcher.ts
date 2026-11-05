@@ -56,15 +56,27 @@ function foldChar(ch: string): string {
 }
 
 /** 호환 문자 통일·대소문자 접기·연속 공백 축소. 오프셋 지도를 함께 만든다(trim은 하지 않는다). */
+const COMBINING = /[\u0300-\u036f\u1ab0-\u1aff\u20d0-\u20ff\u3099\u309a]/;
+
+/**
+ * 호환 문자 통일·대소문자 접기·연속 공백 축소. 오프셋 지도는 정규화된 문자열의 UTF-16 인덱스마다 원문 인덱스를 가리킨다.
+ * 결합 문자(예: e + ́)는 기본 문자와 한 묶음으로 NFKC를 적용해 Café의 분해형도 같은 문자열이 된다.
+ */
 export function normalizeWithMap(text: string): Norm {
   let out = "";
   const map: number[] = [];
   let prevSpace = false;
   for (let i = 0; i < text.length; ) {
     const cp = text.codePointAt(i)!;
-    const ch = String.fromCodePoint(cp);
-    const width = ch.length;
-    const folded = foldChar(ch);
+    let cluster = String.fromCodePoint(cp);
+    let j = i + cluster.length;
+    while (j < text.length) {
+      const next = String.fromCodePoint(text.codePointAt(j)!);
+      if (!COMBINING.test(next)) break;
+      cluster += next;
+      j += next.length;
+    }
+    const folded = foldChar(cluster);
     for (const f of folded) {
       if (/\s/.test(f)) {
         if (prevSpace) continue;
@@ -73,11 +85,11 @@ export function normalizeWithMap(text: string): Norm {
         prevSpace = true;
       } else {
         out += f;
-        map.push(i);
+        for (let k = 0; k < f.length; k++) map.push(i); // UTF-16 단위마다 한 칸
         prevSpace = false;
       }
     }
-    i += width;
+    i = j;
   }
   return { text: out, map, length: text.length };
 }

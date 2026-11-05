@@ -134,3 +134,19 @@ test("악센트 라틴 문자도 단어 경계로 본다", () => {
   assert.deepEqual(spans("Caféteria", ["Café"]), []);
   assert.deepEqual(spans("Café 소개", ["Café"]), ["Café"]);
 });
+
+test("이모지 뒤에서도 오프셋이 원문과 맞는다", () => {
+  const text = "😀 IBM 소개";
+  const r = matchAliases(text, ["IBM"]);
+  assert.equal(r.spans.length, 1);
+  assert.equal(text.slice(r.spans[0].start, r.spans[0].end), "IBM");
+  const n = normalizeWithMap(text);
+  assert.equal(n.map.length, n.text.length);
+});
+
+test("결합 문자 분해형도 같은 별칭으로 일치한다", () => {
+  const decomposed = "Cafe\u0301 소개";
+  const r = matchAliases(decomposed, ["Café"]);
+  assert.equal(r.spans.length, 1);
+  assert.equal(decomposed.slice(r.spans[0].start, r.spans[0].end), "Cafe\u0301");
+});
