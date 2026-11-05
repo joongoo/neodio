@@ -9,6 +9,7 @@ import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from 
 import { formatObservationCount, observationWeights, sumWeights } from "@/lib/observations";
 import { buildVisibilityScores } from "./processing/visibility";
 import { brandQueryKeywords, queryScopeOf, type QueryScope } from "@/lib/queryScope";
+import { changeConfidence, type ChangeConfidence } from "@/lib/changeConfidence";
 import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "@/lib/visibilityStats";
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
 import { getPromptTopicGroups } from "./promptTopics";
@@ -123,6 +124,8 @@ export interface RealMetric {
   suffix?: string;
   trendUnit?: StatCard["trendUnit"];
   caption?: string;
+  /** 변화 신뢰도(D2) — 직전 기간이 있는 비율 지표에만 계산한다. */
+  confidence?: ChangeConfidence;
 }
 
 export interface RealStatSeries {
@@ -537,6 +540,9 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
       trendUnit: "%p",
       caption: `${unitLabel} ${formatObservationCount(Number(sumOf(current, "hit").toFixed(1)))}/${formatObservationCount(Number(total.toFixed(1)))}개 관측(실행 ${rawRuns.toLocaleString("ko-KR")}건)${low ? " · 표본 적음" : ""}${scopeSplit(hits)}`,
       trend: pointTrend(value, previousWeeks.length ? pooledRate(previous) : undefined),
+      confidence: previousWeeks.length
+        ? changeConfidence({ hits: sumOf(previous, "hit"), total: sumOf(previous, "total") }, { hits: sumOf(current, "hit"), total })
+        : undefined,
       sparkline: currentWeeks.map((w, i) => ({ week: formatWeekLabel(w), value: pooledRate([current[i]]) })),
     };
   };
@@ -546,6 +552,9 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
   const previousVis = weightedOf(previousWeeks);
   const currentRuns = currentWeeks.reduce((s, w) => s + (runsByWeek.get(w) ?? 0), 0);
   const currentRawRuns = currentWeeks.reduce((s, w) => s + (rawRunsByWeek.get(w) ?? 0), 0);
+  const previousRuns = previousWeeks.reduce((s, w) => s + (runsByWeek.get(w) ?? 0), 0);
+  // 가시성 점수는 비율이 아닌 가중 평균이라 구간을 만들 수 없다. 표본이 부족한 경우에만 '비교 보류'로 알린다(D2).
+  const scoreConfidence = previousWeeks.length ? changeConfidence({ hits: 0, total: previousRuns }, { hits: 0, total: currentRuns }) : undefined;
 
   return {
     visibilityScore: {
@@ -553,6 +562,7 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
       description:
         "수집한 모든 답변을 기준으로 언급(45%)·인용(20%)·노출 위치(35%)를 합산한 0~100 점수예요. 감성은 판정 정확도가 낮아 점수에서 빼고 별도로 보여줘요. 언급되지 않은 답변은 위치도 0으로 세기 때문에 언급이 적으면 점수도 낮고, 수집한 프롬프트 수가 늘어도 같은 성과면 같은 점수예요. 같은 주에 같은 프롬프트·엔진·마켓으로 여러 번 수집한 답변은 1건의 관측으로 합쳐서(답변이 달라도 언급 비율로 환산) 많이 수집한 질의가 더 크게 반영되지 않아요. 노출 위치는 경쟁사와 함께 나온 답변에서는 언급 순서와 본문 내 위치를, 혼자 나온 답변에서는 본문 내 위치만 봐요. 주차·모델·마켓 그룹은 관측 수로 가중 평균해요.",
       trend: trend(currentVis, previousWeeks.length ? previousVis : undefined),
+      confidence: scoreConfidence?.label === "insufficient" ? scoreConfidence : undefined,
       caption: `관측 ${formatObservationCount(Number(currentRuns.toFixed(1)))}개(실행 ${currentRawRuns.toLocaleString("ko-KR")}건) 가중 평균${currentRuns < MIN_RELIABLE_RUNS ? " · 표본 적음" : ""}`,
       sparkline: currentWeeks.map((w) => ({ week: formatWeekLabel(w), value: weightedAverage(visibilityByWeek.get(w) ?? []) })),
     },
