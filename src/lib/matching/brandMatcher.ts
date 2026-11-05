@@ -82,7 +82,7 @@ export function normalizeWithMap(text: string): Norm {
   return { text: out, map, length: text.length };
 }
 
-const isLatinWord = (c: string | undefined) => !!c && /[a-z0-9]/.test(c);
+const isLatinWord = (c: string | undefined) => !!c && /[a-z0-9\u00c0-\u024f]/.test(c);
 const isHangul = (c: string | undefined) => !!c && /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(c);
 const isCjk = (c: string | undefined) => !!c && /[぀-ヿ㐀-䶿一-鿿]/.test(c);
 
@@ -165,7 +165,11 @@ export function matchAliases(text: string, aliases: string[], options: MatchOpti
       const before = n.text[at - 1];
       const after = n.text[end];
       const mk = (rule: MatchRuleId): MatchSpan => ({ alias, start: origStart, end: origEnd, rule, snippet: snippetOf(text, origStart, origEnd, opt.snippetRadius) });
-      const drop = (rule: MatchRuleId, reason: ExcludeReason) => excluded.push({ ...mk(rule), reason });
+      const drop = (rule: MatchRuleId, reason: ExcludeReason) => {
+        excluded.push({ ...mk(rule), reason });
+        // 제외 사유가 칩·도메인 표기면 그 구간을 차지해, 겹치는 짧은 별칭이 같은 자리를 언급으로 되살리지 못하게 한다
+        if (reason === "citation-chip" || reason === "domain-like") claimed.push([origStart, origEnd]);
+      };
       const rule = ruleFor(script);
 
       // 경계 규칙: 가장자리 문자 유형 기준
@@ -175,7 +179,7 @@ export function matchAliases(text: string, aliases: string[], options: MatchOpti
         drop(rule, "latin-boundary");
         continue;
       }
-      if (script === "hangul" && opt.hangulTrailing === "particle" && isHangul(after) && !startsWithParticle(n.text.slice(end))) {
+      if (script === "hangul" && opt.hangulTrailing === "particle" && ((isHangul(after) && !startsWithParticle(n.text.slice(end))) || isHangul(before))) {
         drop(rule, "hangul-compound");
         continue;
       }

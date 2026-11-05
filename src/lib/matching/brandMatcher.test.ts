@@ -117,3 +117,20 @@ test("그림자 비교: 새 규칙에서 사라진 일치 목록", () => {
   assert.equal(d.gained.length, 0);
   assert.equal(d.unchanged, 1);
 });
+
+test("제외된 긴 별칭 구간을 짧은 별칭이 되살리지 못한다(칩)", () => {
+  const r = matchAliases("Neodigm Korea +1 소개", ["Neodigm Korea", "Neodigm"]);
+  assert.equal(r.spans.length, 0);
+  assert.equal(r.excluded[0].reason, "citation-chip");
+});
+
+test("한글 복합어 앞쪽: particle 옵션이면 앞이 한글인 일치도 제외", () => {
+  assert.deepEqual(spans("슈퍼네오다임 소개", ["네오다임"]), ["네오다임"]); // 기본은 기존 부분 일치 유지
+  assert.deepEqual(spans("슈퍼네오다임 소개", ["네오다임"], { hangulTrailing: "particle" }), []);
+  assert.deepEqual(spans("우리 네오다임은 좋다", ["네오다임"], { hangulTrailing: "particle" }), ["네오다임"]);
+});
+
+test("악센트 라틴 문자도 단어 경계로 본다", () => {
+  assert.deepEqual(spans("Caféteria", ["Café"]), []);
+  assert.deepEqual(spans("Café 소개", ["Café"]), ["Café"]);
+});
