@@ -4,9 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import { CircleCheck, Loader2, TriangleAlert } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { retryTransient, type AttemptOutcome } from "@/lib/collectRetry";
 
 // "선택 수집"의 Gemini 단계 — 수집기 없이 서버가 Gemini API로 프롬프트를 한 건씩 물어 결과를 저장한다.
 type Item = { keyword: string; state: "wait" | "run" | "ok" | "fail"; citations?: number; error?: string };
+
+async function collectOne(keyword: string): Promise<{ outcome: AttemptOutcome; status: number; citations: number; error?: string }> {
+  try {
+    const res = await fetch("/api/gemini-collect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: keyword }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { citations?: number; error?: string; retryable?: boolean };
+    if (res.ok) return { outcome: { ok: true }, status: res.status, citations: data.citations ?? 0 };
+    return { outcome: { ok: false, retryable: !!data.retryable }, status: res.status, citations: 0, error: data.error ?? `오류 ${res.status}` };
+  } catch {
+    return { outcome: { ok: false, retryable: true }, status: 0, citations: 0, error: "네트워크 오류" };
+  }
+}
 
 export function GeminiCollectModal({ keywords, onClose, onDone }: { keywords: string[]; onClose: () => void; onDone: () => void }) {
   const [items, setItems] = useState<Item[]>(() => keywords.map((keyword) => ({ keyword, state: "wait" })));
@@ -19,22 +35,30 @@ export function GeminiCollectModal({ keywords, onClose, onDone }: { keywords: st
     startedRef.current = true;
     const patch = (index: number, next: Partial<Item>) => setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...next } : it)));
     (async () => {
+      const failedRetryable: number[] = [];
       for (let i = 0; i < keywords.length; i++) {
         if (cancelRef.current) return;
         patch(i, { state: "run" });
-        try {
-          const res = await fetch("/api/gemini-collect", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: keywords[i] }),
-          });
-          const data = (await res.json().catch(() => ({}))) as { citations?: number; error?: string };
-          if (!res.ok) patch(i, { state: "fail", error: data.error ?? `오류 ${res.status}` });
-          else patch(i, { state: "ok", citations: data.citations ?? 0 });
-          if (res.status === 503) break;
-        } catch {
-          patch(i, { state: "fail", error: "네트워크 오류" });
+        const r = await collectOne(keywords[i]);
+        if (r.outcome.ok) patch(i, { state: "ok", citations: r.citations });
+        else {
+          patch(i, { state: "fail", error: r.error });
+          if (r.outcome.retryable) failedRetryable.push(i);
         }
+        if (r.status === 503 && !r.outcome.ok && !r.outcome.retryable) break; // 서버 설정 없음(503, 재시도 불가)
+      }
+      // 제공사 과부하(503)·한도(429) 같은 일시 오류는 잠시 뒤 실패한 항목만 다시 시도한다.
+      if (failedRetryable.length > 0 && !cancelRef.current) {
+        await retryTransient(failedRetryable, async (i) => {
+          patch(i, { state: "run", error: undefined });
+          const r = await collectOne(keywords[i]);
+          if (r.outcome.ok) patch(i, { state: "ok", citations: r.citations });
+          else patch(i, { state: "fail", error: r.error });
+          return r.outcome;
+        }, {
+          shouldStop: () => cancelRef.current,
+          onPass: (pass, remaining, wait) => remaining.forEach((i) => patch(i, { state: "wait", error: `일시 오류 — ${Math.round(wait / 1000)}초 뒤 다시 시도해요(${pass}회차)` })),
+        });
       }
       if (!cancelRef.current) {
         setFinished(true);
