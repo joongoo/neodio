@@ -21,8 +21,10 @@ export function normalizePath(raw: string): string {
   let text = raw.trim();
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
     const afterScheme = text.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
-    const slash = afterScheme.indexOf("/");
-    text = slash >= 0 ? afterScheme.slice(slash) : "/";
+    // 권한부(호스트)는 첫 "/" "?" "#" 앞까지다. "?"나 "#"가 먼저 나오면 경로가 없는 URL이고,
+    // 그 뒤에 슬래시가 있어도 쿼리·프래그먼트의 일부이지 경로가 아니다.
+    const end = afterScheme.search(/[/?#]/);
+    text = end >= 0 && afterScheme[end] === "/" ? afterScheme.slice(end) : "/";
   }
   const cut = text.search(/[?#]/);
   if (cut >= 0) text = text.slice(0, cut);

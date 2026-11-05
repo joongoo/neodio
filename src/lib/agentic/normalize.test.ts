@@ -16,6 +16,17 @@ test("normalizePath: 절대 URL 요청줄은 경로만 취한다", () => {
   assert.equal(normalizePath("https://example.com"), "/");
 });
 
+test("normalizePath: 경로 없는 절대 URL의 쿼리·프래그먼트 안 슬래시는 경로가 아니다", () => {
+  // 쿼리 값이 경로로 둔갑하면 집계가 틀어지고 민감 값이 남는다
+  assert.equal(normalizePath("https://example.com?next=/users/123"), "/");
+  assert.equal(normalizePath("https://example.com#a/b"), "/");
+  assert.equal(normalizePath("http://example.com:8080?x=/y"), "/");
+  // 경로가 있으면 기존대로 경로만 취하고 그 뒤 쿼리는 버린다
+  assert.equal(normalizePath("https://example.com/a?next=/users/123"), "/a");
+  assert.equal(normalizePath("https://example.com/?next=/users/123"), "/");
+  assert.equal(normalizePath("https://user:pw@example.com/p?x=1"), "/p");
+});
+
 test("normalizePath: 퍼센트 디코딩(한글 허용, 구분자는 보존, 깨진 인코딩은 그대로)", () => {
   assert.equal(normalizePath("/%ED%95%9C%EA%B8%80"), "/한글");
   assert.equal(normalizePath("/a%2Fb/c"), "/a%2Fb/c");

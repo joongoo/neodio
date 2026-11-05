@@ -56,25 +56,44 @@ export type RangeState = "ok" | "missing" | "invalid" | "stale";
 /** 출처별 스냅샷 보관소. 진위 판정은 반드시 이 상태를 먼저 본다. */
 export class RangeStore {
   private snapshots = new Map<string, RangeSnapshot>();
+  /** 스키마 이탈로 받은 내용을 믿을 수 없는 출처 → 상태 "invalid"(이전 스냅샷도 쓰지 않는다) */
   private invalid = new Map<string, string>();
+  /** 일시적 가져오기 실패(네트워크·HTTP 오류) → 상태에 영향 없음. 마지막 성공 스냅샷은 낡을 때까지 계속 쓴다 */
+  private fetchFailures = new Map<string, { reason: string; atMs: number }>();
 
   constructor(private readonly maxAgeDays: number = 14) {}
 
   setSnapshot(snapshot: RangeSnapshot): void {
     this.snapshots.set(snapshot.sourceId, snapshot);
     this.invalid.delete(snapshot.sourceId);
+    this.fetchFailures.delete(snapshot.sourceId);
   }
 
-  /** 가져오기 실패·스키마 이탈 기록. 이전 성공 스냅샷은 낡음 판정을 위해 그대로 둔다. */
+  /**
+   * 받은 내용이 기대한 스키마가 아니다(스키마 이탈·빈 목록 등). 내용을 믿을 수 없으므로
+   * 이전 성공 스냅샷이 있어도 "invalid"로 격하한다 → 진위 판정은 "검증 불가".
+   */
   setInvalid(sourceId: string, reason: string): void {
     this.invalid.set(sourceId, reason);
   }
 
+  /**
+   * 목록을 가져오지 못했다(네트워크·HTTP 오류). 내용에 문제가 있는 것이 아니므로 상태를 바꾸지 않는다:
+   * 마지막 성공 스냅샷은 최대 나이(기본 14일)를 넘기 전까지 계속 쓰이고, 그 뒤에는 "stale"이 된다.
+   * 호출자는 lastFetchFailure로 운영 알림을 낼 수 있다.
+   */
+  setFetchFailed(sourceId: string, reason: string, atMs: number): void {
+    this.fetchFailures.set(sourceId, { reason, atMs });
+  }
+
+  lastFetchFailure(sourceId: string): { reason: string; atMs: number } | undefined {
+    return this.fetchFailures.get(sourceId);
+  }
+
   state(sourceId: string, nowMs: number): RangeState {
-    const snap = this.snapshots.get(sourceId);
-    if (this.invalid.has(sourceId) && !snap) return "invalid";
-    if (!snap) return "missing";
     if (this.invalid.has(sourceId)) return "invalid";
+    const snap = this.snapshots.get(sourceId);
+    if (!snap) return "missing";
     // 목록이 스스로 밝힌 시각이 있으면 그것을, 없으면 받은 시각을 나이의 기준으로 쓴다
     const basis = snap.creationTimeMs ?? snap.fetchedAtMs;
     const ageDays = (nowMs - basis) / 86_400_000;

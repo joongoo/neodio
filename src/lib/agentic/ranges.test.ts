@@ -68,14 +68,44 @@ test("RangeStore 상태: missing / ok / stale / invalid", () => {
   assert.equal(store.state("b", Date.UTC(2026, 9, 15, 0, 0, 0)), "ok");
   assert.equal(store.state("b", Date.UTC(2026, 9, 15, 0, 0, 1)), "stale");
 
-  // 가져오기 실패/스키마 이탈 기록
+  // 스키마 이탈 기록: 이전 성공 스냅샷이 있어도 격하
   store.setInvalid("a", "bad-entry");
   assert.equal(store.state("a", NOW_MS), "invalid");
-  store.setInvalid("c", "fetch-failed");
+  store.setInvalid("c", "bad-entry");
   assert.equal(store.state("c", NOW_MS), "invalid");
   // 다시 성공하면 무효 기록이 지워진다
   if (fresh.ok) store.setSnapshot(fresh.snapshot);
   assert.equal(store.state("a", NOW_MS), "ok");
+});
+
+test("일시적 가져오기 실패는 마지막 성공 스냅샷을 낡을 때까지 계속 쓰게 둔다", () => {
+  const store = new RangeStore(14);
+  const r = parseRangeSnapshot(rangeJson(["1.2.3.0/24"], FRESH_CREATION), "a", NOW_MS);
+  assert.ok(r.ok);
+  if (r.ok) store.setSnapshot(r.snapshot);
+
+  store.setFetchFailed("a", "HTTP 503", NOW_MS);
+  // 상태는 그대로 ok — 일시 장애로 모든 판정이 '스키마 무효'가 되면 안 된다
+  assert.equal(store.state("a", NOW_MS), "ok");
+  assert.equal(store.contains("a", parseIp("1.2.3.9")!), true);
+  assert.deepEqual(store.lastFetchFailure("a"), { reason: "HTTP 503", atMs: NOW_MS });
+
+  // 실패가 계속되어 목록(생성 2026-11-04T15:45:59Z)이 14일을 넘기면 그때 낡음으로 격하
+  assert.equal(store.state("a", Date.UTC(2026, 10, 18, 15, 45, 59)), "ok");
+  assert.equal(store.state("a", Date.UTC(2026, 10, 18, 15, 46, 0)), "stale");
+
+  // 스냅샷이 한 번도 없던 출처의 실패는 '없음'
+  store.setFetchFailed("never", "timeout", NOW_MS);
+  assert.equal(store.state("never", NOW_MS), "missing");
+
+  // 가져오기 실패와 스키마 이탈은 별개: 이탈이 기록되면 실패 기록과 무관하게 invalid
+  store.setInvalid("a", "bad-entry");
+  assert.equal(store.state("a", NOW_MS), "invalid");
+
+  // 다시 성공하면 두 기록 모두 지워진다
+  if (r.ok) store.setSnapshot(r.snapshot);
+  assert.equal(store.state("a", NOW_MS), "ok");
+  assert.equal(store.lastFetchFailure("a"), undefined);
 });
 
 test("creationTime이 없으면 받은 시각을 나이의 기준으로 쓴다", () => {
