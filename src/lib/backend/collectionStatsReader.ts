@@ -9,6 +9,7 @@ import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from 
 import { formatObservationCount, observationWeights, sumWeights } from "@/lib/observations";
 import { buildVisibilityScores } from "./processing/visibility";
 import { brandQueryKeywords, queryScopeOf, type QueryScope } from "@/lib/queryScope";
+import { changeConfidence, type ChangeConfidence } from "@/lib/changeConfidence";
 import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "@/lib/visibilityStats";
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
 import { getPromptTopicGroups } from "./promptTopics";
@@ -123,6 +124,8 @@ export interface RealMetric {
   suffix?: string;
   trendUnit?: StatCard["trendUnit"];
   caption?: string;
+  /** 변화 신뢰도(D2) — 직전 기간이 있는 비율 지표에만 계산한다. */
+  confidence?: ChangeConfidence;
 }
 
 export interface RealStatSeries {
@@ -537,6 +540,9 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
       trendUnit: "%p",
       caption: `${unitLabel} ${formatObservationCount(Number(sumOf(current, "hit").toFixed(1)))}/${formatObservationCount(Number(total.toFixed(1)))}개 관측(실행 ${rawRuns.toLocaleString("ko-KR")}건)${low ? " · 표본 적음" : ""}${scopeSplit(hits)}`,
       trend: pointTrend(value, previousWeeks.length ? pooledRate(previous) : undefined),
+      confidence: previousWeeks.length
+        ? changeConfidence({ hits: sumOf(previous, "hit"), total: sumOf(previous, "total") }, { hits: sumOf(current, "hit"), total })
+        : undefined,
       sparkline: currentWeeks.map((w, i) => ({ week: formatWeekLabel(w), value: pooledRate([current[i]]) })),
     };
   };
