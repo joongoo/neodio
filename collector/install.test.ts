@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
 import net from "node:net";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -26,13 +27,28 @@ test("Windows bundle installs, reinstalls and starts through the login script", 
     assert.equal(result.status, 0, result.stdout + result.stderr);
     return result.stdout;
   };
+  function request(route: string, method = "GET", headers: Record<string, string> = {}) {
+    // spawnSync 동안 이전 서버 소켓의 close 이벤트 처리가 지연된다.
+    // agent:false로 이전 프로세스의 소켓을 재사용하지 않는다.
+    return new Promise<{ code: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+      const req = http.request(`${url}${route}`, { method, headers, agent: false }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { body += chunk; });
+        res.on("end", () => resolve({ code: res.statusCode!, headers: res.headers, body }));
+        res.on("error", reject);
+      });
+      req.setTimeout(1000, () => req.destroy(new Error("request timed out")));
+      req.on("error", reject);
+      req.end();
+    });
+  }
   async function status() {
-    // 재시작 전 서버의 keep-alive 소켓을 재사용하지 않고 새 프로세스를 확인한다.
-    try { return await (await fetch(`${url}/status`, { headers: { Connection: "close" }, signal: AbortSignal.timeout(1000) })).json(); }
+    try { const res = await request("/status"); return res.code === 200 ? JSON.parse(res.body) : null; }
     catch { return null; }
   }
   async function stop() {
-    if (await status()) await fetch(`${url}/shutdown`, { method: "POST" });
+    if (await status()) await request("/shutdown", "POST");
     for (let i = 0; i < 40 && await status(); i++) await new Promise((r) => setTimeout(r, 100));
     // shutdown allows existing sockets 1.5s to close before exiting.
     await new Promise((r) => setTimeout(r, 1800));
@@ -41,13 +57,13 @@ test("Windows bundle installs, reinstalls and starts through the login script", 
     assert.match(command("install"), /설치 완료/);
     assert.equal((await status()).version, COLLECTOR_VERSION);
     const origin = "https://neodio.vercel.app";
-    const webStatus = await fetch(`${url}/status`, { headers: { Origin: origin } });
-    assert.equal(webStatus.status, 200);
-    assert.equal(webStatus.headers.get("Access-Control-Allow-Origin"), origin);
-    const preflight = await fetch(`${url}/jobs`, { method: "OPTIONS", headers: { Origin: origin, "Access-Control-Request-Private-Network": "true" } });
-    assert.equal(preflight.status, 204);
-    assert.equal(preflight.headers.get("Access-Control-Allow-Private-Network"), "true");
-    assert.equal((await fetch(`${url}/status`, { headers: { Origin: "https://untrusted.example" } })).status, 403);
+    const webStatus = await request("/status", "GET", { Origin: origin });
+    assert.equal(webStatus.code, 200);
+    assert.equal(webStatus.headers["access-control-allow-origin"], origin);
+    const preflight = await request("/jobs", "OPTIONS", { Origin: origin, "Access-Control-Request-Private-Network": "true" });
+    assert.equal(preflight.code, 204);
+    assert.equal(preflight.headers["access-control-allow-private-network"], "true");
+    assert.equal((await request("/status", "GET", { Origin: "https://untrusted.example" })).code, 403);
     assert.ok(existsSync(path.join(home, "logs/launch.log")));
     assert.equal(readFileSync(startup).readUInt16LE(0), 0xfeff);
     assert.match(command("install"), /설치 완료/);
