@@ -124,6 +124,23 @@ Google Chrome이 있어야 한다.
 
 ## 업데이트
 
+### 0.4.8 Windows 설치 수정
+
+- 시작프로그램 VBS에 실제 CRLF와 UTF-16LE BOM을 사용해 구문 오류와 한글 사용자 경로 깨짐을 방지한다.
+- 설치 직후에는 VBS를 거치지 않고 창 없이 수집기를 직접 실행한다. 초기 오류는 `logs/launch.log`에 남긴다.
+- Windows 한글 설치 경로에서 프로세스가 종료되는 `fs.cpSync` 대신 파일별 복사를 사용한다.
+- 재설치 때 이전 프로세스가 exe 잠금을 해제할 시간을 주도록 파일 삭제를 재시도한다.
+- Windows 배포본에 직접 실행용 `run.cmd`와 상태 확인용 `status.cmd`를 포함한다.
+
+`node collector/build.mjs --origin https://neodio.vercel.app`로 세 플랫폼을 빌드하고,
+`npm run test:collector`로 Windows 설치·재설치·로그인 스크립트 실행·제거를 검증한다.
+테스트는 한글과 공백이 있는 임시 사용자 경로와 별도 포트를 사용하며 실제 시작프로그램은 변경하지 않는다.
+Mac은 설치 실행 검증을 별도 Mac 환경에서 해야 한다.
+
+`npm run collector:upload`는 Windows/macOS 모두 지원한다. `BLOB_READ_WRITE_TOKEN`을 환경변수에 설정하거나
+Vercel OIDC 환경변수(`BLOB_STORE_ID`, `VERCEL_OIDC_TOKEN`)를 사용한다. macOS 기존 키체인도 지원한다.
+세 플랫폼 설치 파일을 업로드하고 크기를 검증한 후 웹의 버전 변경을 배포해야 다운로드가 끊기지 않는다.
+
 수집 스크립트나 수집기 동작이 바뀌면 [collectorAgent.ts](../src/lib/collectorAgent.ts)의 `COLLECTOR_VERSION`을
 올리고 다시 빌드해 올린다. 기존 PC가 반드시 새 버전을 써야 하면 `MIN_COLLECTOR_VERSION`도 올린다 — 낮은 버전은
 선택 수집 화면에서 업데이트 안내를 받는다. 새 zip의 설치 파일을 다시 실행하면 덮어쓰고 재시작한다.

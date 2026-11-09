@@ -20,3 +20,15 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run test:unit
+
+  collector-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run collector:build -- --origin https://neodio.vercel.app --platform win-x64
+      - run: npm run test:collector
