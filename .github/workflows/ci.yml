@@ -44,12 +44,14 @@ jobs:
         run: |
           $version = (Select-String -Path src/lib/collectorAgent.ts -Pattern 'COLLECTOR_VERSION = "([\d.]+)"').Matches.Groups[1].Value
           $installer = Resolve-Path "dist/collector/neodio-collector-win-x64-$version-setup.exe"
-          $install = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          $install = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+          if (!$install.WaitForExit(120000)) { throw 'Installer timed out' }
           if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
           $runtime = Join-Path $env:LOCALAPPDATA 'NeodioCollector/runtime'
           $startup = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Startup/neodio-collector.vbs'
           if (!(Test-Path (Join-Path $runtime 'neodio-collector.exe')) -or !(Test-Path $startup)) { throw 'Collector installation is incomplete' }
           $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs/Neodio Collector/unins000.exe'
-          $remove = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          $remove = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+          if (!$remove.WaitForExit(120000)) { throw 'Uninstaller timed out' }
           if ($remove.ExitCode -ne 0) { throw "Uninstaller failed: $($remove.ExitCode)" }
           if ((Test-Path $runtime) -or (Test-Path $startup)) { throw 'Collector files or startup entry remain after removal' }
