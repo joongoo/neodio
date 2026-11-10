@@ -1,4 +1,4 @@
-// YouTube AIO 인용 트래커 정기 수집 (docs/youtube-aio-tracker-plan.md).
+// YouTube AIO 인용 트래커 정기 수집 (docs/features/video/youtube-tracking-spec.md).
 // 채널이 연동된 활성 브랜드마다 runAioCollection(src/lib/backend/aio/
 // collector.ts — 화면의 "지금 수집" 버튼과 같은 코드)을 돌린다. 이미 오늘
 // 수집한 키워드×디바이스는 건너뛰므로 다시 실행해도 이어서 수집하고,

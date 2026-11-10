@@ -1,7 +1,7 @@
 import { UrlInspectorData } from "../types";
 
 // Matches Figma "URL Inspector Screen (Wireframe)" (node 646:13630),
-// trimmed to P0 (neodigm_p0_scope.md §2) — everything here is derived from
+// trimmed to P0 (docs/product/p0-scope-spec.md §2) — everything here is derived from
 // our own citations pipeline. The "인용 시도"/"LLM 레퍼럴 유입 수" charts and
 // the "도메인 강도" column are dropped (CDN logs / referral analytics /
 // domain-authority index — none of which we have).

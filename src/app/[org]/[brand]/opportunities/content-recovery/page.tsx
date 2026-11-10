@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 // Matches Figma "Opportunity Detail - Content Recovery (Template C)" (node
 // 646:15046). Content-visibility scoring comes from our own Playwright
-// crawl (rendered vs raw HTML), no 3rd-party data (neodigm_p0_scope.md §2).
+// crawl (rendered vs raw HTML), no 3rd-party data (docs/product/p0-scope-spec.md §2).
 // 배포(엣지 딜리버리)는 우리 인프라에 없어 제외 — 대신 같은 크롤을 반복
 // 실행해서 얻는 전/후 비교만 지원한다.
 export default async function ContentRecoveryOpportunityPage() {

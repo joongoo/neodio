@@ -187,7 +187,7 @@ export const contentVisibilityByOrg: Record<string, ContentVisibility> = {
 };
 
 // 원래 Figma "Modal - Your AI Visibility Journey" / "Modal - Your Prompting
-// Strategy" 카피 그대로였으나 docs/overview-checklists-plan.md 기획에 따라
+// Strategy" 카피 그대로였으나 docs/features/reporting/overview-checklists-spec.md 기획에 따라
 // 개편: 이 프로젝트에 없는 기능(엣지 사전 렌더링/CDN 봇 배포)을 가정한 단계
 // 2개는 삭제, 나머지는 실제로 이동 가능한 페이지(`href`)를 달았다. `href`가
 // 없는 단계는 관련 기능(CDN/Analytics 연동 화면, AI 프롬프트 제안)이 아직

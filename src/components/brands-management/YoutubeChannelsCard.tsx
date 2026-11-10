@@ -102,7 +102,7 @@ export function YoutubeChannelsCard({ brandId, initialChannels }: { brandId: str
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="https://www.youtube.com/@salesforce, @핸들 또는 UC… 채널 ID"
+              placeholder="YouTube 채널 URL(/c/ 포함), @핸들 또는 UC… 채널 ID"
               className="h-10 w-full rounded-md border border-neutral-300 px-3 text-sm"
             />
             {error && <p className="text-xs text-red-600">{error}</p>}

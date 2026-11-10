@@ -63,7 +63,7 @@ export function ChecklistCard({ item }: { item: ChecklistItem }) {
   );
 }
 
-// Steps with an `href` link to a real page (see docs/overview-checklists-plan.md
+// Steps with an `href` link to a real page (see docs/features/reporting/overview-checklists-spec.md
 // group A). Steps without one don't have a built feature to send the user to
 // yet (group B) — clicking still gives feedback (a "준비 중" note) instead of
 // doing nothing, so it's clear the step is real but not wired up yet, not broken.

@@ -64,7 +64,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
 };
 
 // Topic-shaped categories keep the full prompt-level expansion; the other
-// four categories (per neodigm_screens_documentation.md #2) each have their
+// four categories (per docs/product/screen-spec.md #2) each have their
 // own column set — brand-rank, cited-page and cited-source rows are never
 // reshaped into the topic table, unlike the Figma source (a documented bug).
 const TOPIC_FAMILY = new Set(["top-prompts", "topic-opportunities"]);

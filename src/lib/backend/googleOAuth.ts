@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 // Minimal Google OAuth 2.0 client — just enough for Search Console's
-// read-only Search Analytics API (docs/gsc-search-analytics-plan.md).
+// read-only Search Analytics API (docs/features/integrations/gsc-integration-spec.md).
 // Server-only (reads Client Secret from env) — never import from a
 // "use client" file.
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";

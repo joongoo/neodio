@@ -3,7 +3,7 @@ import { BrandPresenceData } from "../types";
 const WEEKS = ["8월 2일", "8월 9일", "8월 16일", "8월 23일"];
 
 // Matches Figma "Brand Presence Screen (Wireframe)" (node 646:12952, Korean
-// page), trimmed to P0 (neodigm_p0_scope.md §2) — everything here comes
+// page), trimmed to P0 (docs/product/p0-scope-spec.md §2) — everything here comes
 // from our own mentions/citations pipeline, no 3rd-party data.
 export const brandPresenceByOrg: Record<string, BrandPresenceData> = {
   neodigm: {

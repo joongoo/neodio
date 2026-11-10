@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseChannelInput, parsePlaylistPage, parseTimestamp, parseYoutubeVideoUrl } from "./youtube";
+import { parseChannelInput, parsePlaylistPage, parseTimestamp, parseYoutubeVideoUrl, resolveYoutubeChannel } from "./youtube";
 
 test("parseYoutubeVideoUrl reads every YouTube link shape AIO cites", () => {
   assert.deepEqual(parseYoutubeVideoUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=134s"), { videoId: "dQw4w9WgXcQ", startSeconds: 134 });
@@ -24,7 +24,28 @@ test("parseChannelInput accepts URL, handle and channel ID", () => {
   assert.deepEqual(parseChannelInput("@salesforce"), { kind: "handle", handle: "@salesforce" });
   assert.deepEqual(parseChannelInput("UCUpquzY878NEaZm5bc7m2sQ"), { kind: "id", channelId: "UCUpquzY878NEaZm5bc7m2sQ" });
   assert.deepEqual(parseChannelInput("https://www.youtube.com/channel/UCUpquzY878NEaZm5bc7m2sQ"), { kind: "id", channelId: "UCUpquzY878NEaZm5bc7m2sQ" });
+  assert.deepEqual(parseChannelInput("https://www.youtube.com/c/TableauKR"), { kind: "legacy", path: "/c/TableauKR" });
+  assert.deepEqual(parseChannelInput("youtube.com/user/TableauKR/videos"), { kind: "legacy", path: "/user/TableauKR" });
   assert.equal(parseChannelInput("https://www.salesforce.com"), null);
+});
+
+test("resolveYoutubeChannel resolves a legacy channel URL to its channel ID", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.YOUTUBE_API_KEY;
+  process.env.YOUTUBE_API_KEY = "test-key";
+  globalThis.fetch = async (input) => {
+    assert.equal(input, "https://www.youtube.com/c/TableauKR");
+    return new Response('<link rel="canonical" href="https://www.youtube.com/channel/UCPPyViJtKnwRbTF0YtSoIXA"><meta property="og:title" content="Tableau Korea">');
+  };
+  try {
+    assert.deepEqual(await resolveYoutubeChannel("https://www.youtube.com/c/TableauKR"), {
+      channelId: "UCPPyViJtKnwRbTF0YtSoIXA", handle: null, title: "Tableau Korea", thumbnailUrl: null,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.YOUTUBE_API_KEY;
+    else process.env.YOUTUBE_API_KEY = originalKey;
+  }
 });
 
 test("parsePlaylistPage keeps public videos and skips deleted/private ones", () => {

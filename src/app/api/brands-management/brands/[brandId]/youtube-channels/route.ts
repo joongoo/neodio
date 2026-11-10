@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const body = await request.json().catch(() => null);
   const input = typeof body?.input === "string" ? body.input : "";
   if (!parseChannelInput(input)) {
-    return NextResponse.json({ error: "채널 URL, @핸들 또는 채널 ID(UC…)를 입력하세요." }, { status: 400 });
+    return NextResponse.json({ error: "YouTube 채널 URL(/c/ 포함), @핸들 또는 채널 ID(UC…)를 입력하세요." }, { status: 400 });
   }
 
   const channel = await resolveYoutubeChannel(input).catch(() => null);

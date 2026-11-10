@@ -7,7 +7,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
 // transactional intent share. Recharts-based (not CSS divs) so it gets the
 // same hover-tooltip interaction as every other chart in the app. Values
 // come from an LLM intent classification over the related topics, not a
-// keyword-volume API (see neodigm_p0_scope.md).
+// keyword-volume API (see docs/product/p0-scope-spec.md).
 const SEGMENTS = [
   { key: "informational", label: "정보성", color: "#ed6b21" },
   { key: "commercial", label: "상업성", color: "#99781a" },

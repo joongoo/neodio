@@ -44,7 +44,7 @@ function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-// GSC 데이터는 API상 2~3일 지연이 있으므로(docs/gsc-search-analytics-plan.md
+// GSC 데이터는 API상 2~3일 지연이 있으므로(docs/features/integrations/gsc-integration-spec.md
 // §1) endDate를 오늘-3일로 잡는다 — 그래야 "데이터 없음" 구간을 안 긁는다.
 export async function getRealGscSearchPerformance(brandId: string): Promise<GscSearchPerformanceResult | null> {
   const token = await getGscToken(brandId);
@@ -78,7 +78,7 @@ export async function getRealGscSearchPerformance(brandId: string): Promise<GscS
       rowLimit: 25000,
     }).catch((error) => { console.error("[gsc] searchAnalytics.query 실패, 빈 결과로 대체:", error); return []; }),
     // device/country 차원 — 콘텐츠 포맷·마켓 확장 우선순위를 실측으로
-    // 뒷받침하는 참고 지표. (docs/gsc-additional-signals.md §3-⑤,⑥)
+    // 뒷받침하는 참고 지표. (docs/features/integrations/gsc-integration-spec.md §3-⑤,⑥)
     querySearchAnalytics(accessToken, token.property, {
       startDate: isoDate(start),
       endDate: isoDate(end),
@@ -177,7 +177,7 @@ export async function getRealGscCoverageGaps(
     }),
     // ["query","page"] 결합 조회 — 이 검색어가 실제로 어느 페이지로 노출되고
     // 있는지. 커버리지 공백 키워드에 타겟 URL 근거를 붙이는 데 쓴다
-    // (docs/gsc-additional-signals.md §3-②).
+    // (docs/features/integrations/gsc-integration-spec.md §3-②).
     querySearchAnalytics(accessToken, token.property, {
       startDate: isoDate(start),
       endDate: isoDate(end),
@@ -265,7 +265,7 @@ export async function getRealGscTopPages(brandId: string, limit = 10): Promise<G
 // 실제로 이 URL을 어떻게 보는지(인덱싱 여부/robots.txt 차단/크롤 시각).
 // searchAnalytics.query와 다른 엔드포인트(Search Console API v1)라 별도
 // 함수로 둔다 — 같은 webmasters.readonly 스코프로 호출 가능.
-// (docs/gsc-additional-signals.md §3-①)
+// (docs/features/integrations/gsc-integration-spec.md §3-①)
 export async function getRealGscUrlIndexStatus(brandId: string, url: string): Promise<GscUrlIndexStatus | null> {
   const token = await getGscToken(brandId);
   if (!token) return null;
@@ -339,7 +339,7 @@ export async function getRealGscUrlIndexStatus(brandId: string, url: string): Pr
 
 // searchAnalytics.query의 searchAppearance 차원 — FAQ/사이트링크 같은 리치
 // 결과 유형별 실적. "FAQ 추가"/"목차 추가" 기회를 실행한 뒤 실제로 검색결과가
-// 개선됐는지 확인하는 근거로 쓴다. (docs/gsc-additional-signals.md §3-③)
+// 개선됐는지 확인하는 근거로 쓴다. (docs/features/integrations/gsc-integration-spec.md §3-③)
 export async function getRealGscSearchAppearance(brandId: string): Promise<GscSearchAppearanceRow[] | null> {
   const token = await getGscToken(brandId);
   if (!token) return null;
@@ -363,7 +363,7 @@ export async function getRealGscSearchAppearance(brandId: string): Promise<GscSe
 
 // Sitemaps API — 제출한 사이트맵별 구글 처리 현황(경고/에러/타입별 제출-인덱싱
 // 수). robots.txt 차단 진단 옆에 나란히 둘 정량 지표로 쓴다.
-// (docs/gsc-additional-signals.md §3-④)
+// (docs/features/integrations/gsc-integration-spec.md §3-④)
 export async function getRealGscSitemaps(brandId: string): Promise<GscSitemapStatus[] | null> {
   const token = await getGscToken(brandId);
   if (!token) return null;

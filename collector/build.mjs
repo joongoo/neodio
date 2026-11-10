@@ -6,9 +6,11 @@
 //   node collector/build.mjs --local-node      # 이 PC용만, 지금 쓰는 node로(다운로드 없이 시험)
 //
 // 결과: dist/collector/neodio-collector-<platform>-<version>.zip — 비공개 Blob 저장소의
-// collector/ 아래에 이 이름 그대로 올리면 선택 수집 화면에서 받을 수 있다(docs/collector.md).
+// collector/ 아래에 이 이름 그대로 올리면 선택 수집 화면에서 받을 수 있다(docs/operations/collector-guide.md).
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { ZipFile } from "yazl";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -64,7 +66,12 @@ async function nodeBinary(platform) {
   }
   mkdirSync(path.dirname(target), { recursive: true });
   if (spec.archive === "zip") {
-    run("unzip", ["-o", "-j", archive, `${spec.node}/${spec.exe}`, "-d", path.dirname(target)], { stdio: "ignore" });
+    if (process.platform === "win32") {
+      // Windows 기본 tar도 zip을 읽는다. 별도 unzip 설치가 필요 없다.
+      run("tar", ["-xf", archive, "-C", CACHE, `${spec.node}/${spec.exe}`]);
+    } else {
+      run("unzip", ["-o", "-j", archive, `${spec.node}/${spec.exe}`, "-d", path.dirname(target)], { stdio: "ignore" });
+    }
   } else {
     run("tar", ["-xzf", archive, "-C", CACHE, `${spec.node}/bin/node`]);
     copyFileSync(path.join(CACHE, spec.node, "bin", "node"), target);
@@ -103,6 +110,8 @@ function writeLaunchers(dir, platform, version) {
   } else {
     writeFileSync(path.join(dir, "install.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs install %*\r\necho.\r\npause\r\n`);
     writeFileSync(path.join(dir, "uninstall.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs uninstall\r\necho.\r\npause\r\n`);
+    writeFileSync(path.join(dir, "run.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs run\r\necho.\r\npause\r\n`);
+    writeFileSync(path.join(dir, "status.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs status\r\necho.\r\npause\r\n`);
   }
   writeFileSync(
     path.join(dir, "README.txt"),
@@ -118,6 +127,27 @@ function writeLaunchers(dir, platform, version) {
       "",
     ].join(platform.startsWith("mac") ? "\n" : "\r\n")
   );
+}
+
+/** Windows에서도 macOS 실행 권한을 보존하는 zip을 만든다. */
+async function zipBundle(dir, zip, platform) {
+  const archive = new ZipFile();
+  const output = pipeline(archive.outputStream, createWriteStream(zip));
+  function addFiles(current) {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory()) addFiles(file);
+      else {
+        const relative = path.relative(dir, file).replace(/\\/g, "/");
+        const executable = platform.startsWith("mac") && (relative === RUNTIME_NAME[platform] || relative.endsWith(".command"));
+        archive.addFile(file, `${path.basename(dir)}/${relative}`, { mode: executable ? 0o100755 : 0o100644 });
+      }
+    }
+  }
+  archive.on("error", (error) => archive.outputStream.destroy(error));
+  addFiles(dir);
+  archive.end();
+  await output;
 }
 
 async function main() {
@@ -140,8 +170,7 @@ async function main() {
     writeLaunchers(dir, platform, version);
     const zip = path.join(OUT, `${name}.zip`);
     rmSync(zip, { force: true });
-    // -y: 심볼릭 링크 보존, -X: macOS 부가 속성 제외
-    run("zip", ["-qryX", zip, name], { cwd: OUT });
+    await zipBundle(dir, zip, platform);
     console.log(`  → ${path.relative(ROOT, zip)}`);
   }
 }

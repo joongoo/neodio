@@ -201,7 +201,7 @@ export const db = {
   },
   visibilityOverview: {
     // Reuses the same snapshot-derived stat cards as the Overview page.
-    // P0-safe subset only (neodigm_p0_scope.md §2): agentic interactions
+    // P0-safe subset only (docs/product/p0-scope-spec.md §2): agentic interactions
     // and LLM referral traffic both need CDN/analytics logs we don't have,
     // so they're dropped here even though Overview still shows them.
     getStatCards: async (orgId: string, range: DateRange = "4w") =>
@@ -216,12 +216,12 @@ export const db = {
   },
   promptResearch: {
     // Single lookup for now (matches the /prompt-research API contract in
-    // neodigm_screens_documentation.md §3 — one call returns everything the
+    // docs/product/screen-spec.md §3 — one call returns everything the
     // screen needs). Unknown topics resolve to null → empty state.
     search: async (topic: string) => promptResearchByTopic[topic.trim()] ?? null,
   },
   searchTrend: {
-    // API 미연동 mock — docs/naver-datalab-search-trend-plan.md. 실 연동 시
+    // API 미연동 mock — docs/features/integrations/naver-datalab-search-trend-spec.md. 실 연동 시
     // 이 lookup을 DataLab API 호출로 교체하면 화면은 그대로 동작한다.
     search: async (keyword: string) => searchTrendByKeyword[keyword.trim()] ?? null,
   },
@@ -236,7 +236,7 @@ export const db = {
     getGsc: async (brandId: string) => gscConnectionByBrand[brandId] ?? null,
   },
   gscSearchPerformance: {
-    // API 미연동 mock — docs/gsc-search-analytics-plan.md. 연결된(connected)
+    // API 미연동 mock — docs/features/integrations/gsc-integration-spec.md. 연결된(connected)
     // 브랜드에 대해서만 존재한다고 가정 — 실 연동 시 이 lookup을 배치 결과 조회로
     // 교체하면 화면은 그대로 동작한다.
     get: async (brandId: string) => gscSearchPerformanceByBrand[brandId] ?? null,

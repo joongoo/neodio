@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS prompt_tracking_surfaces (
 );
 -- 플랫폼 종류는 코드(src/lib/promptSurfaces.ts)가 검증한다 — 플랫폼이 늘 때마다 제약을 고치지 않도록 CHECK를 없앴다.
 ALTER TABLE prompt_tracking_surfaces DROP CONSTRAINT IF EXISTS prompt_tracking_surfaces_surface_check;
--- AIO 키워드를 프롬프트로 통합하는 동안 두 저장소를 잇는 열 — 이관이 끝나면 aio_keywords를 없앤다(docs/prompt-surfaces-plan.md).
+-- AIO 키워드를 프롬프트로 통합하는 동안 두 저장소를 잇는 열 — 이관이 끝나면 aio_keywords를 없앤다(docs/features/visibility/prompt-surfaces-spec.md).
 ALTER TABLE aio_keywords ADD COLUMN IF NOT EXISTS prompt_id TEXT REFERENCES prompts(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS aio_keywords_prompt ON aio_keywords(prompt_id);
 CREATE INDEX IF NOT EXISTS aio_citations_video ON aio_citations(video_id);
@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS config_versions (
   created_by TEXT REFERENCES actors(id), created_at TEXT NOT NULL, content_json JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS config_versions_org ON config_versions(organization_id,brand_id,version DESC);
--- 회원·권한(docs/auth-and-roles.md) — 운영 DB는 다른 앱과 공유돼 users·sessions 같은 이름이 이미 쓰이고 있어, 새 테이블은 모두 neodio_ 접두사를 쓴다(이름 충돌로 스키마 초기화가 통째로 실패한 적이 있다).
+-- 회원·권한(docs/features/access/access-and-organization-spec.md) — 운영 DB는 다른 앱과 공유돼 users·sessions 같은 이름이 이미 쓰이고 있어, 새 테이블은 모두 neodio_ 접두사를 쓴다(이름 충돌로 스키마 초기화가 통째로 실패한 적이 있다).
 -- 이메일 없이 아이디+비밀번호로 가입하고, 오너·직원이 역할·브랜드를 할당해야 접근한다.
 CREATE TABLE IF NOT EXISTS neodio_users (
   id TEXT PRIMARY KEY, login_id TEXT NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL,

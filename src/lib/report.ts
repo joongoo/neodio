@@ -1,4 +1,4 @@
-// 클라이언트 보고용 리포트 — 생성 시점의 지표를 고정(스냅샷)해 저장한다(docs/client-report-plan.md).
+// 클라이언트 보고용 리포트 — 생성 시점의 지표를 고정(스냅샷)해 저장한다(docs/features/reporting/client-report-plan.md).
 // 서버·클라이언트가 함께 쓰는 순수 모듈: 타입, 섹션 정의, 자동 인사이트.
 import type { CollectionQualityRow, ConsistencySummary } from "@/lib/db";
 import type { PlacementSummary } from "@/lib/placement";

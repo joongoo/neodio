@@ -29,7 +29,8 @@
     "discover:brand-roles": "tsx scripts/discover-brand-roles.ts",
     "collector": "tsx collector/agent.ts",
     "collector:build": "node collector/build.mjs",
-    "collector:upload": "scripts/upload-collector.sh",
+    "collector:upload": "node scripts/upload-collector.mjs",
+    "test:collector": "tsx --test collector/windowsStartup.test.ts collector/install.test.ts",
     "open:google-ai-chrome": "node scripts/open-google-ai-chrome.mjs",
     "parse:naver-ai-html": "python3 scripts/parse_naver_ai_html.py",
     "process:raw": "tsx scripts/process-raw.ts",
@@ -56,6 +57,7 @@
     "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yazl": "^3.3.1"
   }
 }

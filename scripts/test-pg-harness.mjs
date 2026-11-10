@@ -1,4 +1,4 @@
-// `npm run test:db` needs a real Postgres server (see docs/database.md — the
+// `npm run test:db` needs a real Postgres server (see docs/data/database-guide.md — the
 // store's tests run real SQL against real Postgres, not a SQLite file or an
 // in-memory mock). This harness boots a disposable local Postgres cluster in
 // a temp dir, points POSTGRES_URL/POSTGRES_URL_NON_POOLING at it, runs the

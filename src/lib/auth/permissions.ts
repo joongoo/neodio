@@ -1,4 +1,4 @@
-// 회원 권한 판단(순수 함수) — docs/auth-and-roles.md.
+// 회원 권한 판단(순수 함수) — docs/features/access/access-and-organization-spec.md.
 //
 // - staff(네오다임 직원): 모든 조직·브랜드를 보고 편집한다(플랫폼 권한).
 // - owner: 조직당 1명, admin 중에서 정한다. 조직을 관리하고 구성원·브랜드 접근 권한을 정하며 모든 브랜드를 편집한다.

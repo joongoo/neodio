@@ -10,7 +10,7 @@ import { GscConnection, GscSearchPerformanceResult } from "@/lib/db";
 import { useTenantBase } from "@/lib/useTenantBase";
 
 // Mirrors SearchTrendClient's shell (banner → chart), but the data source is
-// GSC's own real property (docs/gsc-search-analytics-plan.md) rather than a
+// GSC's own real property (docs/features/integrations/gsc-integration-spec.md) rather than a
 // keyword lookup — so the "not ready" state is "계정을 연결하세요", not an
 // empty search box, and it links to the existing Manage Connections flow
 // instead of duplicating a connect button here.

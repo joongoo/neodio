@@ -2,7 +2,7 @@ import { AI_ANSWER_SURFACES } from "../../promptSurfaces";
 import type { PromptStore } from "./store";
 
 // AIO 키워드(aio_keywords)를 프롬프트 라이브러리(prompts + prompt_tracking)로 옮긴다 — 질의는 한 곳에서만 등록한다
-// (docs/prompt-surfaces-plan.md). 키워드마다: 프롬프트를 만들거나(같은 문장이 이미 있으면 그 프롬프트를 쓰고 분류는 건드리지 않는다),
+// (docs/features/visibility/prompt-surfaces-spec.md). 키워드마다: 프롬프트를 만들거나(같은 문장이 이미 있으면 그 프롬프트를 쓰고 분류는 건드리지 않는다),
 // 이 브랜드의 추적을 만들고, 추적에 Google AI Overview 플랫폼을 켜고, aio_keywords.prompt_id를 채운다.
 // 이미 옮긴 키워드는 건너뛰므로 다시 실행해도 안전하다. 미리보기(dryRun)는 같은 작업을 하고 되돌린다.
 

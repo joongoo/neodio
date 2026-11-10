@@ -79,7 +79,7 @@ function TopicField({ value, onChange, options }: { value: string; onChange: (v:
 }
 
 // Matches Figma "Modal / Add Prompts", "Modal / Import Prompts", "Modal /
-// Edit Prompt" (Prompt Library screen spec, neodigm_screens_documentation.md
+// Edit Prompt" (Prompt Library screen spec, docs/product/screen-spec.md
 // §6). All three write into the in-memory row list the client owns — no
 // backend yet, same stage as the rest of this screen.
 

@@ -13,7 +13,7 @@ export function collectionUsesLocalAgent(): boolean {
 // collector/build.mjs의 zip 이름 그대로 둔다. 받기는 로그인한 화면에서만 —
 // 서버가 몇 분짜리 임시 링크를 만들어 보낸다. 저장소를 프로젝트에 연결하면
 // BLOB_STORE_ID가 생기고 SDK가 Vercel OIDC로 인증한다(예전 방식 저장소는
-// BLOB_READ_WRITE_TOKEN). docs/collector.md
+// BLOB_READ_WRITE_TOKEN). docs/operations/collector-guide.md
 const DOWNLOAD_LINK_TTL_MS = 10 * 60_000;
 
 export function collectorDownloadsConfigured(): boolean {

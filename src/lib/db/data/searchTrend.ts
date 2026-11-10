@@ -1,6 +1,6 @@
 import { SearchTrendResult } from "../types";
 
-// Naver DataLab API 미연동 mock — docs/naver-datalab-search-trend-plan.md 참고.
+// Naver DataLab API 미연동 mock — docs/features/integrations/naver-datalab-search-trend-spec.md 참고.
 // 실 연동 전이라 클라이언트 아이디/시크릿이 없고, 화면 구조만 미리 검증하기 위한 상대 지수
 // 값을 손으로 채워뒀다. searchCollectionByKeyword와 같은 키("마케팅 자동화"/"네오다임")로
 // 맞춰 검색결과 리서치 화면과 나란히 비교해볼 수 있게 했다.

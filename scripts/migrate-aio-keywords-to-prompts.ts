@@ -1,4 +1,4 @@
-// AIO 키워드 → 프롬프트 라이브러리 이관 (docs/prompt-surfaces-plan.md 1단계).
+// AIO 키워드 → 프롬프트 라이브러리 이관 (docs/features/visibility/prompt-surfaces-spec.md 1단계).
 //   npm run db:aio-keywords-to-prompts                    # 로컬 DB 미리보기(아무것도 바꾸지 않는다)
 //   npm run db:aio-keywords-to-prompts -- --apply         # 로컬 DB에 적용
 //   npm run db:aio-keywords-to-prompts:prod               # 운영 DB 미리보기(.env.neon.local)

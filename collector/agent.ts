@@ -9,10 +9,10 @@
 //
 // 명령: run(수집기 실행) · install(이 PC에 설치 + 로그인 시 자동 시작) · uninstall · status
 // 개발: npm run collector -- run  (scripts/의 수집 스크립트를 그대로 쓴다)
-// 배포: node collector/build.mjs → dist/collector/*.zip (docs/collector.md)
+// 배포: node collector/build.mjs → dist/collector/*.zip (docs/operations/collector-guide.md)
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -33,6 +33,8 @@ import {
 import { parseAioSpec } from "../src/lib/collectorAioSpec";
 import { parseCrawlSpec } from "../src/lib/collectorCrawlSpec";
 import { resolveChromePath } from "../scripts/lib/incognito-chrome.mjs";
+import { windowsStartupVbs } from "./windowsStartup";
+import { copyWindowsRuntime } from "./runtimeFiles";
 
 // 빌드할 때(esbuild define) 운영 웹 주소가 들어간다 — 이 주소의 화면만 수집기를 부를 수 있다.
 declare const __COLLECTOR_ORIGINS__: string[] | undefined;
@@ -933,10 +935,8 @@ function registerAutostart(nodePath: string, agentPath: string) {
   }
   if (process.platform === "win32") {
     // 시작프로그램 폴더의 스크립트 — 관리자 권한 없이 로그인할 때 창 없이 실행된다.
-    const vbs = `Set sh = CreateObject("WScript.Shell")\r\nsh.Run """${nodePath}"" ""${agentPath}"" run", 0, False\r\n`;
     mkdirSync(path.dirname(windowsStartupScript()), { recursive: true });
-    writeFileSync(windowsStartupScript(), vbs);
-    spawn("wscript.exe", [windowsStartupScript()], { detached: true, stdio: "ignore" }).unref();
+    writeFileSync(windowsStartupScript(), windowsStartupVbs(nodePath, agentPath));
     return;
   }
   throw new Error("이 운영체제는 자동 시작 등록을 지원하지 않습니다. `run`으로 직접 실행하세요.");
@@ -967,14 +967,33 @@ async function install() {
 
   if (path.resolve(bundleRoot) !== path.resolve(RUNTIME_DIR)) {
     log(`설치 위치로 복사: ${RUNTIME_DIR}`);
-    rmSync(RUNTIME_DIR, { recursive: true, force: true });
-    cpSync(bundleRoot, RUNTIME_DIR, { recursive: true });
+    // Windows는 서버 포트가 닫힌 뒤에도 종료 중인 exe를 잠시 잠근다.
+    rmSync(RUNTIME_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (process.platform === "win32") copyWindowsRuntime(bundleRoot, RUNTIME_DIR);
+    else cpSync(bundleRoot, RUNTIME_DIR, { recursive: true });
     // 인터넷에서 받은 파일 표시를 지워야 macOS가 실행을 막지 않는다.
     if (process.platform === "darwin") spawnSync("xattr", ["-dr", "com.apple.quarantine", RUNTIME_DIR], { stdio: "ignore" });
   }
   const nodePath = path.join(RUNTIME_DIR, process.platform === "win32" ? "neodio-collector.exe" : "neodio-collector");
   const agentPath = path.join(RUNTIME_DIR, "app", "agent.mjs");
   registerAutostart(nodePath, agentPath);
+  if (process.platform === "win32") {
+    // 설치 직후에는 WScript 정책과 무관하게 직접 실행하고 초기 오류도 남긴다.
+    const launchLog = openSync(path.join(LOG_DIR, "launch.log"), "a");
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(nodePath, [agentPath, "run"], {
+          detached: true,
+          windowsHide: true,
+          stdio: ["ignore", launchLog, launchLog],
+        });
+        child.once("error", reject);
+        child.once("spawn", () => { child.unref(); resolve(); });
+      });
+    } finally {
+      closeSync(launchLog);
+    }
+  }
 
   for (let i = 0; i < 40; i++) {
     const current = await fetchStatus();
@@ -986,7 +1005,7 @@ async function install() {
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`수집기가 시작되지 않았습니다. 로그를 확인하세요: ${LOG_DIR}`);
+  throw new Error(`수집기가 시작되지 않았습니다. ${LOG_DIR}의 agent.log와 launch.log를 확인하세요. Windows에서는 ${path.join(RUNTIME_DIR, "run.cmd")}를 실행하면 오류를 직접 볼 수 있습니다.`);
 }
 
 async function uninstall() {

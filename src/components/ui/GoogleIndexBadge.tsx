@@ -7,7 +7,7 @@ import { GscUrlIndexStatus } from "@/lib/db";
 
 // URL Inspection API로 확인한 구글 실제 인덱싱 상태 — 우리 자체 크롤 가시성
 // 점수와 별개의 신호라서 별도 컬럼/배지로 보여준다. 클릭하면 그 자리에서
-// 다시 확인(API 재호출)한다. (docs/gsc-additional-signals.md §3-①)
+// 다시 확인(API 재호출)한다. (docs/features/integrations/gsc-integration-spec.md §3-①)
 export function GoogleIndexBadge({ url, status }: { url: string; status?: GscUrlIndexStatus }) {
   const router = useRouter();
   const [checking, setChecking] = useState(false);

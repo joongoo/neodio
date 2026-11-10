@@ -6,7 +6,7 @@ import { GscConnection } from "@/lib/db";
 
 // Matches Figma "Manage Connections" GSC tab (doc §23) — now scoped to a
 // single brand instead of the whole org (each brand connects its own GSC
-// property; see neodigm_p0_scope.md's GSC row). "연결" 버튼은 이제 실제
+// property; see docs/product/p0-scope-spec.md's GSC row). "연결" 버튼은 이제 실제
 // OAuth 흐름(/api/connections/gsc/oauth/start)으로 이동한다.
 export function GscConnectionCard({ gsc, brandId }: { gsc: GscConnection | null; brandId: string }) {
   if (!gsc || gsc.status === "disconnected") {

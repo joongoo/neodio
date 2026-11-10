@@ -1,7 +1,7 @@
 import type { YoutubeVideoMeta } from "@/lib/db/types";
 
 // YouTube 채널/영상 식별 — AIO 인용 판정의 기준은 도메인(youtube.com)이
-// 아니라 "채널 ID"다(docs/youtube-aio-tracker-plan.md §1). 인용 링크에서
+// 아니라 "채널 ID"다(docs/features/video/youtube-tracking-spec.md §1). 인용 링크에서
 // 영상 ID를 뽑고, 영상 → 채널 ID를 조회해 브랜드에 등록된 채널과 대조한다.
 //
 // YOUTUBE_API_KEY가 있으면 공식 Data API(v3)를 쓰고, 없으면 공개 페이지
@@ -80,7 +80,7 @@ export function parseYoutubeVideoUrl(raw: string): ParsedYoutubeUrl | null {
   return { videoId, startSeconds: parseTimestamp(t) };
 }
 
-export type ChannelInput = { kind: "id"; channelId: string } | { kind: "handle"; handle: string };
+export type ChannelInput = { kind: "id"; channelId: string } | { kind: "handle"; handle: string } | { kind: "legacy"; path: string };
 
 /** 브랜드 관리에서 입력받은 값(채널 URL, @핸들, UC… ID)을 정규화. */
 export function parseChannelInput(raw: string): ChannelInput | null {
@@ -98,6 +98,9 @@ export function parseChannelInput(raw: string): ChannelInput | null {
   const [first, second] = url.pathname.split("/").filter(Boolean);
   if (first === "channel" && second && CHANNEL_ID_PATTERN.test(second)) return { kind: "id", channelId: second };
   if (first?.startsWith("@")) return { kind: "handle", handle: decodeURIComponent(first) };
+  if ((first === "c" || first === "user") && second && /^[\w.-]+$/.test(second)) {
+    return { kind: "legacy", path: `/${first}/${second}` };
+  }
   return null;
 }
 
@@ -137,7 +140,7 @@ export async function resolveYoutubeChannel(raw: string): Promise<YoutubeChannel
   const input = parseChannelInput(raw);
   if (!input) return null;
 
-  if (process.env.YOUTUBE_API_KEY) {
+  if (process.env.YOUTUBE_API_KEY && input.kind !== "legacy") {
     const data = await apiGet<ApiChannelList>("channels", {
       part: "snippet",
       ...(input.kind === "id" ? { id: input.channelId } : { forHandle: input.handle }),
@@ -155,14 +158,17 @@ export async function resolveYoutubeChannel(raw: string): Promise<YoutubeChannel
   const pageUrl =
     input.kind === "id"
       ? `https://www.youtube.com/channel/${input.channelId}`
-      : `https://www.youtube.com/${encodeURIComponent(input.handle)}`;
+      : input.kind === "handle"
+        ? `https://www.youtube.com/${encodeURIComponent(input.handle)}`
+        : `https://www.youtube.com${input.path}`;
   let html: string;
   try {
     html = await fetchText(pageUrl);
   } catch {
     return null;
   }
-  const canonical = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]{22})"/)?.[1];
+  const canonical = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]{22})"/)?.[1]
+    ?? html.match(/"externalId":"(UC[\w-]{22})"/)?.[1];
   const title = metaContent(html, "og:title");
   if (!canonical || !title) return null;
   const vanity = html.match(/"vanityChannelUrl":"https?:\/\/www\.youtube\.com\/(@[^"]+)"/)?.[1];

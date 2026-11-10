@@ -92,7 +92,7 @@ export async function addAioKeywords(brandId: string, keywords: string[], group?
          RETURNING id`,
         [`aiokw-${randomUUID()}`, brandId, keyword, normalized, group ?? "category", now, !!group]
       );
-      // 프롬프트 라이브러리와 한 곳으로 — 키워드는 곧 "Google AI Overview 플랫폼이 켜진 프롬프트"다(docs/prompt-surfaces-plan.md).
+      // 프롬프트 라이브러리와 한 곳으로 — 키워드는 곧 "Google AI Overview 플랫폼이 켜진 프롬프트"다(docs/features/visibility/prompt-surfaces-spec.md).
       await s.linkAioKeyword(saved.id, { classify: !!group });
     }
   });
@@ -140,7 +140,7 @@ export async function cacheVideo(video: YoutubeVideoMeta): Promise<void> {
   );
 }
 
-// ---- 추적 영상 (영상 단위 인용 추적, docs/youtube-video-tracking-plan.md §7) ----
+// ---- 추적 영상 (영상 단위 인용 추적, docs/features/video/youtube-tracking-spec.md §7) ----
 // 화면 값은 전부 인용된 행(aio_citations)을 SQL에서 집계해 만든다 — 인용
 // 행은 매일 늘어나므로 서버로 가져와 계산하지 않는다. 우리 채널 여부는
 // 저장하지 않고 읽는 쪽에서 brand_youtube_channels와 대조한다.

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 // Matches Figma "Opportunity Detail - Technical Diagnostic (Template B,
 // Merged)" (node 646:14937) — robots.txt read directly, no 3rd-party data
-// (neodigm_p0_scope.md §2). "Demo" 브랜드에서는 mock을 그대로 보여준다.
+// (docs/product/p0-scope-spec.md §2). "Demo" 브랜드에서는 mock을 그대로 보여준다.
 export default async function RobotsTxtOpportunityPage() {
   const tenant = await getCurrentTenant();
   const demo = await isDemoMode();
