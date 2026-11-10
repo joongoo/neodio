@@ -9,6 +9,7 @@ import { analyzeRunPlacement, summarizePlacements, type PlacementSummary } from 
 import { formatObservationCount, observationWeights, sumWeights } from "@/lib/observations";
 import { buildVisibilityScores } from "./processing/visibility";
 import { brandQueryKeywords, queryScopeOf, type QueryScope } from "@/lib/queryScope";
+import { compareWeeks, makeKey, type WeekComparison, type WeekInput } from "@/lib/comparability";
 import { MIN_RELIABLE_RUNS, pointTrend, pooledRate, weightedAverage, wilsonLowerBound } from "@/lib/visibilityStats";
 import { nameKey, type BrandEvidence } from "@/lib/brandOptimization";
 import { getPromptTopicGroups } from "./promptTopics";
@@ -569,6 +570,26 @@ export async function getRealStatSeries(range: DateRange, filters: RealDataFilte
       "인용"
     ),
   };
+}
+
+/** 기간 안의 각 주를 직전 주와 비교한 비교 가능성(D9). 질문·엔진·마켓이 같은 슬롯끼리 비교한다. 기간 직전 주가 있으면 첫 주도 비교한다. */
+export async function getRealComparability(range: DateRange, filters: RealDataFilters = {}): Promise<{ week: string; comparison: WeekComparison }[] | null> {
+  const result = await getProcessedWithWeeks(range, filters);
+  if (!result) return null;
+  const { weekOfRun, currentWeeks, previousWeeks, runsById } = result;
+  const weeks = [...previousWeeks.slice(-1), ...currentWeeks];
+  const slotsByWeek = new Map<string, Map<string, WeekInput["slots"][number]>>(weeks.map((w) => [w, new Map()]));
+  for (const [runId, week] of weekOfRun) {
+    const slots = slotsByWeek.get(week);
+    const run = runsById.get(runId);
+    if (!slots || !run) continue;
+    const slot = `${run.promptId}|${run.rawMetadata.source}`;
+    if (slots.has(slot)) continue;
+    slots.set(slot, { slot, key: makeKey({ promptText: run.rawMetadata.query ?? run.promptId, engine: run.llmModelId, market: run.marketId }) });
+  }
+  const input: WeekInput[] = weeks.map((w) => ({ week: w, slots: [...slotsByWeek.get(w)!.values()] }));
+  const compared = compareWeeks(input);
+  return compared.filter((c) => currentWeeks.includes(c.week)).map((c) => ({ week: formatWeekLabel(c.week), comparison: c }));
 }
 
 export interface RealRankedTabs {
