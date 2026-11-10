@@ -108,7 +108,7 @@ function writeLaunchers(dir, platform, version) {
     writeFileSync(uninstaller, `#!/bin/sh\ncd "$(dirname "$0")"\n./neodio-collector app/agent.mjs uninstall\necho\nread -p "Enter 키를 누르면 창이 닫힙니다." _\n`);
     for (const file of [installer, uninstaller, path.join(dir, RUNTIME_NAME[platform])]) chmodSync(file, 0o755);
   } else {
-    writeFileSync(path.join(dir, "install.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs install %*\r\necho.\r\npause\r\n`);
+    writeFileSync(path.join(dir, "install.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs install %*\r\nif errorlevel 1 (\r\n  echo.\r\n  echo 설치에 실패했습니다. 위 오류를 확인하세요.\r\n  pause\r\n  exit /b 1\r\n)\r\nexit /b 0\r\n`);
     writeFileSync(path.join(dir, "uninstall.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs uninstall\r\necho.\r\npause\r\n`);
     writeFileSync(path.join(dir, "run.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs run\r\necho.\r\npause\r\n`);
     writeFileSync(path.join(dir, "status.cmd"), `@echo off\r\nchcp 65001 >nul\r\ncd /d "%~dp0"\r\nneodio-collector.exe app\\agent.mjs status\r\necho.\r\npause\r\n`);

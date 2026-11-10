@@ -12,7 +12,9 @@ async function main() {
   const version = source.match(/export const COLLECTOR_VERSION = "([\d.]+)"/)?.[1];
   if (!version) throw new Error("COLLECTOR_VERSION을 찾지 못했습니다.");
   const files = ["mac-arm64", "mac-x64", "win-x64"].map((platform) => {
-    const name = `neodio-collector-${platform}-${version}.zip`;
+    const name = platform === "win-x64"
+      ? `neodio-collector-win-x64-${version}-setup.exe`
+      : `neodio-collector-${platform}-${version}.zip`;
     const file = path.join(root, "dist/collector", name);
     if (!existsSync(file)) throw new Error(`${name}이 없습니다. 먼저 모든 플랫폼을 빌드하세요.`);
     return { file, pathname: `collector/${name}` };
@@ -26,7 +28,8 @@ async function main() {
   }
   for (const { file, pathname } of files) {
     await put(pathname, createReadStream(file), {
-      access: "private", addRandomSuffix: false, allowOverwrite: true, contentType: "application/zip",
+      access: "private", addRandomSuffix: false, allowOverwrite: true,
+      contentType: pathname.endsWith(".exe") ? "application/octet-stream" : "application/zip",
     });
     const uploaded = await head(pathname);
     if (uploaded.size !== statSync(file).size) throw new Error(`업로드 크기 검증 실패: ${pathname}`);

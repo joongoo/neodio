@@ -32,3 +32,24 @@ jobs:
       - run: npm ci
       - run: npm run collector:build -- --origin https://neodio.vercel.app --platform win-x64
       - run: npm run test:collector
+      - run: choco install innosetup --no-progress -y
+      - run: npm run collector:build-wizard
+      - uses: actions/upload-artifact@v4
+        with:
+          name: collector-windows-wizard
+          path: dist/collector/*-setup.exe
+          if-no-files-found: error
+      - name: Verify Windows wizard install and removal
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path src/lib/collectorAgent.ts -Pattern 'COLLECTOR_VERSION = "([\d.]+)"').Matches.Groups[1].Value
+          $installer = Resolve-Path "dist/collector/neodio-collector-win-x64-$version-setup.exe"
+          & $installer /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          if ($LASTEXITCODE -ne 0) { throw "Installer failed: $LASTEXITCODE" }
+          $runtime = Join-Path $env:LOCALAPPDATA 'NeodioCollector/runtime'
+          $startup = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Startup/neodio-collector.vbs'
+          if (!(Test-Path (Join-Path $runtime 'neodio-collector.exe')) -or !(Test-Path $startup)) { throw 'Collector installation is incomplete' }
+          $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs/Neodio Collector/unins000.exe'
+          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          if ($LASTEXITCODE -ne 0) { throw "Uninstaller failed: $LASTEXITCODE" }
+          if ((Test-Path $runtime) -or (Test-Path $startup)) { throw 'Collector files or startup entry remain after removal' }

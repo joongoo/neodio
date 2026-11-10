@@ -36,8 +36,7 @@ docs/operations/production-readiness-checklist.md의 체크리스트를 하나�
 - [ ] 진행 상황/작업 상태를 인메모리(`Map`, 모듈 스코프 변수)에만 저장하지
       않는가 — 서버리스 인스턴스는 언제든 재활용되므로 폴링이 유실될 수 있음.
       DB나 외부 큐에 영속화해야 함.
-- [ ] 새 DB 연결 풀이 `POSTGRES_URL`(pooled)을 쓰는가, `_NON_POOLING`을
-      실수로 우선하지 않는가.
+- [x] DB 연결 풀이 `POSTGRES_URL`을 우선하고 없을 때만 `POSTGRES_URL_NON_POOLING`을 쓰는가 — `src/lib/backend/database/index.ts`의 `createPool()`에서 확인. 운영 환경의 URL 값은 별도 점검.
 
 ### B. 보안 / 접근 제어
 - [x] 프로덕션 URL에 인증(비밀번호, SSO, IP 제한 중 하나)이 있는가 — 2026-10 자체 로그인(`AUTH_ENABLED=true`)으로 대체, 공유 비밀번호는 운영에서 제거 — 없으면
@@ -46,6 +45,7 @@ docs/operations/production-readiness-checklist.md의 체크리스트를 하나�
       않는가.
 - [ ] 시크릿(.env.local의 클라이언트 시크릿, API 키 등)이 클라이언트 번들에
       섞여 들어가지 않는가 (`NEXT_PUBLIC_` 접두사 오·남용 확인).
+- [ ] GSC refresh token의 DB 저장·접근·백업 정책을 점검했는가 — 현재 `gscTokenStore.ts`는 서버 전용 `bridge_entries`에 저장하며 애플리케이션 수준 암호화는 없다.
 - [ ] 외부 서비스 API 키/토큰이 Vercel 프로덕션 env에도 등록돼 있는가
       (로컬 `.env.local`에만 있고 배포엔 없는 경우가 실제로 있었음 — GSC
       OAuth 사례).

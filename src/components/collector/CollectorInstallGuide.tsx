@@ -80,22 +80,18 @@ function WindowsSteps({ outdated }: { outdated: boolean }) {
   return (
     <>
       <ol className="flex list-decimal flex-col gap-1.5 rounded-md bg-neutral-50 py-3 pr-3 pl-8 text-xs text-neutral-600">
-        <li>
-          받은 zip 파일을 우클릭 → <b>모두 압축 풀기</b>로 폴더에 풉니다. zip 안에서 바로 실행하면 동작하지 않으니 꼭 풀어서 진행하세요.
-        </li>
-        <li>
-          풀린 폴더 안의 <b>install.cmd</b>를 더블클릭합니다.
-        </li>
+        <li>받은 <b>설치 위저드 EXE</b>를 더블클릭합니다. 압축을 풀 필요가 없습니다.</li>
         <li>
           파란 &quot;Windows의 PC 보호&quot; 창이 뜨면 <b>추가 정보</b> → <b>실행</b>을 누릅니다. 서명되지 않은 프로그램이라 처음 한 번 나옵니다.
         </li>
-        <li>검은 창(명령 프롬프트)에 &quot;설치 완료&quot;가 보이면 아무 키나 눌러 닫습니다.</li>
+        <li>설치 화면의 안내에 따라 진행하고 완료되면 창을 닫습니다.</li>
         <li>아래 &quot;다시 확인&quot;을 누릅니다.</li>
       </ol>
       <Notes>
         <li>관리자 권한이 필요 없고, 이 PC 사용자 폴더(<code>%LOCALAPPDATA%\NeodioCollector</code>)에 설치됩니다.</li>
         <li>{outdated ? "이전 설치 위에 덮어쓰고 자동으로 다시 시작됩니다. 수집 결과와 설정은 그대로입니다." : "설치하면 Windows에 로그인할 때마다 창 없이 자동으로 실행됩니다."}</li>
-        <li>제거하려면 같은 폴더의 <b>uninstall.cmd</b>를 실행합니다.</li>
+        <li>제거하려면 Windows <b>설치된 앱</b>에서 <b>네오디오 수집기</b>를 제거합니다. 수집 결과와 설정은 남습니다.</li>
+        <li>이전 ZIP과 압축 해제 폴더는 더 이상 필요하지 않습니다. 다운로드 폴더에서 직접 삭제할 수 있습니다.</li>
       </Notes>
     </>
   );

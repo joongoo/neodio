@@ -7,7 +7,7 @@
 | 상태 | 초기 범위 기준 · 현재 구현은 코드 확인 |
 | 확인 기준 | 현재 구현은 연결된 코드와 운영 설정 |
 
-이 문서는 "어떤 화면을, 어떤 데이터로 먼저 만들 것인가"를 고정합니다. Figma를 다시 그리거나 코드를 구현하기 전에 이 문서를 기준으로 삼아, 작업 중간에 범위가 흔들리지 않게 합니다.
+이 문서는 초기 P0 범위 결정과 화면별 판단 근거를 보존한다. 아래 §1의 소스 상태는 2026-11 코드 기준으로 갱신했으며, §2~§3의 화면별 판정과 진행 순서는 작성 당시 기획이다. 현재 라우트·데이터 경로는 `src/app/`과 각 기능 문서를 기준으로 확인한다.
 
 관련 문서: `screen-spec.md`(Figma 24개 화면 전체 스펙), [수집·가공 파이프라인](../data/collection-pipeline-spec.md)(소스별 설계와 구현 가이드).
 
@@ -17,26 +17,27 @@
 
 **P0 화면은 우리가 지금 직접 수집·호출할 수 있는 데이터만으로 채운다.** 아래 소스 밖의 지표(검색량, 난이도, 오디언스, 오가닉 트래픽 등 3rd-party SEO/애널리틱스 지표)는 P0에 넣지 않는다 — 화면은 그리되 해당 지표는 빼거나 다음 단계로 미룬다. LLM을 직접 API로 호출하는 것은 여기서 말하는 "3rd-party 의존"이 아니다 — 우리가 통제하는 호출이고 원문 답변을 그대로 보존하므로 스크래핑과 동일한 신뢰도의 P0 소스로 취급한다.
 
-**P0에서 확보 가능한 소스**
+**P0 소스의 현재 구현 (2026-11 코드 기준)**
 
-| 소스 | 방식 | 상태 |
+| 소스 | 현재 코드 경로 | 상태 |
 | --- | --- | --- |
-| 글로벌 LLM 답변 (ChatGPT/Gemini/Claude/Perplexity/Copilot) | 공식 API 호출 배치 (`collection-pipeline-spec.md` §3.1) | 설계됨, 연동 예정 — 곧 붙임 |
-| 네이버 AI 검색 답변 | Playwright 스크래핑 (`scripts/collect-naver-ai.mjs`) | 구현됨 |
-| 구글 AI Overview 답변 | Playwright 스크래핑 (`scripts/collect-google-ai.mjs`) | 구현됨 |
-| 자사 사이트 분석 | sitemap 기반 크롤링 + 렌더링 비교(JS 실행 전/후) | 미구현 — Naver/Google 수집에 쓰는 Playwright를 재사용 가능 |
-| 토픽 브레인스토밍 | LLM에게 시드 토픽 관련 하위 토픽/질문 생성 요청 | 미구현. **검색량·난이도는 만들 수 없음 — 생성된 토픽 후보 자체만 신뢰 가능, 수치는 절대 표기하지 않는다** |
-| Google Search Console (자사 소유 property) | OAuth 연동, 자사 사이트 실측 쿼리/노출/클릭/순위 | 미구현. Semrush류와 달리 유료 구독이 아니라 우리 계정 인증만 있으면 됨 — 실제 검색 성과 데이터라 P0로 승격 |
+| 공식 LLM API | `src/lib/backend/llm/providers/gemini.ts`, `scripts/collect-llm.ts` | Gemini 어댑터 구현. 다른 제공자는 등록부 기준으로 별도 확인 |
+| 네이버 AI 답변 | `scripts/collect-naver-ai.mjs` | 수집기 구현 |
+| Google AI 모드 | `scripts/collect-google-ai.mjs` (`udm=50`) | 수집기 구현. 일반 검색의 AIO와 다른 표면 |
+| Google AI Overview | `scripts/collect-google-aio.mjs`, `src/lib/backend/aio/` | 별도 수집·판정·저장 구현 |
+| 자사 사이트 분석 | `scripts/crawl-sitemap.mjs`, `src/lib/backend/sitemapCrawlReader.ts` | 사이트맵 크롤·결과 조회 구현 |
+| 토픽·질문 제안 | `src/app/api/prompt-research/route.ts` | Gemini 기반 제안 경로 구현. 검색량·난이도 수치는 만들지 않음 |
+| Google Search Console | `src/app/api/connections/gsc/oauth/`, `src/lib/backend/gscSearchAnalyticsReader.ts` | OAuth·실측 검색 성과 조회 구현 |
 
 모든 LLM 소스(글로벌 API + 네이버/구글 스크래핑)는 동일하게 `prompt_runs` → `mentions`/`citations`/`visibility_scores` 파이프라인을 공유한다 (`collection-pipeline-spec.md` §3). 화면 쪽 판정(§2)은 이 공유 파이프라인의 존재를 전제로 하므로, 글로벌 LLM API가 붙어도 화면별 P0 판정 자체는 바뀌지 않는다 — 언급/인용 데이터의 소스(모델) 종류가 늘어날 뿐이다.
 
-**프롬프트 전략용 주간 인사이트 배치 (신규, P0)**: 주간 스케줄링 시 그 시점까지 쌓인 GSC 실측 데이터 + 우리 mentions/citations 현황을 컨텍스트로 LLM에 "인사이트 브레인스토밍"을 요청해, `PromptStrategySuggestion`/`PromptStrategyTopicRow`(아래 §2 프롬프트 전략 행 참고)와 동일 포맷으로 결과를 받아 그대로 적재한다. 지금은 이 포맷에 맞춘 mock으로 화면만 구성하고, 실제 배치 잡은 미구현.
+**초기 기획 — 프롬프트 전략용 주간 인사이트 배치**: 주간 스케줄링 시 그 시점까지 쌓인 GSC 실측 데이터 + 우리 mentions/citations 현황을 컨텍스트로 LLM에 "인사이트 브레인스토밍"을 요청해, `PromptStrategySuggestion`/`PromptStrategyTopicRow`(아래 §2 프롬프트 전략 행 참고)와 동일 포맷으로 결과를 받아 그대로 적재한다. 지금은 이 포맷에 맞춘 mock으로 화면만 구성하고, 실제 배치 잡은 미구현.
 
 **P0에서 제외 (3rd-party 또는 별도 인프라 필요)**: Semrush류 키워드 API(검색량/난이도/오디언스/오가닉 트래픽), Reddit/YouTube/Wikipedia API, CDN 로그, 애널리틱스(GA) 연동. 전부 `collection-pipeline-spec.md`의 소스 #4~#10에 이미 설계돼 있으므로 나중에 그대로 재사용. GSC는 위 표에 있듯 P0로 승격됨 — 이 목록에서 제외.
 
 ---
 
-## 2. 화면별 P0 판정
+## 2. 화면별 P0 판정 (초기 기획 기록)
 
 ### P0 포함
 
@@ -65,7 +66,7 @@
 
 ---
 
-## 3. 진행 순서
+## 3. 초기 진행 순서 (현재 작업 목록 아님)
 
 1. **(현재 문서)** 범위 고정 — 완료
 2. Figma에 `Neodio` 페이지 신설, `Korean` 페이지에서 P0 화면만 복제 후 위 표의 "제외" 컬럼대로 필드/카드 제거

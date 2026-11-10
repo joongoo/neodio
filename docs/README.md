@@ -22,9 +22,9 @@
 | 계정·조직 | [계정·조직·권한](features/access/access-and-organization-spec.md) | [`src/lib/backend/auth`](../src/lib/backend/auth), [`src/app`](../src/app) | 개인 계정, 조직 역할, 브랜드 접근 권한 구현. 로그인 강제는 `AUTH_ENABLED` 설정 확인 |
 | 프롬프트·AIO | [프롬프트와 플랫폼](features/visibility/prompt-surfaces-spec.md) | [`src/lib/backend/aio`](../src/lib/backend/aio), [`src/lib/promptSurfaces.ts`](../src/lib/promptSurfaces.ts) | 프롬프트 통합 1~3단계와 AIO 결과의 `prompt_runs` 동시 적재 구현. 정리 단계 보류 |
 | GSC·네이버 검색 | [GSC 연동](features/integrations/gsc-integration-spec.md), [네이버 데이터랩](features/integrations/naver-datalab-search-trend-spec.md) | [`src/lib/backend/gscSearchAnalyticsReader.ts`](../src/lib/backend/gscSearchAnalyticsReader.ts), [`src/lib/backend/naverDatalab.ts`](../src/lib/backend/naverDatalab.ts) | GSC OAuth·검색 성과 조회와 네이버 검색어 트렌드 경로 구현. 추가 신호는 항목별 상태 확인 |
-| YouTube 인용 | [YouTube 추적](features/video/youtube-tracking-spec.md) | [`src/lib/backend/aio`](../src/lib/backend/aio), [`src/app`](../src/app) | AIO 인용 MVP 구현. 영상 단위 확장안은 후속 계획 |
+| YouTube 인용 | [YouTube 추적](features/video/youtube-tracking-spec.md) | [`src/lib/backend/aio`](../src/lib/backend/aio), [`src/app`](../src/app) | AIO 인용 MVP와 영상 관리·프롬프트 등록 경로 구현. 초기 확장안의 남은 범위는 코드 대조 필요 |
 | 에이전틱 트래픽 | [에이전틱 트래픽](features/traffic/agentic-traffic-spec.md) | [`src/lib/agentic`](../src/lib/agentic) | 분류 순수 함수·합성 테스트 구현. 로그 업로드 UI와 실로그 검증은 후속 |
-| 리포트·개요 | [클라이언트 리포트](features/reporting/client-report-plan.md), [개요 체크리스트](features/reporting/overview-checklists-spec.md) | [`src/lib/report.ts`](../src/lib/report.ts), [`src/lib/db/data/overview.ts`](../src/lib/db/data/overview.ts) | 체크리스트 개편 구현. 리포트 설계와 실제 화면 범위는 코드 확인 |
+| 리포트·개요 | [클라이언트 리포트](features/reporting/client-report-spec.md), [개요 체크리스트](features/reporting/overview-checklists-spec.md) | [`src/lib/report.ts`](../src/lib/report.ts), [`src/lib/db/data/overview.ts`](../src/lib/db/data/overview.ts) | 체크리스트와 리포트 생성·스냅샷·확정·브라우저 PDF 저장 구현. 공유·자동 발송은 미구현 |
 | 운영 | [설치형 수집기](operations/collector-guide.md), [LLM API 수집](operations/llm-collection-guide.md), [프로덕션 점검](operations/production-readiness-checklist.md), [페이지 QA](operations/page-qa-checklist.md) | [`collector`](../collector), [`package.json`](../package.json) | 설치·수집·점검 절차. 과거 점검 결과는 재검증 필요 |
 
 ## 이어서 할 일
@@ -34,8 +34,9 @@
 | AIO 실제 수집으로 `prompt_runs` 동시 적재 확인, 과거 관측 백필 범위 결정 | [프롬프트와 플랫폼 §7](features/visibility/prompt-surfaces-spec.md), [`aio/collector.ts`](../src/lib/backend/aio/collector.ts) |
 | YouTube AIO 집계를 `prompt_runs`로 옮길지 기존 집계와 비교 검증 | [프롬프트와 플랫폼 §7](features/visibility/prompt-surfaces-spec.md), [`aio/store.ts`](../src/lib/backend/aio/store.ts) |
 | 에이전틱 트래픽의 실제 로그 골드셋 검증과 업로드 UI 범위 결정 | [에이전틱 트래픽 §16](features/traffic/agentic-traffic-spec.md#section-01), [`src/lib/agentic`](../src/lib/agentic) |
-| 영상 단위 등록·추천·스케줄 확장 범위 결정 | [YouTube 추적 후속 계획](features/video/youtube-tracking-spec.md#section-02) |
+| 영상 관리에 이미 구현된 등록·프롬프트 경로를 확인하고 남은 추천·스케줄 범위 결정 | [YouTube 추적 후속 계획](features/video/youtube-tracking-spec.md#section-02) |
 | 오픈소스 조사에서 선정한 골드셋 파일럿의 라벨링 진행 여부 확인 | [조사 종합 §03](research/oss-research/00-0-synthesis.md#section-03) |
+| GSC refresh token의 DB 저장·백업·암호화 보완 여부 검토 | [GSC 현재 구현](features/integrations/gsc-integration-spec.md), [`gscTokenStore.ts`](../src/lib/backend/gscTokenStore.ts) |
 
 위 항목은 문서에 남아 있는 후속 작업입니다. **착수 전 코드와 운영 데이터를 확인해 완료 여부를 다시 판정**하세요.
 

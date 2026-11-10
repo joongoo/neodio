@@ -51,7 +51,6 @@ function HistoryItem({ entry }: { entry: ChangeEntry }) {
 export function UserDetailClient({ initial, currentUserId }: { initial: UserDetail; currentUserId: string }) {
   const [user, setUser] = useState(initial);
   const [name, setName] = useState(initial.name);
-  const [drafts, setDrafts] = useState<Record<string, string[]>>(() => Object.fromEntries(initial.memberships.map((m) => [m.organizationId, m.brandIds])));
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [tempPassword, setTempPassword] = useState<{ orgName: string; password: string } | null>(null);
   const [addOrg, setAddOrg] = useState("");
@@ -67,15 +66,12 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
     if (data.user) {
       setUser(data.user);
       setName(data.user.name);
-      setDrafts(Object.fromEntries(data.user.memberships.map((m) => [m.organizationId, m.brandIds])));
     }
     setMessage({ kind: "ok", text: success });
     return data;
   }
 
   const orgOf = (id: string): OrgChoice | undefined => user.orgs.find((o) => o.id === id);
-  const toggleBrand = (orgId: string, brandId: string) =>
-    setDrafts((prev) => ({ ...prev, [orgId]: prev[orgId]?.includes(brandId) ? prev[orgId].filter((b) => b !== brandId) : [...(prev[orgId] ?? []), brandId] }));
   const joinedOrgIds = new Set(user.memberships.map((m) => m.organizationId));
   const addableOrgs = user.orgs.filter((o) => !joinedOrgIds.has(o.id));
 
@@ -156,9 +152,7 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
         {user.memberships.map((m) => {
           const org = orgOf(m.organizationId);
           const scope = new Set(org?.assignableBrandIds ?? []);
-          const draft = drafts[m.organizationId] ?? [];
           const canBrands = user.can.assignBrands[m.organizationId];
-          const dirty = [...draft].sort().join() !== [...m.brandIds].sort().join();
           return (
             <Card key={m.organizationId} className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -207,35 +201,34 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
                 <p className="text-xs text-neutral-500">오너는 이 조직의 모든 브랜드에 접근해요.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs font-medium text-neutral-500">볼 수 있는 브랜드</p>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <p className="text-xs font-medium text-neutral-700">볼 수 있는 브랜드</p>
+                    <span className="text-[11px] text-neutral-500">{m.brandIds.length}개 선택됨{canBrands ? " · 선택하면 바로 저장돼요" : ""}</span>
+                  </div>
                   {(org?.brands.length ?? 0) === 0 ? (
                     <p className="text-xs text-neutral-400">이 조직에 브랜드가 없어요.</p>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       {org!.brands.map((b) => {
-                        const on = draft.includes(b.id);
+                        const on = m.brandIds.includes(b.id);
                         const editable = canBrands && scope.has(b.id);
                         return (
-                          <button
+                          <label
                             key={b.id}
-                            type="button"
-                            disabled={!editable}
-                            title={!canBrands ? undefined : editable ? undefined : "내가 접근할 수 없는 브랜드라 바꿀 수 없어요"}
-                            onClick={() => toggleBrand(m.organizationId, b.id)}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-medium ${on ? "border-slate-800 bg-slate-800 text-white" : "border-neutral-300 bg-white text-neutral-600"} ${
-                              editable ? "cursor-pointer hover:opacity-90" : "cursor-not-allowed opacity-50"
-                            }`}
+                            className={`flex min-h-11 items-center gap-3 rounded-md border px-3 py-2 text-sm ${on ? "border-slate-300 bg-slate-50 text-neutral-900" : "border-neutral-200 bg-white text-neutral-700"} ${editable && !busy ? "cursor-pointer hover:border-slate-400" : "cursor-default"}`}
                           >
-                            {b.name}
-                          </button>
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              disabled={!editable || busy}
+                              onChange={() => void run({ action: "setBrands", orgId: m.organizationId, brandIds: on ? m.brandIds.filter((id) => id !== b.id) : [...m.brandIds, b.id] }, `${b.name} 접근 권한을 ${on ? "해제" : "추가"}했어요.`)}
+                              className="size-4 shrink-0 accent-slate-800"
+                            />
+                            <span>{b.name}</span>
+                            {canBrands && !editable && <span className="ml-auto text-[11px] text-neutral-400">변경 권한 없음</span>}
+                          </label>
                         );
                       })}
-                    </div>
-                  )}
-                  {canBrands && (
-                    <div className="flex items-center gap-2">
-                      <Button variant="primary" disabled={busy || !dirty} onClick={() => run({ action: "setBrands", orgId: m.organizationId, brandIds: draft }, "브랜드 할당을 저장했어요.")}>브랜드 할당 저장</Button>
-                      {!user.can.assignOrg && <p className="text-[11px] text-neutral-400">내가 접근할 수 있는 브랜드만 바꿀 수 있어요.</p>}
                     </div>
                   )}
                 </div>

@@ -12,14 +12,13 @@
 > 코드: `src/lib/backend/naverDatalab.ts`(클라이언트·30분 캐시), `src/app/api/naver-datalab/route.ts`(프록시), `src/lib/searchTrend.ts`(지표 계산 — 프롬프트·가시성에서 재사용), `src/components/search-trend/`(화면 3탭: 추이 개요 / 기기·성별·연령 / AI 답변 교차).
 > 재사용: `computeSignals`(모멘텀·점유율·피크), `toPromptContext`(프롬프트에 붙이는 한 줄 요약), `bestLagCorrelation`(검색↔AI 언급 선후 관계), 서버 쪽 `getRealBrandMentionWeeks`(주별 브랜드 언급).
 
-## 1. API 개요 (요약)
+## 1. 현재 API와 구현
 
-- 엔드포인트: `POST https://openapi.naver.com/v1/datalab/search`
-- 인증: 비로그인 오픈 API — 헤더 `X-Naver-Client-Id`, `X-Naver-Client-Secret`
-- 호출 한도: **일 1,000회**
-- 조회 가능 범위: 2016-01-01 ~ 현재, `timeUnit`은 date/week/month
-- 요청 파라미터 핵심: `keywordGroups` (최대 5그룹 × 그룹당 검색어 최대 20개), 선택 필터로 `device`(pc/mo), `gender`(m/f), `ages`(1~11 구간코드)
-- 응답: 그룹(주제어)별로 구간(`period`)마다 **상대 검색량 비율(`ratio`, 0~100, 구간 내 최댓값=100)**을 반환. 절대 검색량이 아니라 **상대값**이라는 점이 대시보드 설계에서 가장 중요한 제약.
+- 호출 주소: `https://naverapihub.apigw.ntruss.com/search-trend/v1/search`.
+- 인증 헤더: `X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY`. 환경변수는 `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`.
+- [`naverDatalab.ts`](../../../src/lib/backend/naverDatalab.ts)가 서버에서 요청하고 결과를 30분 캐시한다. [`/api/naver-datalab`](../../../src/app/api/naver-datalab/route.ts)이 화면의 프록시다.
+- 결과 `ratio`는 기간 안의 상대 지수(0~100)이며 절대 검색량이 아니다. 비교하려는 키워드 그룹은 같은 요청에 넣어야 한다.
+- 아래 §2~§6은 초기 설계 기록이다. 당시 제안한 `searchTrendJobRunner`와 `search-trend/start`·`status` 라우트는 현재 경로가 아니다.
 
 ## 2. 이 프로젝트의 기존 구조와의 연결점
 

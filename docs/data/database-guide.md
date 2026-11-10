@@ -9,11 +9,11 @@
 
 The prompt catalog, taxonomy, tracking, strategy provenance, collection results,
 and versioned analysis use **Postgres** (Vercel Postgres in production; any
-standard Postgres works locally). Set `POSTGRES_URL` (and, if your provider
-gives you both a pooled and a direct connection string, `POSTGRES_URL_NON_POOLING`
-— the store prefers the non-pooling one, since it holds a session per
-transaction) to a reachable Postgres instance. There is no on-disk fallback:
-`getPromptStore()` throws immediately if neither is set. The server-only entry
+standard Postgres works locally). Set `POSTGRES_URL` to the pooled endpoint when
+available. `POSTGRES_URL_NON_POOLING` is a fallback only when `POSTGRES_URL`
+is unset. The store uses `pg.Pool` (`max: 10`) and borrows a connection for
+each query or transaction. It does not prefer a direct endpoint. There is no
+on-disk fallback: `getPromptStore()` throws immediately if neither is set. The server-only entry
 point is `src/lib/backend/database/index.ts`; do not import it into the client
 mock barrel.
 

@@ -41,7 +41,22 @@
 
 공유 비밀번호는 로그인 도입 후에도 스테이징 게이트로 유지한다.
 
-### 스키마 초안
+### 현재 스키마
+
+실제 DDL은 [`schema.ts`](../../../src/lib/backend/database/schema.ts) 기준이다. 공유 DB의 기존 테이블 이름과 충돌하지 않도록 계정 관련 테이블에는 `neodio_` 접두사를 쓴다.
+
+| 테이블 | 현재 역할 |
+| --- | --- |
+| `neodio_users` | `login_id`, 이름, 비밀번호 해시, 플랫폼 역할, 상태 |
+| `neodio_sessions` | 해시한 세션 토큰과 만료 시각 |
+| `neodio_memberships`, `neodio_membership_brands` | 조직 역할과 브랜드별 접근 범위 |
+| `neodio_audit_log` | 계정·권한 변경과 접속 기록 |
+| `neodio_auth_throttle` | 로그인·가입 시도 제한 상태 |
+| `organizations.owner_user_id` | 조직 오너 참조 |
+
+아래 SQL은 초기 기획 초안이다. `users`/`sessions` 등의 이름과 일부 열은 실제 스키마와 다르므로 신규 구현·마이그레이션에 사용하지 않는다.
+
+### 초기 스키마 초안 (기록용)
 
 ```sql
 users (id, email UNIQUE, name, password_hash, must_change_password BOOLEAN DEFAULT false,
@@ -92,7 +107,7 @@ ALTER TABLE actors ADD COLUMN user_id TEXT REFERENCES users(id);   -- created_by
 
 ### 구현 현황과 켜는 방법
 
-구현됨(1~2단계): 스키마(`users`, `sessions`, `memberships`, `membership_brands`, `audit_log`, `organizations.owner_user_id`),
+구현됨: 스키마(`neodio_users`, `neodio_sessions`, `neodio_memberships`, `neodio_membership_brands`, `neodio_audit_log`, `neodio_auth_throttle`, `organizations.owner_user_id`),
 가입·로그인·로그아웃·비밀번호 변경 API와 화면(`/login`, `/signup`, `/pending`, `/account`),
 조직·브랜드 접근 필터(`getCurrentTenant`), 모든 API 라우트의 권한 검사(`guardApi`),
 조직 관리 화면의 구성원 관리(계정 발급, 역할·브랜드 할당, 임시 비밀번호 재발급, 오너 이전).
@@ -115,7 +130,7 @@ API 권한 수준(`src/lib/backend/auth/guard.ts`): `read`(구성원이 이 조�
 `manageOrg`(오너·직원), `staff`(직원만: 조직 생성·삭제). 조직 이름·slug 변경은 오너, 브랜드 생성·삭제는 오너, 브랜드 설정 편집은 지정받은 admin도 가능하다.
 
 알려진 제한(다음 단계):
-- 로그인 시도 횟수 제한(무차별 대입 방지)이 없다 — scrypt 해시 비용에만 의존한다. 운영에 켜기 전에 추가한다.
+- 로그인·가입 시도 제한은 `src/lib/backend/auth/throttleStore.ts`에 구현돼 있다. 로그인은 아이디·IP별 실패, 가입은 IP별 시도를 DB에 기록하며 한도 초과 시 429를 반환한다.
 - 화면의 편집 버튼은 viewer에게도 보인다(눌러도 서버가 403으로 막는다). 역할에 따라 버튼을 숨기는 작업이 남아 있다.
 - 구성원은 오너·직원만 볼 수 있다(admin은 구성원 목록을 읽지 못한다).
 

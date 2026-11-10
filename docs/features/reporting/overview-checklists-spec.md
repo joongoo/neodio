@@ -9,6 +9,10 @@
 
 > 상태: 2026-09-08 기획의 핵심 변경(실제 페이지 링크, 미구현 항목의 “준비 중” 표시, 실 데이터 기반 완료 판정)은 적용됐습니다. 현재 동작은 [`overview.ts`](../../../src/lib/db/data/overview.ts), [`ChecklistCard.tsx`](../../../src/components/overview/ChecklistCard.tsx), [`page.tsx`](../../../src/app/[org]/[brand]/page.tsx)를 기준으로 합니다. 아래 표는 결정 배경과 미구현 항목을 설명합니다.
 
+## 현재 구현
+
+[`overview.ts`](../../../src/lib/db/data/overview.ts)의 체크리스트는 첫 카드 4단계, 둘째 카드 5단계다. 링크가 있는 단계는 실제 화면으로 이동하고, 없는 단계는 [`ChecklistCard.tsx`](../../../src/components/overview/ChecklistCard.tsx)가 "준비 중"으로 안내한다. [`page.tsx`](../../../src/app/[org]/[brand]/page.tsx)는 수집 여부, 프롬프트 존재·출처, GSC 연결 상태 등으로 완료 여부를 계산한다. 아래 분류표와 "구현 방향 제안"은 이 변경을 결정한 **초기 기획 기록**이다.
+
 ## 원칙
 
 각 단계를 아래 세 그룹 중 하나로 분류한다.

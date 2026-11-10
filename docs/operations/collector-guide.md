@@ -66,7 +66,8 @@ Google AI Overview는 실제 Chrome으로 검색해야 해서 운영에서는 �
 | 위치 | 역할 |
 |---|---|
 | [collector/agent.ts](../../collector/agent.ts) | 수집기 — `run`(127.0.0.1 서버; AI 수집·사이트맵 크롤·AIO 수집 작업), `install`(설치 + 로그인 시 자동 시작), `uninstall`, `status` |
-| [collector/build.mjs](../../collector/build.mjs) | 운영체제별 설치 파일(zip) 만들기 |
+| [collector/build.mjs](../../collector/build.mjs) | 운영체제별 수집기 번들(zip) 만들기 |
+| [collector/windows-installer.iss](../../collector/windows-installer.iss) | Windows 설치 위저드와 제거 항목 정의 |
 | [src/lib/collectorAgent.ts](../../src/lib/collectorAgent.ts) | 웹 ↔ 수집기 약속(포트, 버전, 작업 형식) |
 | [src/lib/collectorClient.ts](../../src/lib/collectorClient.ts) | 브라우저에서 수집기 호출 |
 | [AgentCollectionModal](../../src/components/prompt-library/AgentCollectionModal.tsx) | 선택 수집 화면(확인 → 설치 안내 → 진행 → 반영) |
@@ -95,9 +96,11 @@ Google AI Overview는 실제 Chrome으로 검색해야 해서 운영에서는 �
 node collector/build.mjs --origin https://<운영 주소>            # mac-arm64, mac-x64, win-x64 전부
 node collector/build.mjs --origin https://<운영 주소> --platform win-x64
 node collector/build.mjs --local-node                             # 이 PC용만, 지금 node로(시험용)
+# Windows에서 Inno Setup 6 설치 후 실행
+npm run collector:build-wizard
 ```
 
-- 결과: `dist/collector/neodio-collector-<platform>-<version>.zip`(각 약 40MB). Node 런타임(v22)은
+- 결과: macOS는 `dist/collector/neodio-collector-<platform>-<version>.zip`, Windows는 배포용 `dist/collector/neodio-collector-win-x64-<version>-setup.exe`. Node 런타임(v22)은
   nodejs.org에서 받아 `.tmp/collector-build/`에 보관한다.
 - 설치 파일은 **비공개** Vercel Blob 저장소 `neodio-blob`(icn1)의 `collector/`에 이름 그대로 둔다.
   공개 주소가 없고, 받기는 운영 화면(사이트 로그인 뒤)에서 서버가 만든 10분짜리 임시 링크로만 된다
@@ -121,15 +124,21 @@ Google Chrome이 있어야 한다.
 
 - **macOS**: zip 풀기 → `install.command` 더블클릭 → "열지 않음" 창에서 완료 → 시스템 설정 → 개인정보 보호 및 보안 → 맨 아래로 스크롤 → "그래도 열기" → 확인 창에서 다시 "그래도 열기" + 암호. `~/.neodio-collector/runtime`에
   복사되고 `~/Library/LaunchAgents/com.neodio.collector.plist`로 로그인 시 자동 실행된다.
-- **Windows**: zip을 우클릭 → "모두 압축 풀기"로 풀고(zip 안에서 실행하면 안 된다) 폴더의 `install.cmd` 더블클릭. 파란 "Windows의 PC 보호" 창이 뜨면 추가 정보 → 실행. `%LOCALAPPDATA%\NeodioCollector\runtime`에 복사되고
+- **Windows**: 설치 위저드 EXE를 실행한다. 파란 "Windows의 PC 보호" 창이 뜨면 추가 정보 → 실행. 위저드가 기존 수집기를 중지하고 `%LOCALAPPDATA%\NeodioCollector\runtime`을 새 버전으로 교체하며
   시작프로그램 폴더의 `neodio-collector.vbs`로 로그인 시 창 없이 실행된다(관리자 권한 불필요).
-- 제거: `uninstall.command` / `uninstall.cmd`. 수집 결과·설정·로그(`logs/agent.log`)는 남는다.
+- 제거: macOS는 `uninstall.command`, Windows는 설정 → 설치된 앱 → 네오디오 수집기. Windows 제거 시 자동 시작 등록과 `runtime`을 삭제한다. 수집 결과·설정·로그(`logs/agent.log`)는 남는다.
+
+Windows 위저드는 임시 폴더에서 수집기를 실행해 설치하므로 새 버전을 설치할 때마다 실행 파일 복사본이 쌓이지 않는다. 기존 ZIP 배포본으로 설치한 PC에도 같은 `runtime`을 덮어쓴다. 이전에 내려받은 ZIP·압축 해제 폴더는 사용자 다운로드 폴더에 있으므로 위저드가 임의로 삭제하지 않는다. 필요하면 사용자가 직접 지울 수 있다.
 
 설치 안내 화면([CollectorInstallGuide](../../src/components/collector/CollectorInstallGuide.tsx))은 macOS / Windows 탭으로 나뉜다. 감지된 OS가 먼저 열리고, 다른 PC에 설치할 때를 위해 탭을 바꿀 수 있다. Windows 단계는 텍스트뿐이며 실제 Windows 화면으로 확인·캡처하지는 않았다.
 
 설치 파일은 코드 서명·공증을 하지 않았다. macOS는 시스템 설정의 "그래도 열기"(Sequoia 이후 우클릭 → 열기로는 우회되지 않는다), Windows는 "추가 정보 → 실행"이 한 번 필요하다.
 
 ## 업데이트
+
+### 0.4.9 Windows 설치 창
+
+- `install.cmd`는 설치 성공 시 입력을 기다리지 않고 종료한다. 실패했을 때만 오류를 확인할 수 있도록 창을 유지한다.
 
 ### 0.4.8 Windows 설치 수정
 
@@ -144,7 +153,7 @@ Google Chrome이 있어야 한다.
 테스트는 한글과 공백이 있는 임시 사용자 경로와 별도 포트를 사용하며 실제 시작프로그램은 변경하지 않는다.
 Mac은 설치 실행 검증을 별도 Mac 환경에서 해야 한다.
 
-`npm run collector:upload`는 Windows/macOS 모두 지원한다. `BLOB_READ_WRITE_TOKEN`을 환경변수에 설정하거나
+`npm run collector:upload`는 Windows 위저드 EXE와 macOS ZIP을 올린다. `BLOB_READ_WRITE_TOKEN`을 환경변수에 설정하거나
 Vercel OIDC 환경변수(`BLOB_STORE_ID`, `VERCEL_OIDC_TOKEN`)를 사용한다. macOS 기존 키체인도 지원한다.
 세 플랫폼 설치 파일을 업로드하고 크기를 검증한 후 웹의 버전 변경을 배포해야 다운로드가 끊기지 않는다.
 

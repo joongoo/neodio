@@ -29,6 +29,7 @@
     "discover:brand-roles": "tsx scripts/discover-brand-roles.ts",
     "collector": "tsx collector/agent.ts",
     "collector:build": "node collector/build.mjs",
+    "collector:build-wizard": "node collector/build-wizard.mjs",
     "collector:upload": "node scripts/upload-collector.mjs",
     "test:collector": "tsx --test collector/windowsStartup.test.ts collector/install.test.ts",
     "open:google-ai-chrome": "node scripts/open-google-ai-chrome.mjs",

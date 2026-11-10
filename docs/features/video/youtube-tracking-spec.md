@@ -16,7 +16,7 @@
 ## 01. AIO 인용 추적 MVP
 
 > 상태: **Phase 0~4 구현 완료 (MVP)**, Phase 5(부가) 미착수. 구현 현황은 §9.
-> 다음 단계(영상 URL 등록·키워드/프롬프트 AI 생성·스케줄 추적)는 [youtube-tracking-spec.md](youtube-tracking-spec.md#section-02). 요구사항 원본은 루트의
+> 영상 관리 화면과 프롬프트 등록 경로가 추가돼 있다. 초기 확장 계획과 현재 구현의 차이는 [02. 영상 단위 추적 후속 계획](#section-02)에서 코드와 함께 확인한다. 요구사항 원본은 루트의
 > `AIO 인용 트래커 — 요구사항 및 대시보드 구성안.pdf`, 화면 시안은
 > `AIO 인용 트래커 대시보드 1.pdf` 2p(전체 현황)·3p(키워드 상세).
 
@@ -191,7 +191,7 @@ AI 가시성 → **YouTube AIO 인용** (전체 현황 + 키워드 상세). 설�
 
 ## 02. 영상 단위 추적 후속 계획
 
-> 상태: **1차 상세 설계 완료(§7, 경량안)** — 2·3차는 §4 결정 필요. 선행 작업인 YouTube AIO 인용 트래커는
+> 상태: 이 섹션은 2026-09의 초기 설계 기록이다. 현재 영상 관리 화면과 프롬프트 등록 경로가 구현돼 있으므로 [`youtube-manage`](../../../src/app/[org]/[brand]/youtube-manage/page.tsx)와 [`youtube-manage/prompts`](../../../src/app/api/youtube-manage/prompts/route.ts)를 기준으로 남은 범위를 재판정한다. 선행 작업인 YouTube AIO 인용 트래커는
 > [youtube-tracking-spec.md](youtube-tracking-spec.md#section-01), 조직/URL 구조는
 > [access-and-organization-spec.md](../access/access-and-organization-spec.md#section-02). 다른 PC에서 이어서 작업할 때는 §6부터.
 

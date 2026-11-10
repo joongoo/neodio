@@ -21,7 +21,9 @@ export function collectorDownloadsConfigured(): boolean {
 }
 
 export function collectorPackagePath(platform: CollectorPlatform): string {
-  return `collector/neodio-collector-${platform}-${COLLECTOR_VERSION}.zip`;
+  return platform === "win-x64"
+    ? `collector/neodio-collector-win-x64-${COLLECTOR_VERSION}-setup.exe`
+    : `collector/neodio-collector-${platform}-${COLLECTOR_VERSION}.zip`;
 }
 
 /** 설치 파일 임시 다운로드 주소. 저장소가 연결돼 있지 않거나 파일이 없으면 null. */

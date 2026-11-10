@@ -11,6 +11,10 @@
 
 먼저 각 섹션의 상태를 확인하세요. 구현된 기능과 후속 기획을 구분했으며, 상세한 현재 동작은 연결된 코드를 기준으로 합니다.
 
+## 현재 구현 기준
+
+현재 영속 저장소는 Postgres이며 연결과 스키마는 [`database/index.ts`](../../src/lib/backend/database/index.ts), [`schema.ts`](../../src/lib/backend/database/schema.ts)를 따른다. `collector/`의 설치형 수집기와 `scripts/`의 수집 명령이 실제 수집 경로다. 아래 두 섹션은 초기 설계와 구현 당시의 기록으로, `.tmp` JSON을 주 저장소로 설명하거나 DB 도입 전을 현재로 표현한 문장은 현재 아키텍처를 뜻하지 않는다. 실행 명령은 [`package.json`](../../package.json)에서 재확인한다.
+
 <a id="section-01"></a>
 
 ## 01. 데이터 소스와 수집 설계
@@ -359,7 +363,7 @@ _이 문서는 `screen-spec.md`(화면별 Description/개발가이드)와 별도
 
 <a id="section-02"></a>
 
-## 02. 백엔드 수집·가공 구현 가이드
+## 02. 백엔드 수집·가공 초기 구현 기록
 
 이 문서는 현재 저장소에서 구현한 백엔드 수집/가공 방향을 재현하기 위한 작업 가이드입니다. 상위 설계는 `collection-pipeline-spec.md`를 따르고, 이 문서는 실제 코드 위치, 실행 명령, 데이터 계약, 다음 개발 순서를 고정합니다.
 
@@ -380,7 +384,7 @@ _이 문서는 `screen-spec.md`(화면별 Description/개발가이드)와 별도
   -> Overview / Visibility Overview / 기타 화면 API가 읽는 집계 데이터
 ```
 
-현재 구현은 [1], [2]의 로컬 테스트 버전입니다. 실제 DB가 붙기 전까지 `.tmp` JSON과 `src/lib/db/data/seed.ts`를 사용합니다.
+작성 당시에는 [1], [2]의 로컬 테스트 버전이었고 `.tmp` JSON과 시드를 사용했다. 현재 영속 저장소는 Postgres이며 초기 이관 로직만 `.tmp` 파일을 읽는다.
 
 ### 2. 주요 파일
 

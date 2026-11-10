@@ -11,6 +11,14 @@
 
 먼저 각 섹션의 상태를 확인하세요. 구현된 기능과 후속 기획을 구분했으며, 상세한 현재 동작은 연결된 코드를 기준으로 합니다.
 
+## 현재 구현 범위
+
+- OAuth 연결은 `src/app/api/connections/gsc/oauth/` 라우트에서 처리하고, `gscSearchAnalyticsReader.ts`가 검색 성과를 실시간 조회한다. 별도 `gscSearchAnalyticsJobRunner`나 일일 저장 배치는 없다.
+- 브랜드별 refresh token은 [`gscTokenStore.ts`](../../../src/lib/backend/gscTokenStore.ts)가 `bridge_entries`의 `gsc-tokens` 범위에 저장한다. 서버 전용 코드에서만 읽지만, **애플리케이션 수준 암호화는 구현돼 있지 않다.** 아래 초기 설계의 "암호화 저장" 설명은 현재 동작이 아니다. 운영 보안 점검에서 보완 여부를 결정해야 한다.
+- 검색 성과 화면은 연결된 property의 실측 데이터를 읽는다. `device`·`country` 차원도 조회한다.
+- URL Inspection은 `/api/gsc-url-inspection`, `searchAppearance`는 FAQ·목차 기회 화면, Sitemaps API는 robots.txt 기회 화면에서 사용한다. 추가 신호가 전부 미구현이라는 초기 조사 설명은 현재와 다르다.
+- 아래 두 섹션의 `제안`·`추가할` 서술은 작성 당시 설계 기록이다. 현재 구현 여부는 위 코드와 각 화면 호출 경로를 기준으로 판단한다.
+
 <a id="section-01"></a>
 
 ## 01. 검색 성과 연동
@@ -34,7 +42,7 @@
 | 데이터 범위 | 전체 웹의 임의 키워드 | **우리 도메인**에 실제로 노출/클릭된 쿼리만 | 네이버 통합검색 전체의 상대적 관심도(도메인 무관) |
 | 값 종류 | 절대 추정치(검색량/난이도) | 절대 실측치(clicks/impressions/position) | **상대 지수(0~100)**, 절대량 아님 |
 | 인증/비용 | 유료 구독 API 키 | 무료, OAuth(브랜드 계정 동의) | 무료, 클라이언트 아이디/시크릿 |
-| 우리 프로젝트 상태 | P0 제외([p0-scope-spec.md](../../product/p0-scope-spec.md) §2) | 이미 P0 승격, 화면 mock 존재 | 별도 기획([naver-datalab-search-trend-spec.md](naver-datalab-search-trend-spec.md)) |
+| 우리 프로젝트 상태 | P0 제외([p0-scope-spec.md](../../product/p0-scope-spec.md) §2) | OAuth·실측 조회 구현 | 검색어 트렌드 조회 구현 |
 
 즉 Semrush가 하던 "이 토픽/키워드가 시장에서 얼마나 검색되는가(검색량)"와 "우리가 그 키워드에서 얼마나 노출/클릭되는가(성과)"라는 두 질문을, **네이버 DataLab(시장 관심도, KR 한정) + GSC(자사 실측 성과, 전 세계/전 검색엔진 공통)** 조합으로 대체하는 것이 이번 기획의 핵심 아이디어.
 
@@ -81,7 +89,7 @@ export interface GscSearchAnalyticsResult {
 - `src/app/api/connections/gsc/oauth/start/route.ts`, `.../callback/route.ts` — Manage Connections 화면의 "연결하기" 버튼이 트리거하는 OAuth 플로우
 - `src/app/api/gsc-search-analytics/status/route.ts` — 배치 상태 조회 (기존 `collection-runs`/`sitemap-crawl` status 패턴)
 
-인증 정보는 환경변수로 관리 (OAuth 클라이언트 자체는 앱 단위, 브랜드별 `refresh_token`만 DB에 암호화 저장):
+초기 기획: OAuth 클라이언트 환경변수와 refresh token 암호화 저장을 제안했다. 실제 토큰 저장 방식은 위 "현재 구현 범위"를 따른다.
 
 ```bash
 # .env.local (커밋 금지)
@@ -118,21 +126,19 @@ GSC는 새 화면을 만들 필요 없이, 이미 mock으로 구성된 기존 �
 
 ## 02. 추가 API와 분석 신호
 
-`gscSearchAnalyticsReader.ts`가 지금 실제로 호출하는 건 Search Console API 중
-**`searchAnalytics.query` 하나, 그것도 `dimensions: ["date"]` / `["query"]` /
-`["page"]` 3가지뿐**이다. Search Console API 자체는 이보다 훨씬 넓다 — 여기서는
-(1) 지금 안 쓰는 API/파라미터 전체 목록, (2) 그 중 우리 기존 데이터(자체 크롤,
-AI 인용 파이프라인)와 조합했을 때 의미가 생기는 것만 골라 정리한다.
+현재 `gscSearchAnalyticsReader.ts`는 Search Analytics의 `date`·`query`·`page`·`device`·`country`·`searchAppearance` 차원을 조회한다. URL Inspection과 Sitemaps API도 별도로 호출한다. 아래 §1은 현재 호출을 요약하고, §2는 **추가 연동을 검토하던 초기 조사 목록**이다. §2에서 "안 쓰는 것"으로 적힌 항목 중 구현된 것은 §4의 완료 목록을 우선한다.
 
-### 1. 지금 쓰는 것
+### 1. 현재 호출
 
-| API | 메서드 | 우리가 쓰는 dimensions/파라미터 |
+| API | 사용 위치 | 현재 조회 |
 |---|---|---|
-| Search Analytics | `searchAnalytics.query` | `date`, `query`, `page` (단독으로만, 최대 4~5주 범위) |
+| Search Analytics | 검색 성과·프롬프트 전략·FAQ/목차 기회 | `date`, `query`, `page`, `device`, `country`, `searchAppearance`, `query`+`page` |
+| URL Inspection | `/api/gsc-url-inspection` | URL별 인덱싱 상태 |
+| Sitemaps | robots.txt 기회 화면 | 제출 사이트맵 상태 |
 
-### 2. 안 쓰고 있는 것 전체 목록
+### 2. 초기 조사 당시 미사용 기능 목록 (현재 상태는 §1·§4 참조)
 
-#### 2-1. `searchAnalytics.query`의 미사용 옵션 (API 추가 호출 없이 파라미터만 늘리면 됨)
+#### 2-1. 당시 미사용이던 `searchAnalytics.query` 옵션
 
 - **`device` 차원** — DESKTOP/MOBILE/TABLET별 클릭·노출·CTR·순위
 - **`country` 차원** — 국가별 클릭·노출
@@ -142,7 +148,7 @@ AI 인용 파이프라인)와 조합했을 때 의미가 생기는 것만 골라
 - **`dimensionFilterGroups`** — 서버 사이드 필터(예: page가 특정 패턴인 것만). 지금은 전부 받아서 클라이언트 코드로 필터링
 - **긴 날짜 범위** — API는 최대 16개월 지원. 지금은 4~5주만 봄
 
-#### 2-2. 아예 호출하지 않는 다른 API
+#### 2-2. 당시 호출하지 않던 다른 API
 
 | API | 메서드 | 얻을 수 있는 것 |
 |---|---|---|
