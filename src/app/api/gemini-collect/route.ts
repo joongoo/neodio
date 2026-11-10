@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     retries: 1,
   });
   if (result.status === "failed") {
-    return NextResponse.json({ error: result.errorMessage ?? "Gemini 호출에 실패했습니다." }, { status: 502 });
+    return NextResponse.json({ error: result.errorMessage ?? "Gemini 호출에 실패했습니다.", retryable: result.retryable }, { status: 502 });
   }
   return NextResponse.json({ runId: result.runId, citations: result.citations });
 }
