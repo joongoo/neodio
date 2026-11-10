@@ -39,6 +39,11 @@ const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/signup"
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.includes(pathname);
 
 export default function proxy(request: NextRequest) {
+  // Vercel Cron은 세션 쿠키 없이 호출한다. 정확한 경로와 전용 비밀값을 확인한 뒤 통과시킨다.
+  if (request.nextUrl.pathname === "/api/cron/youtube-videos" && process.env.CRON_SECRET &&
+      request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.next();
+  }
   if (!authorized(request)) return unauthorized();
 
   // 로그인이 켜져 있으면 세션 쿠키가 없는 요청은 로그인으로 보낸다(쿠키 값의 유효성은 서버가 DB로 확인한다 —

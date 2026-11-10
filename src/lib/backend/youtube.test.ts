@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseChannelInput, parsePlaylistPage, parseTimestamp, parseYoutubeVideoUrl, resolveYoutubeChannel } from "./youtube";
+import { listChannelVideos, parseChannelInput, parsePlaylistPage, parseTimestamp, parseYoutubeVideoUrl, resolveYoutubeChannel } from "./youtube";
 
 test("parseYoutubeVideoUrl reads every YouTube link shape AIO cites", () => {
   assert.deepEqual(parseYoutubeVideoUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=134s"), { videoId: "dQw4w9WgXcQ", startSeconds: 134 });
@@ -74,4 +74,27 @@ test("parsePlaylistPage keeps public videos and skips deleted/private ones", () 
       description: "설명",
     },
   ]);
+});
+
+test("daily channel sync fetches one playlist page even when YouTube has more", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.YOUTUBE_API_KEY;
+  process.env.YOUTUBE_API_KEY = "test-key";
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({ nextPageToken: "another-page", items: [{
+      snippet: { title: "새 영상", thumbnails: { default: { url: "https://example.com/thumb.jpg" } } },
+      contentDetails: { videoId: "aaaaaaaaaaa" },
+    }] });
+  };
+  try {
+    const videos = await listChannelVideos("UCUpquzY878NEaZm5bc7m2sQ", "채널", 50, 1);
+    assert.equal(calls, 1);
+    assert.equal(videos.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.YOUTUBE_API_KEY;
+    else process.env.YOUTUBE_API_KEY = originalKey;
+  }
 });

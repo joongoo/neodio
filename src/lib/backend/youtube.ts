@@ -271,13 +271,14 @@ export function parsePlaylistPage(data: ApiPlaylistItems, channelId: string, cha
 }
 
 /** 채널의 공개 영상을 최신순으로 가져온다(최대 CHANNEL_VIDEO_LIMIT). 키가 없으면 YoutubeApiKeyMissingError. */
-export async function listChannelVideos(channelId: string, channelTitle: string | null, limit = CHANNEL_VIDEO_LIMIT): Promise<YoutubeVideoMeta[]> {
+export async function listChannelVideos(channelId: string, channelTitle: string | null, limit = CHANNEL_VIDEO_LIMIT, maxPages = Infinity): Promise<YoutubeVideoMeta[]> {
   if (!process.env.YOUTUBE_API_KEY) throw new YoutubeApiKeyMissingError();
   if (!CHANNEL_ID_PATTERN.test(channelId)) return [];
   const uploads = `UU${channelId.slice(2)}`;
   const videos: YoutubeVideoMeta[] = [];
   let pageToken: string | undefined;
-  while (videos.length < limit) {
+  let pages = 0;
+  while (videos.length < limit && pages < maxPages) {
     const data = await apiGet<ApiPlaylistItems>("playlistItems", {
       part: "snippet,contentDetails",
       playlistId: uploads,
@@ -285,6 +286,7 @@ export async function listChannelVideos(channelId: string, channelTitle: string 
       ...(pageToken ? { pageToken } : {}),
     });
     videos.push(...parsePlaylistPage(data, channelId, channelTitle));
+    pages += 1;
     pageToken = data.nextPageToken;
     if (!pageToken) break;
   }

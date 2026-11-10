@@ -418,7 +418,7 @@ CREATE TABLE IF NOT EXISTS brand_videos (
 §7의 "영상 등록 + 영상별 인용 기록"을 채널 전체 영상 관리로 넓혀 새 메뉴 **YouTube 관리**(`/youtube-manage`)로 만들었다.
 프롬프트 통합([prompt-surfaces-spec.md](../visibility/prompt-surfaces-spec.md))이 끝난 뒤라, 예상 프롬프트는 별도 저장소 없이 프롬프트 라이브러리에 등록한다.
 
-- 영상 가져오기: YouTube Data API `playlistItems`(채널 업로드 재생목록, 50개씩)로 최신 500개 — 호출당 1유닛. `YOUTUBE_API_KEY` 필요, 버튼으로만 갱신(자동 스케줄 없음).
+- 영상 가져오기: YouTube Data API `playlistItems`(채널 업로드 재생목록, 50개씩)로 수동 실행 시 채널당 최신 500개까지 가져온다. 매일 09:00 KST에는 Vercel Cron(`/api/cron/youtube-videos`)이 연결된 모든 채널의 최신 1페이지를 확인한다. `YOUTUBE_API_KEY`와 `CRON_SECRET`이 필요하다. 한 채널이 여러 브랜드에 연결됐으면 API는 한 번 호출하고 각 브랜드에 반영한다. 목록은 채널 열과 채널별 필터를 제공한다.
 - 체크: `brand_videos.checked`. 가져온 영상은 체크 해제로 들어오고, 직접 등록(`addBrandVideo`)한 영상은 체크 상태. 재가져오기는 제목·게시일·설명만 갱신한다.
 - 예상 프롬프트: 제목+설명(500자)만 근거로 AI가 영상당 3~6개 제안(`videoPromptSuggestion.ts`, 자막은 쓰지 않음) → 사람이 고른 것만 등록.
   플랫폼은 프롬프트별로 고르고 기본값은 `suggestSurfaces`. 영상 ↔ 프롬프트 연결은 `prompt_sources(youtube-video, 영상 ID)`.

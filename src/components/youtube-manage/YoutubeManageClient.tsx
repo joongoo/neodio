@@ -23,13 +23,14 @@ type Filter = "all" | "checked";
 
 // YouTube 관리 — 채널 영상을 전부 가져와 두고, 체크한 영상만 예상 프롬프트를 만들어 Google AIO 인용을 추적한다.
 export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
-  const { base, demo, brandId, brandName, industry, settings, device, existingPrompts, canSync } = data;
+  const { base, demo, brandId, brandName, industry, settings, device, existingPrompts, canSync, channels } = data;
   const canEdit = useCanEdit();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [videos, setVideos] = useState(data.videos);
   const [filter, setFilter] = useState<Filter>("all");
+  const [channelFilter, setChannelFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -43,10 +44,16 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
   }
 
   const checkedCount = videos.filter((v) => v.checked).length;
+  const channelNames = useMemo(() => new Map(channels.map((channel) => [channel.channelId, channel.title])), [channels]);
+  const hasOtherChannels = videos.some((video) => !channelNames.has(video.channelId));
   const filtered = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("ko-KR");
-    return videos.filter((v) => (filter === "all" || v.checked) && (!q || v.title.toLocaleLowerCase("ko-KR").includes(q)));
-  }, [videos, filter, query]);
+    return videos.filter((v) =>
+      (filter === "all" || v.checked) &&
+      (channelFilter === "all" || (channelFilter === "other" ? !channelNames.has(v.channelId) : v.channelId === channelFilter)) &&
+      (!q || v.title.toLocaleLowerCase("ko-KR").includes(q))
+    );
+  }, [videos, filter, channelFilter, channelNames, query]);
   const { page, setPage, pageCount, pageRows, pageSize, setPageSize } = usePagedRows(filtered, 20);
 
   async function setChecked(videoIds: string[], checked: boolean) {
@@ -129,9 +136,19 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
           <img src={v.thumbnailUrl} alt="" className="h-9 w-16 shrink-0 rounded object-cover" />
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-xs font-medium text-neutral-900">{v.title}</span>
-            {!v.ownChannel && <span className="text-[10px] font-bold text-amber-700">타 채널{v.channelTitle ? ` · ${v.channelTitle}` : ""}</span>}
           </span>
         </Link>
+      ),
+    },
+    {
+      key: "channel",
+      label: "채널",
+      width: "w-36",
+      render: (v) => (
+        <span className="flex flex-col text-xs text-neutral-700">
+          <span>{channelNames.get(v.channelId) ?? v.channelTitle ?? v.channelId}</span>
+          {!v.ownChannel && <span className="text-[10px] text-amber-700">미연결 채널</span>}
+        </span>
       ),
     },
     { key: "published", label: "게시일", width: "w-24", render: (v) => <span className="text-neutral-600">{publishedDate(v.publishedAt)}</span> },
@@ -238,6 +255,16 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
             </button>
           ))}
         </div>
+        <select
+          aria-label="채널 필터"
+          value={channelFilter}
+          onChange={(event) => { setChannelFilter(event.target.value); setPage(1); }}
+          className="h-9 max-w-56 rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-700"
+        >
+          <option value="all">전체 채널</option>
+          {channels.map((channel) => <option key={channel.channelId} value={channel.channelId}>{channel.title}</option>)}
+          {hasOtherChannels && <option value="other">미연결 채널</option>}
+        </select>
         {settings.devices.length > 1 && <Dropdown label="디바이스" value={DEVICE_LABEL[device]} options={settings.devices.map((d) => DEVICE_LABEL[d])} onChange={setDevice} />}
       </div>
 
@@ -245,7 +272,7 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
         <Card className="flex flex-col items-center gap-3 py-16 text-center">
           <p className="text-base font-bold text-neutral-900">아직 가져온 영상이 없습니다</p>
           <p className="max-w-md text-sm text-neutral-500">
-            &quot;영상 가져오기&quot;를 누르면 연결된 채널의 공개 영상을 최신순으로 최대 500개까지 가져옵니다. 이후에는 새 영상이 올라올 때 버튼으로 다시 가져오세요.
+            연결된 채널의 최신 영상은 매일 자동으로 확인합니다. 이전 영상까지 가져오려면 &quot;영상 가져오기&quot;를 누르세요.
           </p>
         </Card>
       ) : filtered.length === 0 ? (

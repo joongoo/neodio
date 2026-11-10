@@ -4,8 +4,8 @@ import { listPromptLibrary } from "../trackedTopics";
 import { addDays } from "./metrics";
 import { hasMeasurementSince, seoulDate, videoCitationSummaries, videoKeywordCitations } from "./store";
 import { listManagedVideos, videoPromptRows } from "./videoManage";
-import { buildDemoAioData } from "@/lib/db/data/youtubeAio";
-import { AioDevice, BrandAioSettings, ManagedVideo, VideoKeywordCitation, VideoPromptRow } from "@/lib/db/types";
+import { buildDemoAioData, demoAioChannels } from "@/lib/db/data/youtubeAio";
+import { AioDevice, BrandAioSettings, BrandYoutubeChannel, ManagedVideo, VideoKeywordCitation, VideoPromptRow } from "@/lib/db/types";
 import { RECENT_DAYS } from "@/lib/videoManage";
 import type { AioSetupState } from "./pageData";
 
@@ -30,6 +30,7 @@ export interface VideoManageListData {
   settings: BrandAioSettings;
   device: AioDevice;
   videos: VideoManageRow[];
+  channels: BrandYoutubeChannel[];
   /** 브랜드가 이미 추적 중인 프롬프트 문장 — 예상 프롬프트를 만들 때 겹치지 않게 한다. */
   existingPrompts: string[];
   /** 서버에 YouTube API 키가 있어야 채널 영상을 가져올 수 있다. */
@@ -66,7 +67,7 @@ async function loadBase(requestedDevice: string | undefined) {
     const videos: VideoManageRow[] = Object.values(demo.videos).map((v, i) => ({
       ...v, addedAt: today, checked: i % 2 === 0, promptCount: 0, ownChannel: true, recentCitingPrompts: null, lastCitedDate: null,
     }));
-    return { kind: "demo" as const, tenant, today, settings: demo.settings, device, videos };
+    return { kind: "demo" as const, tenant, today, settings: demo.settings, device, videos, channels: demoAioChannels };
   }
   const brand = tenant.brand;
   if (!brand) return { kind: "setup" as const, state: { kind: "setup", brandId: null, brandName: null, base: tenant.base } satisfies AioSetupState };
@@ -87,7 +88,7 @@ async function loadBase(requestedDevice: string | undefined) {
       lastCitedDate: summary?.lastCitedDate ?? null,
     };
   });
-  return { kind: "live" as const, tenant, brand, today, settings, device, videos, measured };
+  return { kind: "live" as const, tenant, brand, today, settings, device, videos, channels, measured };
 }
 
 export async function loadVideoManageList(params: { device?: string }): Promise<VideoManageListData | AioSetupState> {
@@ -99,6 +100,7 @@ export async function loadVideoManageList(params: { device?: string }): Promise<
     settings: ctx.settings,
     device: ctx.device,
     videos: ctx.videos,
+    channels: ctx.channels,
     canSync: Boolean(process.env.YOUTUBE_API_KEY),
   };
   if (ctx.kind === "demo") return { ...base, demo: true, brandId: "demo", brandName: "Demo", industry: "", existingPrompts: [] };
