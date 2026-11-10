@@ -9,7 +9,7 @@ import type { ManagedBrand } from "@/lib/db/types";
 // 리포트 스냅샷 만들기 — 대시보드와 같은 읽기 함수를 같은 필터로 불러 한 번에 고정한다. 서버 전용.
 
 const toKpi = (metric: RealMetric, unit: "%" | "%p"): ReportKpi => ({
-  value: metric.value, decimals: metric.decimals ?? 1, suffix: metric.suffix, trend: metric.trend, trendUnit: unit, sparkline: metric.sparkline, caption: metric.caption,
+  value: metric.value, decimals: metric.decimals ?? 1, suffix: metric.suffix, trend: metric.trend, trendUnit: unit, sparkline: metric.sparkline, caption: metric.caption, confidence: metric.confidence,
 });
 
 export async function buildReportSnapshot(params: {
