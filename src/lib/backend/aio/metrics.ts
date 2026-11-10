@@ -13,7 +13,7 @@ import {
 import { toUtcSundayWeekStart } from "../processing/date";
 
 // YouTube AIO 인용 트래커 지표 — 순수 함수. 실데이터와 Demo 샘플이 같은
-// 계산을 거친다(docs/youtube-aio-tracker-plan.md §2).
+// 계산을 거친다(docs/features/video/youtube-tracking-spec.md §2).
 //
 // 분모 원칙: 인용률의 분모는 "AIO가 뜬 키워드"다. 실패한 수집은
 // 어디에도 세지 않는다(미측정) — 0%와 "–"를 구분하기 위해.

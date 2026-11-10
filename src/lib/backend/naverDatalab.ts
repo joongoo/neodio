@@ -1,7 +1,7 @@
 // 네이버 데이터랩 검색어 트렌드 — NAVER API HUB(네이버 클라우드 플랫폼 게이트웨이) 기준.
 // 인증은 앱 전체에 키 하나(NCP 콘솔에서 발급한 Client ID/Secret). 응답의 ratio는 절대 검색량이
 // 아니라 "요청 하나 안에서 최댓값=100"인 상대값이라, 서로 비교할 주제어는 같은 요청의
-// keywordGroups에 넣어야 한다(docs/naver-datalab-search-trend-plan.md).
+// keywordGroups에 넣어야 한다(docs/features/integrations/naver-datalab-search-trend-spec.md).
 
 const SEARCH_TREND_URL = "https://naverapihub.apigw.ntruss.com/search-trend/v1/search";
 

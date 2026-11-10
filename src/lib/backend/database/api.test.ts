@@ -10,7 +10,7 @@ import { listPromptLibrary } from "../trackedTopics";
 // same isolation the old ":memory:"/temp-sqlite-file setup gave the API
 // tests, now against a real schema instead of a real file.
 const baseUrl = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
-if (!baseUrl) throw new Error("POSTGRES_URL is required to run API tests — see docs/database.md");
+if (!baseUrl) throw new Error("POSTGRES_URL is required to run API tests — see docs/data/database-guide.md");
 const schema = `test_api_${randomUUID().replaceAll("-", "_")}`;
 const scopedUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}`;
 process.env.POSTGRES_URL = scopedUrl;

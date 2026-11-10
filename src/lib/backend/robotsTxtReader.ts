@@ -2,7 +2,7 @@ import { BlockedAgentRow, RobotsTxtLine, RobotsTxtOpportunity } from "@/lib/db/t
 
 // 우리 사이트의 robots.txt를 직접 fetch해서 파싱 — 3rd-party 데이터나 API
 // 키가 필요 없는 유일한 "기술적 기회" 진단이라 P0에 그대로 들어갈 수 있다
-// (neodigm_p0_scope.md §1). 알려진 AI 크롤러 user-agent가 Disallow로
+// (docs/product/p0-scope-spec.md §1). 알려진 AI 크롤러 user-agent가 Disallow로
 // 막혀 있으면 그 규칙을 "차단된 트래픽"으로 집계한다.
 const AI_AGENTS = ["GPTBot", "OAI-SearchBot", "OAI-User", "ClaudeBot", "Google-Extended", "PerplexityBot", "Applebot-Extended"];
 

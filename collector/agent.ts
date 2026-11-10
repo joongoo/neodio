@@ -9,7 +9,7 @@
 //
 // 명령: run(수집기 실행) · install(이 PC에 설치 + 로그인 시 자동 시작) · uninstall · status
 // 개발: npm run collector -- run  (scripts/의 수집 스크립트를 그대로 쓴다)
-// 배포: node collector/build.mjs → dist/collector/*.zip (docs/collector.md)
+// 배포: node collector/build.mjs → dist/collector/*.zip (docs/operations/collector-guide.md)
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";

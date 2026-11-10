@@ -7,7 +7,7 @@ import { NextRequest } from "next/server";
 // 선택 수집의 "반영" — 사용자 PC 수집기가 모은 결과를 브라우저가 올리면 지금 조직으로
 // 저장한다. 실제 Postgres, 이 파일 전용 스키마.
 const baseUrl = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
-if (!baseUrl) throw new Error("POSTGRES_URL is required to run collection import tests — see docs/database.md");
+if (!baseUrl) throw new Error("POSTGRES_URL is required to run collection import tests — see docs/data/database-guide.md");
 const schema = `test_import_${randomUUID().replaceAll("-", "_")}`;
 const scopedUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}`;
 process.env.POSTGRES_URL = scopedUrl;

@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn";
 // always-expanded nav tree with no collapse affordance, so no client state
 // is needed beyond active-link detection.
 //
-// Re-scoped to P0 per neodigm_p0_scope.md: only screens buildable from data
+// Re-scoped to P0 per docs/product/p0-scope-spec.md: only screens buildable from data
 // we can directly collect (our own LLM/AI-search runs, sitemap crawling,
 // LLM topic brainstorming) are listed. Screens that structurally need
 // 3rd-party SEO/analytics data (Market Comparison, Prompt Strategy, Brand

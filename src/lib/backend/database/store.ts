@@ -56,7 +56,7 @@ interface Executor { query: (text: string, params?: unknown[]) => Promise<{ rows
 // the local Postgres this sandbox can actually run. `pg` speaks the standard wire
 // protocol and works identically against local Postgres, Vercel Postgres or any other
 // standard Postgres, reading the same POSTGRES_URL/POSTGRES_URL_NON_POOLING env vars
-// Vercel injects — see docs/database.md.
+// Vercel injects — see docs/data/database-guide.md.
 export class PromptStore {
   private readonly pool: Pool;
   private readonly als = new AsyncLocalStorage<{ client: PoolClient; depth: number }>();

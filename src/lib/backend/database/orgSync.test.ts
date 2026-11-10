@@ -10,7 +10,7 @@ import { Pool } from "pg";
 // 실제 Postgres, 이 파일 전용 스키마, 임시 작업 디렉터리(수집 파일 위치가
 // process.cwd() 기준이라 테스트 동안만 옮긴다).
 const baseUrl = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
-if (!baseUrl) throw new Error("POSTGRES_URL is required to run org sync tests — see docs/database.md");
+if (!baseUrl) throw new Error("POSTGRES_URL is required to run org sync tests — see docs/data/database-guide.md");
 const schema = `test_orgsync_${randomUUID().replaceAll("-", "_")}`;
 const scopedUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}`;
 process.env.POSTGRES_URL = scopedUrl;

@@ -4,7 +4,7 @@ import type { Membership, OrgRole, PlatformRole, Principal } from "@/lib/auth/pe
 import { generateTempPassword, hashPassword, passwordProblem, verifyPassword } from "./password";
 import { describeMembershipChange, userLabel, type ChangeOp } from "@/lib/changeLog";
 
-// 회원·세션·역할 저장소 — 서버 전용. 이메일 인증은 하지 않는다(docs/auth-and-roles.md).
+// 회원·세션·역할 저장소 — 서버 전용. 이메일 인증은 하지 않는다(docs/features/access/access-and-organization-spec.md).
 
 export const SESSION_COOKIE = "neodio-session";
 const SESSION_DAYS = 14;

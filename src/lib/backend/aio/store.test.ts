@@ -10,7 +10,7 @@ import type { AioCitation } from "../../db/types";
 // 스키마(api.test.ts와 같은 격리 방식). YouTube 조회가 필요한 채널 추가
 // 성공 경로는 네트워크를 타므로 여기선 저장 함수로 직접 넣는다.
 const baseUrl = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
-if (!baseUrl) throw new Error("POSTGRES_URL is required to run AIO store tests — see docs/database.md");
+if (!baseUrl) throw new Error("POSTGRES_URL is required to run AIO store tests — see docs/data/database-guide.md");
 const schema = `test_aio_${randomUUID().replaceAll("-", "_")}`;
 const scopedUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}`;
 process.env.POSTGRES_URL = scopedUrl;

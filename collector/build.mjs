@@ -6,7 +6,7 @@
 //   node collector/build.mjs --local-node      # 이 PC용만, 지금 쓰는 node로(다운로드 없이 시험)
 //
 // 결과: dist/collector/neodio-collector-<platform>-<version>.zip — 비공개 Blob 저장소의
-// collector/ 아래에 이 이름 그대로 올리면 선택 수집 화면에서 받을 수 있다(docs/collector.md).
+// collector/ 아래에 이 이름 그대로 올리면 선택 수집 화면에서 받을 수 있다(docs/operations/collector-guide.md).
 import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { pipeline } from "node:stream/promises";

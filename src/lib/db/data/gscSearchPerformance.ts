@@ -1,6 +1,6 @@
 import { GscSearchPerformanceResult } from "../types";
 
-// GSC Search Analytics API 미연동 mock — docs/gsc-search-analytics-plan.md 참고.
+// GSC Search Analytics API 미연동 mock — docs/features/integrations/gsc-integration-spec.md 참고.
 // OAuth 연동 전이라 실제 searchanalytics.query 호출은 없고, gscConnectionByBrand가
 // "connected"인 브랜드(brand-neodigm)에 대해서만 화면 구조 검증용 데이터를 채워뒀다.
 export const gscSearchPerformanceByBrand: Record<string, GscSearchPerformanceResult> = {

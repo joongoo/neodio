@@ -1,7 +1,7 @@
 import { PromptLibraryHealth, PromptLibraryRow } from "../types";
 
 // Matches Figma "Prompt Library Screen (Wireframe)" (node 646:12575, Korean
-// page), trimmed to P0 (neodigm_p0_scope.md §2) — this is our own tracked
+// page), trimmed to P0 (docs/product/p0-scope-spec.md §2) — this is our own tracked
 // prompt list (CRUD), no 3rd-party dependency at all.
 //
 // Reset to the actual operating prompt set (2026-09 GEO/LLMO 프롬프트셋

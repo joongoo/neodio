@@ -3,7 +3,7 @@
 // closures over module scope.
 //
 // Google's class names are obfuscated and rotate, so everything here keys
-// off text and aria-labels instead (see docs/youtube-aio-tracker-plan.md §8):
+// off text and aria-labels instead (see docs/features/video/youtube-tracking-spec.md §8):
 //  - the block starts at a heading whose own text is "AI 개요"/"AI Overview";
 //  - the source panel lists each source as <a aria-label="<title>. 새 탭에서
 //    열립니다."> in display order → citation order (the collector dedupes

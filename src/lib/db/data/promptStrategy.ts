@@ -1,6 +1,6 @@
 import { PromptStrategyData } from "../types";
 
-// Matches Figma "Prompt Strategy" (doc §5), trimmed to P0 (neodigm_p0_scope.md
+// Matches Figma "Prompt Strategy" (doc §5), trimmed to P0 (docs/product/p0-scope-spec.md
 // §2) — sources are GSC (real search performance on our own property) and a
 // weekly LLM insight-brainstorm batch seeded with current mentions/citations.
 // Semrush and synthetic personas (the original design's other two sources)

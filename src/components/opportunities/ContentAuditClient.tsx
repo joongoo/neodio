@@ -46,7 +46,7 @@ export function ContentAuditClient({
   backHref?: string;
   /** FAQ/목차 기회에서만 넘어오는 구글 리치 결과 실적(searchAppearance 차원) —
    *  이 기회를 실행한 뒤 실제로 리치 결과 노출이 생겼는지 확인하는 근거.
-   *  (docs/gsc-additional-signals.md §3-③) */
+   *  (docs/features/integrations/gsc-integration-spec.md §3-③) */
   searchAppearance?: GscSearchAppearanceRow[] | null;
 }) {
   const tenantBase = useTenantBase();

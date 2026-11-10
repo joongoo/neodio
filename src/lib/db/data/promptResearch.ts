@@ -2,7 +2,7 @@ import { PromptResearchResult } from "../types";
 
 // Matches Figma "Prompt Research Screen - Results (Wireframe)" (node
 // 646:12033, Korean page) for the seeded topic "마케팅 자동화", trimmed to P0
-// fields (neodigm_p0_scope.md §2) — no search volume or organic traffic,
+// fields (docs/product/p0-scope-spec.md §2) — no search volume or organic traffic,
 // since those require a keyword/SEO API we don't have. Other topics fall
 // back to the empty state until a real /prompt-research pipeline exists.
 export const promptResearchByTopic: Record<string, PromptResearchResult> = {

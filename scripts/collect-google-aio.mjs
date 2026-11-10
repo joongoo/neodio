@@ -2,7 +2,7 @@
 
 // Collects one Google AI Overview (AIO) snapshot for one keyword on the plain
 // SERP — not AI Mode (collect-google-ai.mjs, udm=50), which is a different
-// surface. Used by the YouTube AIO tracker (docs/youtube-aio-tracker-plan.md):
+// surface. Used by the YouTube AIO tracker (docs/features/video/youtube-tracking-spec.md):
 // scripts/collect-aio.ts runs this per keyword × device and judges the
 // resulting citations against the brand's YouTube channels.
 //

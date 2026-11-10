@@ -3,7 +3,7 @@ import { parseYoutubeVideoUrl } from "../youtube";
 
 // AIO 인용 판정 — 수집기(scripts/collect-google-aio.mjs)가 리다이렉트를
 // 풀어 둔 출처 목록을 5분류로 나눈다. 우리 영상 여부는 도메인이 아니라
-// 채널 ID로 판정한다(docs/youtube-aio-tracker-plan.md §1).
+// 채널 ID로 판정한다(docs/features/video/youtube-tracking-spec.md §1).
 
 export interface CollectedSource {
   position: number;

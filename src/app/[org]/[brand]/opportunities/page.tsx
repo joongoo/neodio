@@ -42,7 +42,7 @@ interface OpportunityCard {
 // 온사이트 기술 최적화/오프사이트 최적화 3개 섹션으로 기회를 묶어서
 // 개별 카드로 나열한다. 우리는 실제로 진단 가능한 기회만 넣는다 —
 // 오프사이트(Reddit/YouTube 감성 분석 등)는 각 플랫폼 API가 필요해서 P0
-// 제외 (neodigm_p0_scope.md §2와 같은 이유). "기회 워크스페이스"(배포 전/후
+// 제외 (docs/product/p0-scope-spec.md §2와 같은 이유). "기회 워크스페이스"(배포 전/후
 // 지표 추적, 엣지 딜리버리, 에이전틱 트래픽)도 같은 이유로 제외.
 export default async function OpportunitiesPage() {
   const tenant = await getCurrentTenant();

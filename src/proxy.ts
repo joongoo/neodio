@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveTenantRoute, TENANT_COOKIE, TENANT_HEADERS, tenantCookieValue } from "@/lib/tenantRouting";
 
 // 프로덕션 URL에 접근 제어가 전혀 없어서 URL만 알면 누구나 브랜드 데이터를
-// 보고 고칠 수 있었다 (docs/production-readiness-checklist.md P0). 별도
+// 보고 고칠 수 있었다 (docs/operations/production-readiness-checklist.md P0). 별도
 // 인증 서비스를 붙이기 전, HTTP Basic Auth로 최소한의 게이트를 건다.
 // SITE_PASSWORD가 설정 안 돼 있으면(로컬 dev) 그냥 통과 — 로컬 개발까지
 // 막을 필요는 없다.

@@ -139,7 +139,7 @@ export default async function OverviewPage({
   // one collection has run — see the "수집 로그" page for the same
   // computation applied live there. Traffic trends and opportunities stay
   // seeded: they need CDN/analytics logs and a live robots.txt/opportunity
-  // feed we don't collect yet (neodigm_p0_scope.md §2).
+  // feed we don't collect yet (docs/product/p0-scope-spec.md §2).
   const [realStats, realSentiment, realMarket] = demo
     ? [null, null, null]
     : await Promise.all([
@@ -205,7 +205,7 @@ export default async function OverviewPage({
   const latestOpportunities: { id: string; category: string; title: string; href?: string }[] =
     realOpportunityCards.length > 0 ? realOpportunityCards.slice(0, 3) : opportunities;
 
-  // 체크리스트 단계별 done을 실제 상태에서 계산 (docs/overview-checklists-plan.md).
+  // 체크리스트 단계별 done을 실제 상태에서 계산 (docs/features/reporting/overview-checklists-spec.md).
   // href가 없는 단계는 관련 기능이 아직 없다는 뜻이라 done도 항상 false로 둔다 —
   // ChecklistCard가 그 단계를 "준비 중"으로 표시한다.
   const hasUploadedPrompt = promptLibraryRows.some((p) => p.origin === "manual" || p.origin === "csv_import");

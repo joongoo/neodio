@@ -5,13 +5,13 @@ import { PromptStore } from "./store";
 // Each test gets its own Postgres schema instead of SQLite's ":memory:" —
 // same isolation (a fresh, empty database per test), but against the real
 // Postgres wire protocol so the SQL in store.ts is actually exercised.
-// Requires POSTGRES_URL (see docs/database.md — `npm run test:db` starts a
+// Requires POSTGRES_URL (see docs/data/database-guide.md — `npm run test:db` starts a
 // throwaway local Postgres cluster for this automatically).
 export interface TestStoreHandle { store: PromptStore; schema: string; pool: Pool }
 
 export async function createTestStore(): Promise<TestStoreHandle> {
   const connectionString = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
-  if (!connectionString) throw new Error("POSTGRES_URL is required to run store tests — see docs/database.md");
+  if (!connectionString) throw new Error("POSTGRES_URL is required to run store tests — see docs/data/database-guide.md");
   const schema = `test_${randomUUID().replaceAll("-", "_")}`;
   const setup = new Pool({ connectionString });
   await setup.query(`CREATE SCHEMA "${schema}"`);

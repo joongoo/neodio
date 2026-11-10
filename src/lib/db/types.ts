@@ -256,7 +256,7 @@ export interface ChecklistStep {
   /** Real page this step's action lives on. Omit when the feature behind
    *  this step isn't built yet — the step still shows, but clicking it
    *  surfaces a "준비 중" note instead of navigating (see
-   *  docs/overview-checklists-plan.md groups A vs B). */
+   *  docs/features/reporting/overview-checklists-spec.md groups A vs B). */
   href?: string;
 }
 
@@ -356,7 +356,7 @@ export interface TopicPromptRow {
   addedToLibrary?: boolean;
 }
 
-// searchVolume/difficulty dropped for P0 (neodigm_p0_scope.md §2) — those
+// searchVolume/difficulty dropped for P0 (docs/product/p0-scope-spec.md §2) — those
 // numbers only exist behind a 3rd-party keyword API (Semrush etc.) we don't
 // have. mentions/visibility stay: both are derived from our own prompt_runs.
 export interface TopicRow {
@@ -508,7 +508,7 @@ export interface PromptResearchResult {
 // SearchCollectionResult를 다시 정의하면 된다 (git 히스토리의 이전 버전 참고).
 
 // ---- Search Trend page ----
-// Naver DataLab 통합 검색어 트렌드 API 연동 전 화면 뼈대 (docs/naver-datalab-search-trend-plan.md
+// Naver DataLab 통합 검색어 트렌드 API 연동 전 화면 뼈대 (docs/features/integrations/naver-datalab-search-trend-spec.md
 // §3 참고). 클라이언트 아이디/시크릿 발급 전이라 실제 API 호출은 없고, 이 타입에 맞는 mock
 // 시계열만 채워둔 상태 — 실 연동 시 이 shape을 그대로 채우면 됨. `ratio`는 API 응답과 동일하게
 // 절대값이 아닌 구간 내 상대값(0~100)이라는 점을 유지한다.
@@ -532,7 +532,7 @@ export interface SearchTrendResult {
 }
 
 // ---- Search Performance page (GSC) ----
-// GSC Search Analytics API 연동 전 화면 뼈대 (docs/gsc-search-analytics-plan.md
+// GSC Search Analytics API 연동 전 화면 뼈대 (docs/features/integrations/gsc-integration-spec.md
 // §3 참고). GscConnection이 "connected"인 브랜드에 한해 이 결과가 존재한다고
 // 가정한 mock — 실 연동 시 searchanalytics.query 배치 결과를 그대로 채우면 된다.
 export interface GscTrendWeek {
@@ -578,7 +578,7 @@ export interface GscSearchPerformanceResult {
   totalQueries: number;
 }
 
-// ---- GSC 추가 신호 (docs/gsc-additional-signals.md) ----
+// ---- GSC 추가 신호 (docs/features/integrations/gsc-integration-spec.md) ----
 
 // URL Inspection API (urlInspection.index.inspect) — 우리 자체 크롤 기반
 // 콘텐츠 가시성 점수와 별개로, 구글이 실제로 이 URL을 어떻게 보고 있는지.
@@ -686,7 +686,7 @@ export interface PromptLibraryRow {
 // brandedRatio/topicIntentMatch come from our own classification of tracked
 // prompts (LLM call over prompt text) — P0-safe. Agentic URL coverage and
 // strategy recommendations both need data we don't have yet (crawler logs,
-// keyword API) and are dropped per neodigm_p0_scope.md §2.
+// keyword API) and are dropped per docs/product/p0-scope-spec.md §2.
 export interface PromptLibraryHealth {
   brandedRatio: number;
   brandedTarget: number;
@@ -696,7 +696,7 @@ export interface PromptLibraryHealth {
 
 // ---- Manage Connections page (GSC only for now — CDN/Commerce are P0-out) ----
 
-// ---- YouTube AIO 인용 트래커 (docs/youtube-aio-tracker-plan.md) ----
+// ---- YouTube AIO 인용 트래커 (docs/features/video/youtube-tracking-spec.md) ----
 // 브랜드 관리 > 연결 관리에서 등록하는 브랜드별 설정. 인용 판정은 도메인이
 // 아니라 이 채널 ID 목록 기준이다.
 export interface BrandYoutubeChannel {
@@ -1070,7 +1070,7 @@ export interface RobotsTxtOpportunity {
 // ---- Opportunity Detail — Template C (content recovery) ----
 
 // No `traffic` column here on purpose — pageview counts need GA/CDN logs,
-// which are P0-out (neodigm_p0_scope.md §2). `priorityScore` is derived
+// which are P0-out (docs/product/p0-scope-spec.md §2). `priorityScore` is derived
 // from our own crawl (lower contentVisibility -> higher priority).
 export interface ContentRecoveryUrl {
   id: string;
@@ -1160,7 +1160,7 @@ export interface ContentAuditOpportunity {
 // "인용 시도"(citation attempts)/"LLM 레퍼럴 유입 수" charts and the
 // "도메인 강도" column are dropped for P0 — they need CDN logs, referral
 // analytics, or a domain-authority index, none of which we have
-// (neodigm_p0_scope.md §2). Everything below comes from our own citations.
+// (docs/product/p0-scope-spec.md §2). Everything below comes from our own citations.
 
 /** 이 URL을 인용한 응답 한 건 — 확장 행에서 프롬프트와 함께 실행일·모델·마켓을 보여 준다. */
 export interface CitedPromptRun {
@@ -1324,7 +1324,7 @@ export interface BrandsManagementData {
 }
 
 // ---- Prompt Strategy page ----
-// Two P0 sources only (neodigm_p0_scope.md §1/§2): GSC (real impressions on
+// Two P0 sources only (docs/product/p0-scope-spec.md §1/§2): GSC (real impressions on
 // our own property) and a weekly LLM "insight brainstorm" batch seeded with
 // our current mentions/citations — Semrush and synthetic personas (the
 // original design's other two sources) are dropped. Both sources land in

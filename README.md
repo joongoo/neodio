@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Neodio
 
-## Getting Started
+Next.js 기반 브랜드 가시성 관리 애플리케이션입니다.
 
-First, run the development server:
+## 시작하기
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+로컬 주소: http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 프로젝트 구조
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| 경로 | 내용 |
+| --- | --- |
+| `src/app` | 페이지와 API 라우트 |
+| `src/components` | 화면 컴포넌트 |
+| `src/lib` | 데이터, 인증, 수집 및 처리 로직 |
+| `collector` | 수집기 코드 |
+| `scripts` | 운영 및 개발 스크립트 |
+| `docs` | 설계, 운영, 조사 문서 |
 
-## Learn More
+## 문서
 
-To learn more about Next.js, take a look at the following resources:
+[문서 안내](docs/README.md)에서 용도와 기능별로 찾을 수 있습니다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+실행 명령과 의존성은 [`package.json`](package.json)을 참조하세요. 환경 변수는 로컬 `.env.local`에서 관리합니다.

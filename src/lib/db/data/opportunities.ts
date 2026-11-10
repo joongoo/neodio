@@ -2,7 +2,7 @@ import { ContentRecoveryOpportunity, RobotsTxtOpportunity } from "../types";
 
 // Matches Figma "Opportunity Detail - Technical Diagnostic (Template B,
 // Merged)" (node 646:14937) — robots.txt is our own site's file, fetched
-// directly, no 3rd-party dependency (neodigm_p0_scope.md §2).
+// directly, no 3rd-party dependency (docs/product/p0-scope-spec.md §2).
 export const robotsTxtOpportunityByOrg: Record<string, RobotsTxtOpportunity> = {
   neodigm: {
     title: "robots.txt로 차단된 트래픽",

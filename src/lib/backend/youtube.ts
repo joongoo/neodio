@@ -1,7 +1,7 @@
 import type { YoutubeVideoMeta } from "@/lib/db/types";
 
 // YouTube 채널/영상 식별 — AIO 인용 판정의 기준은 도메인(youtube.com)이
-// 아니라 "채널 ID"다(docs/youtube-aio-tracker-plan.md §1). 인용 링크에서
+// 아니라 "채널 ID"다(docs/features/video/youtube-tracking-spec.md §1). 인용 링크에서
 // 영상 ID를 뽑고, 영상 → 채널 ID를 조회해 브랜드에 등록된 채널과 대조한다.
 //
 // YOUTUBE_API_KEY가 있으면 공식 Data API(v3)를 쓰고, 없으면 공개 페이지

@@ -1,11 +1,11 @@
 import { GscConnection } from "../types";
 
-// Matches Figma "Manage Connections" GSC tab (neodigm_screens_documentation.md
+// Matches Figma "Manage Connections" GSC tab (docs/product/screen-spec.md
 // §23) — the wireframe only shows the "connected" state, no OAuth flow UI.
 // Keyed by brandId (not org) — each tracked brand connects its own GSC
 // property, so a single org-wide row can't represent more than one brand.
 // Mock now so the shape (fields, stats) is already right when real GSC OAuth
-// lands — see neodigm_p0_scope.md's GSC row.
+// lands — see docs/product/p0-scope-spec.md's GSC row.
 export const gscConnectionByBrand: Record<string, GscConnection> = {
   "brand-neodigm": {
     brandId: "brand-neodigm",

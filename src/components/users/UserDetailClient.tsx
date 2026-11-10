@@ -128,6 +128,28 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
         </Card>
       )}
 
+      {user.can.assignOrg && addableOrgs.length > 0 && (
+        <Card className="flex flex-col gap-3">
+          <h2 className="text-base font-bold text-neutral-900">조직 할당</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={addOrg} onChange={(e) => setAddOrg(e.target.value)} className="h-10 min-w-[200px] rounded-md border border-neutral-300 px-3 text-sm">
+              <option value="">조직 선택</option>
+              {addableOrgs.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+            <select value={addRole} onChange={(e) => setAddRole(e.target.value as "admin" | "viewer")} className="h-10 rounded-md border border-neutral-300 px-3 text-sm">
+              <option value="viewer">viewer</option>
+              <option value="admin">admin</option>
+            </select>
+            <Button variant="primary" disabled={busy || !addOrg} onClick={async () => { if (await run({ action: "setMembership", orgId: addOrg, role: addRole }, "조직에 할당했어요. 이어서 브랜드를 할당해 주세요.")) setAddOrg(""); }}>
+              조직에 할당
+            </Button>
+          </div>
+          <p className="text-[11px] text-neutral-400">조직에 할당한 뒤 볼 수 있는 브랜드를 지정하면 화면이 열려요.</p>
+        </Card>
+      )}
+
       <div className="flex flex-col gap-3">
         <h2 className="text-base font-bold text-neutral-900">소속 · 브랜드</h2>
         {user.memberships.length === 0 && <Card className="text-sm text-neutral-500">아직 소속된 조직이 없어요(할당 대기).</Card>}
@@ -254,28 +276,6 @@ export function UserDetailClient({ initial, currentUserId }: { initial: UserDeta
           </ul>
         )}
       </Card>
-
-      {user.can.assignOrg && addableOrgs.length > 0 && (
-        <Card className="flex flex-col gap-3">
-          <h2 className="text-base font-bold text-neutral-900">조직 할당</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={addOrg} onChange={(e) => setAddOrg(e.target.value)} className="h-10 min-w-[200px] rounded-md border border-neutral-300 px-3 text-sm">
-              <option value="">조직 선택</option>
-              {addableOrgs.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}</option>
-              ))}
-            </select>
-            <select value={addRole} onChange={(e) => setAddRole(e.target.value as "admin" | "viewer")} className="h-10 rounded-md border border-neutral-300 px-3 text-sm">
-              <option value="viewer">viewer</option>
-              <option value="admin">admin</option>
-            </select>
-            <Button variant="primary" disabled={busy || !addOrg} onClick={async () => { if (await run({ action: "setMembership", orgId: addOrg, role: addRole }, "조직에 할당했어요. 이어서 브랜드를 할당해 주세요.")) setAddOrg(""); }}>
-              조직에 할당
-            </Button>
-          </div>
-          <p className="text-[11px] text-neutral-400">조직에 할당한 뒤 볼 수 있는 브랜드를 지정하면 화면이 열려요.</p>
-        </Card>
-      )}
     </div>
   );
 }
