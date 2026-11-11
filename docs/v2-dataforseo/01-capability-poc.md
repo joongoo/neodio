@@ -178,11 +178,11 @@ DataForSEO가 idempotency key를 보장한다고 확인되기 전에는 네트�
 
 | 단계 | 실제 API 사용 예산 상한 |
 | --- | ---: |
-| Stage A | USD 10 |
-| Stage B | USD 50 |
-| 초기 PoC 합계 | USD 60 |
+| Stage A | 무료 크레딧 USD 1 |
+| Stage B | 유료 USD 20 |
+| 초기 PoC 합계 | USD 21(무료 USD 1 + 유료 USD 20) |
 
-DataForSEO 선충전 금액과 실제 사용 예산은 별도로 관리한다. 각 Stage 실행 전에 공식 USD 단가, 예상 요청량, priority·유료 옵션으로 사전 견적하고 실제 task `cost`를 상한에서 차감한다. 예산 초과가 예상되는 표본·제품·옵션 확대는 실행 전에 별도 승인을 받는다.
+DataForSEO 선충전 금액과 실제 API 사용 예산은 별도로 관리한다. Stage A는 무료 크레딧 안에서 검증 가능한 범위를 우선하며, 필요하면 테스트 프롬프트 수를 조정한다. Stage B는 기존 검증 목표를 유지하되 실제 호출량을 유료 USD 20 안에서 설계한다. 각 Stage 실행 전에 공식 USD 단가, 예상 요청량, priority·유료 옵션으로 사전 견적하고 실제 task `cost`를 해당 예산에서 차감한다. 예산 초과가 예상되면 추가 결제 없이 사전 승인을 받는다.
 
 ## 9. Stage A 정량 판정표
 
