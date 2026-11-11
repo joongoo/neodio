@@ -91,13 +91,14 @@ const NAV: NavGroup[] = [
       { label: "브랜드 설정", href: "/brands-management" },
       { label: "변경 이력", href: "/change-history" },
       { label: "유저 관리", href: "/users" },
+      { label: "DataForSEO PoC", href: "/dataforseo-poc" },
     ],
   },
   { label: "도움말 및 학습", href: "/help", icon: HelpCircle },
 ];
 
 // 조직·브랜드와 무관한 화면 — 이것들만 주소 앞에 /{조직}/{브랜드}를 붙이지 않는다.
-const GLOBAL_HREFS = new Set(["/organizations", "/users", "/help"]);
+const GLOBAL_HREFS = new Set(["/organizations", "/users", "/dataforseo-poc", "/help"]);
 
 /** 메뉴 경로 → 실제 주소. base = "/{조직}/{브랜드}" (AppShell이 넘긴다) */
 function resolveHref(href: string, base: string): string {
@@ -106,7 +107,7 @@ function resolveHref(href: string, base: string): string {
 }
 
 // 유저 관리는 직원·오너·admin에게만 보인다(유저/viewer와 로그인이 꺼진 상태에서는 숨김).
-export function Sidebar({ base, showUsers = false }: { base: string; showUsers?: boolean }) {
+export function Sidebar({ base, showUsers = false, showDataForSeoPoc = false }: { base: string; showUsers?: boolean; showDataForSeoPoc?: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -116,7 +117,7 @@ export function Sidebar({ base, showUsers = false }: { base: string; showUsers?:
         return (
           <div key={item.label}>
             <NavRow icon={item.icon} label={item.label} href={href} active={pathname === href} />
-            {item.children?.filter((child) => child.href !== "/users" || showUsers).map((child) => {
+            {item.children?.filter((child) => (child.href !== "/users" || showUsers) && (child.href !== "/dataforseo-poc" || showDataForSeoPoc)).map((child) => {
               const childHref = resolveHref(child.href, base);
               return (
                 // 하위 경로(예: …/youtube-aio/<키워드>)에서도 메뉴가 선택돼 보이도록.
