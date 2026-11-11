@@ -1,6 +1,6 @@
 # Neodio V2 — DataForSEO Stage A PoC 보고서
 
-> 상태: 구현 완료, 실제 API 검증 대기
+> 상태: 최초 실제 API 검증 완료, 추가 Stage A 표본 승인 대기
 >
 > 범위: Google AIO·AI Mode 독립 PoC
 >
@@ -52,28 +52,53 @@ Stage A 무료 크레딧 USD 1의 0.24%에 해당한다. Priority, Live, `calcul
 
 ## 5. 실제 결과
 
-API 인증정보가 실행 환경에 준비되면 아래 표를 실제 응답으로 갱신한다.
+실행 시각은 2026-11-11 17:49:50~17:51:15 KST이며, 제출부터 두 결과 정규화 완료까지 85.416초가 걸렸다. 실행 ID는 `stage-a-2026-11-11T08-49-50-425Z`이다.
 
 | 항목 | Google AIO | Google AI Mode |
 | --- | --- | --- |
-| Provider Task ID | 대기 | 대기 |
-| 작업 상태 | 대기 | 대기 |
-| AI 답변 상태 | 대기 | 대기 |
-| 한국어 본문 | 대기 | 대기 |
-| 인용 URL 수 | 대기 | 대기 |
-| 실제 비용 | 대기 | 대기 |
-| 누락·실패 관찰 | 대기 | 대기 |
+| Provider Task ID | `11110849-3112-0066-0000-a0b729b50603` | `11110849-3112-0066-0000-7b333c7d6779` |
+| 제출/결과 상태 | `20100 Task Created` / `20000 Ok` | `20100 Task Created` / `20000 Ok` |
+| 응답 표면 | `se_type=organic`, 기대값 일치 | `se_type=ai_mode`, 기대값 일치 |
+| AI 답변 상태 | `present` | `present` |
+| 한국어 본문 | 확인, 2,746자 | 확인, 1,919자 |
+| 고유 인용 URL | 11개 | 3개 |
+| 인용 원본 발생 | 36건: Markdown 8, reference 24, link 4 | 9건: reference 9 |
+| 실제 비용 | USD 0.0012 | USD 0.0012 |
+| 누락·실패 관찰 | Provider 실패 없음, AIO 부재 사례는 이번 질의에서 확인하지 못함 | Provider 실패 없음, 일반 link·Markdown link 없이 reference만 반환 |
+
+합계 실제 비용은 **USD 0.0024**로 사전 최대 예상과 일치한다. Stage A 무료 크레딧 USD 1 기준 잔여 사용 가능 예산은 USD 0.9976이다. Task GET 결과의 `cost`도 각각 USD 0.0012로 표시되지만 POST와 별도 청구가 아니라 동일 Task 비용이다.
+
+### 5.1 응답 구조 확인
+
+- 두 표면 모두 최상위 AI 항목은 `type=ai_overview`이고 본문은 Markdown으로 제공됐다.
+- AIO 결과의 전체 `item_types`는 `ai_overview`, `organic`, `related_searches`였다. 정규화기는 `ai_overview` 하위만 본문·인용 대상으로 처리해 일반 Organic SERP 결과가 AI 인용에 섞이지 않게 했다.
+- AI Mode의 `item_types`는 `ai_overview` 하나였다.
+- AIO에서는 같은 URL이 Markdown, reference, link에 중복 등장했다. 고유 URL에는 모든 `origins`를 합치고, `citationOccurrences`에는 36개 원본 발생의 유형·Provider type·JSON 경로·순서를 그대로 남겼다.
+- AI Mode에서는 3개 고유 URL이 9개 reference 위치에 반복됐다. 일반 link로 오인하지 않고 모두 `reference`로 보존했다.
+- 두 응답 모두 요청 질의, `location_code=2410`, `language_code=ko`를 반환했고 본문에서 실제 한글을 확인했다.
+
+### 5.2 원본 보존과 재현
+
+원본과 파생 파일은 `.tmp/dataforseo-stage-a/stage-a-2026-11-11T08-49-50-425Z/`에 보존했다.
+
+| 원본 파일 | SHA-256 |
+| --- | --- |
+| `google_aio-get-latest.json` | `FB18181312F9574F89FD923FA902A5AF5557D131B1794985FA30134906903443` |
+| `google_ai_mode-get-latest.json` | `5BD67CA12AF41596686D0DC4B4AF479D5488BA7E62185AD7F8608094CD371B44` |
+
+`scripts/dataforseo-poc/replay.mjs`로 저장된 POST·GET JSON만 다시 읽어 정규화한 결과, Google AIO와 AI Mode 모두 기존 정규화 JSON과 완전히 일치했다.
 
 ## 6. Stage B 판단
 
-실제 응답 확보 전이므로 Stage B 진행 여부는 아직 판정하지 않는다. 두 표면의 한국어 본문과 인용 구조, 실패·누락 사례, 실제 비용을 채운 뒤 기술 책임자가 다음 항목을 검토한다.
+**현재 Stage B로 진행하지 않는다.** 최초 질의에서 두 표면의 성공 경로, 한국어 본문, 인용 구조, 비용, 재현성은 확인했지만 표본이 한 질의뿐이며 `absent`, Provider 실패, mobile 조건을 검증하지 못했다.
 
-- 응답 구조로 본문과 인용을 안정적으로 재현할 수 있는가
-- AIO 미생성과 Provider 실패를 구분할 수 있는가
-- 한국어·대한민국 조건의 결과 품질이 운영 검증에 충분한가
-- 실제 비용이 공식 예상과 일치하는가
-- 원본 응답만으로 정규화 결과를 다시 생성할 수 있는가
+추가 Stage A로 다음 4개 조건을 두 표면에서 각 1회 검증하는 안을 승인 요청한다.
 
-원본 재현은 `scripts/dataforseo-poc/replay.mjs`가 저장된 POST·GET JSON만 다시 읽어 정규화하고 기존 결과와 완전 일치하는지 검증한다.
+1. 동일 한국어 설명형 질의의 mobile 응답
+2. 한국 시장 상업·추천형 질의
+3. 한국 지역 의도가 강한 질의
+4. AI 답변 미생성 가능성이 높은 희소·탐색형 질의
+
+추가 요청은 4조건 × 2표면 = 8 Task, 최대 USD 0.0096이다. 승인 시 누적 최대 비용은 USD 0.0120으로 무료 크레딧 USD 1의 1.2%다. 현재 최초 실행 잠금은 추가 제출을 차단하고 있으며, 별도 승인 없이는 해제하거나 확장하지 않는다.
 
 승인 전에는 운영 Provider Adapter 통합이나 기존 Collector 교체를 진행하지 않는다.

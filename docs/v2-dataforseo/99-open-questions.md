@@ -30,7 +30,8 @@
 | P6 | 고객 화면에는 파생 분석과 출처 링크만 제공하고 Provider raw JSON·HTML 다운로드는 제공하지 않을까요? | AI 답변 원문·인용 URL·파생 분석·측정 조건·수집 시각·리포트 제공, raw 다운로드 미제공 | 외부 서비스 전 | 승인 |
 | P7 | 조직별 월 예산 초과 시 신규 수집을 연기하되 기존 화면과 보고서는 계속 제공할까요? | 80%·95% 경고, 100% 신규 유료 제출 중단, `budget_deferred`; 기존 데이터와 제출 완료 작업 처리 유지 | Stage B 전 | 승인 |
 | P8 | Stage A와 Stage B의 DataForSEO API 사용 예산은 얼마로 둘까요? | Stage A 무료 크레딧 USD 1, Stage B 유료 USD 20, 합계 USD 21; 선충전 금액 별도 관리, 초과 예상 시 추가 결제 없이 사전 승인 | PoC 실행 전 | 확정 |
-| P9 | 최초 Stage A 실행에 필요한 DataForSEO 인증정보와 임의 실행 토큰을 로컬 `.env.local`에 누가 설정할까요? | 기술 책임자가 `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`, `DATAFORSEO_STAGE_A_TOKEN`, `DATAFORSEO_STAGE_A_ENABLED=true` 설정 | 최초 API 실행 전 | 확인 필요 |
+| P9 | 최초 Stage A 실행에 필요한 DataForSEO 인증정보와 임의 실행 토큰을 로컬 `.env.local`에 누가 설정할까요? | 기술 책임자가 `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`, `DATAFORSEO_STAGE_A_TOKEN`, `DATAFORSEO_STAGE_A_ENABLED=true` 설정 | 최초 API 실행 전 | 설정 완료 |
+| P10 | 최초 성공 경로 확인 후 mobile·상업형·지역형·AI 답변 미생성 후보를 추가 검증할까요? | 4조건 × AIO·AI Mode = 8 Task, 최대 USD 0.0096; 누적 최대 USD 0.0120 | 추가 Stage A 실행 전 | 승인 필요 |
 
 ## 현재 진행을 막지 않는 가정
 
