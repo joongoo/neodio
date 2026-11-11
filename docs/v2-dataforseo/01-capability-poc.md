@@ -127,7 +127,7 @@ Stage A가 통과하기 전에는 Provider 응답을 기준으로 DB 스키마�
 | 정상 결과이나 AI 답변 없음 | succeeded | absent | not_evaluated | not_evaluated |
 | Provider 실패 | failed | unknown | not_evaluated | not_evaluated |
 | 원본 저장 후 정규화 실패 | failed | unknown | not_evaluated | not_evaluated |
-| 잔액·예산으로 연기 | deferred | unknown | not_evaluated | not_evaluated |
+| 잔액·예산으로 연기 | deferred (`budget_deferred`) | unknown | not_evaluated | not_evaluated |
 | 제출 결과 불명확 | submission_unknown | unknown | not_evaluated | not_evaluated |
 
 실패에는 `submission`, `provider`, `result_fetch`, `raw_persist`, `normalization`, `analysis` 단계와 오류 코드를 기록한다. 원본이 저장된 이후 실패는 외부 task를 다시 만들지 않고 해당 내부 단계부터 재처리하는지 확인한다.
@@ -174,6 +174,16 @@ DataForSEO가 idempotency key를 보장한다고 확인되기 전에는 네트�
 
 기본 SERP, AI Mode, 비동기 AIO, HTML·Screenshot과 부가 API 비용은 분리한다. PoC에서는 부가 API의 대량 비용을 만들지 않고 Sandbox 또는 최소 표본으로 지원 범위와 응답 계약만 확인한다.
 
+### 8.1 PoC 예산 상한
+
+| 단계 | 실제 API 사용 예산 상한 |
+| --- | ---: |
+| Stage A | USD 10 |
+| Stage B | USD 50 |
+| 초기 PoC 합계 | USD 60 |
+
+DataForSEO 선충전 금액과 실제 사용 예산은 별도로 관리한다. 각 Stage 실행 전에 공식 USD 단가, 예상 요청량, priority·유료 옵션으로 사전 견적하고 실제 task `cost`를 상한에서 차감한다. 예산 초과가 예상되는 표본·제품·옵션 확대는 실행 전에 별도 승인을 받는다.
+
 ## 9. Stage A 정량 판정표
 
 | 지표 | 계산 | 통과 기준 |
@@ -216,6 +226,8 @@ HTML에 필요한 데이터가 안정적으로 포함되지 않거나 정확도�
 - 최소 4회 연속 주간 실행
 - 기존 Collector와 병행하되 고객 기본 지표는 기존 경로 유지
 - 조직·브랜드별 예산과 비용 대사 적용
+- 월 예산 80%·95% 경고, 100% 신규 유료 제출 중단과 `budget_deferred` 처리를 검증
+- 예산 중단 후에도 이미 제출된 task 처리와 기존 대시보드·보고서 제공이 계속되는지 검증
 - Vercel Cron, Callback, Recovery Cron 사용
 
 ### 11.2 운영 판정표
@@ -252,6 +264,8 @@ PoC 결과에는 다음 증거를 첨부한다.
 - 장애 주입과 Recovery 결과
 - 기존 Collector 대비 차이와 제품 영향
 - 통과·조건부 통과·실패·미검증 결정 기록
+
+고객 제공 결과에는 AI 답변 원문, 인용 URL, 파생 분석, 측정 조건, 수집 시각과 리포트를 포함할 수 있다. Provider raw JSON·HTML 다운로드는 제공하지 않으며, 원본은 내부 감사·재분석용으로만 관리한다.
 
 ## 13. 전환·롤백 게이트
 
