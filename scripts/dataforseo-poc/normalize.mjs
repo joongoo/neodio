@@ -59,21 +59,38 @@ export function normalizeResult({ surface, submission, result }) {
   });
 
   const answer = aiOverview ? answerText(aiOverview) : null;
-  const citations = [];
-  const seen = new Set();
-  let order = 0;
+  const citationOccurrences = [];
+  const citationsByUrl = new Map();
 
   const addCitation = (rawUrl, node, path, origin) => {
     const url = normalizeUrl(rawUrl);
-    if (!url || seen.has(url)) return;
-    seen.add(url);
-    citations.push({
-      order: ++order,
+    if (!url) return;
+    const occurrence = {
+      order: citationOccurrences.length + 1,
       url,
       source: cleanText(node?.source) ?? cleanText(node?.title),
       domain: cleanText(node?.domain),
       origin,
+      providerType: cleanText(node?.type),
       providerPath: path,
+    };
+    citationOccurrences.push(occurrence);
+    const existing = citationsByUrl.get(url);
+    if (existing) {
+      if (!existing.origins.includes(origin)) existing.origins.push(origin);
+      if (occurrence.providerType && !existing.providerTypes.includes(occurrence.providerType)) existing.providerTypes.push(occurrence.providerType);
+      existing.occurrenceOrders.push(occurrence.order);
+      return;
+    }
+    citationsByUrl.set(url, {
+      order: citationsByUrl.size + 1,
+      url,
+      source: occurrence.source,
+      domain: occurrence.domain,
+      origins: [origin],
+      providerTypes: occurrence.providerType ? [occurrence.providerType] : [],
+      firstProviderPath: path,
+      occurrenceOrders: [occurrence.order],
     });
   };
 
@@ -87,17 +104,24 @@ export function normalizeResult({ surface, submission, result }) {
     });
   }
 
+  const responseSearchType = cleanText(resultTask?.data?.se_type);
+  const expectedSearchType = surface === "google_aio" ? "organic" : surface === "google_ai_mode" ? "ai_mode" : null;
+
   return {
     surface,
     taskStatus: providerSucceeded ? "succeeded" : isTaskFailure(resultTask) ? "failed" : "unknown",
     aiAnswerStatus: providerSucceeded ? (aiOverview ? "present" : "absent") : "unknown",
     answer,
-    citations,
+    citations: [...citationsByUrl.values()],
+    citationOccurrences,
     providerTaskId: submittedTask?.id ?? resultTask?.id ?? null,
     providerStatusCode: resultTask?.status_code ?? submittedTask?.status_code ?? null,
     providerStatusMessage: resultTask?.status_message ?? submittedTask?.status_message ?? null,
     actualCostUsd: Number(submittedTask?.cost ?? 0),
     resultCostUsd: Number(resultTask?.cost ?? 0),
     resultItemTypes: resultTask?.result?.flatMap((entry) => entry?.item_types ?? []) ?? [],
+    responseSearchType,
+    expectedSearchType,
+    responseSurfaceMatched: expectedSearchType === null ? null : responseSearchType === expectedSearchType,
   };
 }

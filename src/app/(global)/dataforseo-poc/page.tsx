@@ -12,5 +12,5 @@ export default async function DataForSeoPocPage() {
     if (!principal || !isStaff(principal)) notFound();
   }
   const readiness = stageAReadiness();
-  return <DataForSeoPocClient plan={publicStageAPlan()} enabled={readiness.enabled} credentialsReady={readiness.credentialsReady} />;
+  return <DataForSeoPocClient plan={publicStageAPlan()} enabled={readiness.enabled} credentialsReady={readiness.credentialsReady} accessTokenReady={readiness.accessTokenReady} />;
 }
