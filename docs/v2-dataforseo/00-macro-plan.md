@@ -103,7 +103,7 @@ V2의 핵심 가치는 API 연결 자체가 아니라 다음 흐름을 한 제�
 3. **부가 데이터 비용**: Labs, Keywords Data, Google Trends, YouTube, Backlinks, Content Analysis, AI Optimization.
 4. **운영 비용**: 재시도 중 실제 재제출, 수동 즉시 수집, PoC·품질 감사 표본.
 
-조직별로 월 예산, 경고선, 하드 제한 여부를 두고 `잔액 부족`, `예산 연기`, `Provider 과금 오류`, `예상-실제 차이`, `중복 제출 의심`을 구분한다. 잔액 부족이나 예산 초과는 작업을 `deferred`로 남기며 실패나 미노출로 집계하지 않는다. 공식 단가가 바뀌어도 과거 비용을 재계산하지 않도록 가격표 기준 시각과 실제 `cost`를 함께 보존한다.
+조직별 월 예산 사용률이 80%와 95%에 도달하면 경고하고, 100%에서는 신규 유료 task 제출을 중단한다. 이 작업은 `task_state=deferred`, `deferred_reason=budget_deferred`로 남기며 실패나 미노출로 집계하지 않는다. 이미 제출된 작업의 결과 회수·원본 저장·분석은 계속한다. 기존 대시보드·보고서·과거 데이터도 계속 제공하고 마지막 정상 수집 시각과 갱신 지연 상태를 표시한다. `잔액 부족`, `Provider 과금 오류`, `예상-실제 차이`, `중복 제출 의심`은 예산 초과와 별도 사유로 구분한다. 공식 단가가 바뀌어도 과거 비용을 재계산하지 않도록 가격표 기준 시각과 실제 `cost`를 함께 보존한다.
 
 ## 3. 전환 원칙
 
@@ -637,7 +637,7 @@ DataForSEO의 공개 법률 FAQ는 API 결과를 가공한 분석·보고서·�
 - 계약 종료 후 보유 데이터와 재처리 권한
 - DataForSEO 약관 변경과 각 검색 엔진 약관 변경의 정기 검토 책임자
 
-계약 검토가 끝나기 전에는 Provider 원본 payload·HTML을 고객에게 직접 다운로드시키거나 Neodio API를 DataForSEO의 대체 raw feed로 제공하지 않는다. 고객 화면은 Neodio가 정규화·분석한 결과와 필요한 출처 링크를 제공한다. 참고 문서는 [DataForSEO 법률 FAQ](https://dataforseo.com/help-center/quick-answers-to-frequently-asked-legal-questions)와 [이용약관](https://dataforseo.com/terms-of-service)이며, 최종 판단은 출시 시점의 계약 문서와 필요 시 서면 확인을 기준으로 한다.
+Provider raw JSON·HTML 다운로드와 이를 대체하는 raw feed는 고객에게 제공하지 않는다. 고객에게는 AI 답변 원문, 인용 URL, 파생 분석, 측정 조건, 수집 시각과 리포트를 제공한다. Provider 원본은 접근을 통제해 내부 감사·재분석용으로 관리하고, 고객 제공 범위는 DataForSEO 계약 조건을 준수한다. 참고 문서는 [DataForSEO 법률 FAQ](https://dataforseo.com/help-center/quick-answers-to-frequently-asked-legal-questions)와 [이용약관](https://dataforseo.com/terms-of-service)이며, 최종 판단은 출시 시점의 계약 문서와 필요 시 서면 확인을 기준으로 한다.
 
 ## 10. 단계별 전환
 
@@ -652,6 +652,7 @@ DataForSEO의 공개 법률 FAQ는 API 결과를 가공한 분석·보고서·�
 - 네이버 통합검색 AI 브리핑이 있는 대표 질의로 Naver HTML의 본문·출처·노출 상태를 확인하고 기존 파서의 재사용률을 측정한다.
 - 네이버 통합검색 AI 브리핑과 별도 AI 검색 탭의 지원 여부를 구분한다.
 - DataForSEO 결과의 내부 저장, 가공 분석, 고객 대시보드·리포트·내보내기 범위를 계약 관점에서 확인한다.
+- Stage A 유료 API 사용 예산은 USD 10을 넘지 않는다. 실행 전 공식 단가와 예상 요청량으로 사전 견적하고, 상한 초과가 예상되는 옵션·표본 확대는 별도 승인을 받는다.
 
 **정량 통과 게이트의 초기 기준**
 
@@ -679,6 +680,7 @@ DataForSEO의 공개 법률 FAQ는 API 결과를 가공한 분석·보고서·�
 ### Phase 2 — 500~1,000개 병행 운영 검증
 
 - 500~1,000개 프롬프트를 실제 주간 조건으로 최소 4회 연속 수집한다.
+- Stage B 유료 API 사용 예산은 USD 50을 넘지 않는다. Stage A와 합친 초기 PoC 실제 사용 예산 상한은 USD 60이며 DataForSEO 선충전 잔액과 별도로 관리한다.
 - 기존 Collector와 DataForSEO를 병행하되 고객 지표의 기본 원천은 기존 경로로 유지하고 비교 결과만 내부에 표시한다.
 - callback 누락·중복, Vercel timeout, Provider 지연, 잔액 부족, 일시 장애, 응답 저장 실패를 의도적으로 재현한다.
 - 실제 task 비용, 처리 시간 p50/p95, 완료율, 미복구 작업, 중복 과금 의심 건을 주차별로 대사한다.
@@ -778,7 +780,6 @@ Collector 제거의 최종 조건은 다음과 같다.
 - AI Optimization의 한국 시장 활용 가능 범위
 - Standard normal/high와 Live의 메뉴별 사용 기준
 - 원본 JSON·HTML·Screenshot 보관 기간
-- DataForSEO와 검색 엔진 약관상 raw·near-raw 데이터의 고객 표시·내보내기 범위
 - 전환 전후 시계열을 한 차트에 보여주는 방식
 - Provider 비용을 조직별로 노출할지 운영자만 볼지
 - DataForSEO Naver HTML의 AI 브리핑 포함률과 기존 파서 재사용률, 별도 AI 검색 탭의 지원 여부
