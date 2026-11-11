@@ -29,7 +29,7 @@
 | P5 | 네이버 AI 브리핑은 Google 핵심 전환과 분리된 후속 검증 후보로 유지할까요? | 유지 | PoC 시작 전 | 미정 |
 | P6 | 고객 화면에는 파생 분석과 출처 링크만 제공하고 Provider raw JSON·HTML 다운로드는 제공하지 않을까요? | AI 답변 원문·인용 URL·파생 분석·측정 조건·수집 시각·리포트 제공, raw 다운로드 미제공 | 외부 서비스 전 | 승인 |
 | P7 | 조직별 월 예산 초과 시 신규 수집을 연기하되 기존 화면과 보고서는 계속 제공할까요? | 80%·95% 경고, 100% 신규 유료 제출 중단, `budget_deferred`; 기존 데이터와 제출 완료 작업 처리 유지 | Stage B 전 | 승인 |
-| P8 | Stage A와 Stage B의 DataForSEO 유료 호출 예산 상한은 얼마로 둘까요? | Stage A USD 10, Stage B USD 50, 합계 USD 60; 선충전 금액 별도 관리 | 유료 PoC 전 | 조건부 승인 |
+| P8 | Stage A와 Stage B의 DataForSEO API 사용 예산은 얼마로 둘까요? | Stage A 무료 크레딧 USD 1, Stage B 유료 USD 20, 합계 USD 21; 선충전 금액 별도 관리, 초과 예상 시 추가 결제 없이 사전 승인 | PoC 실행 전 | 확정 |
 
 ## 현재 진행을 막지 않는 가정
 
