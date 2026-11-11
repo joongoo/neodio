@@ -22,10 +22,9 @@ Stage A 화면은 `/dataforseo-poc`이다. 화면에서 요청 내용 검토를 
 DATAFORSEO_STAGE_A_ENABLED=true
 DATAFORSEO_LOGIN=...
 DATAFORSEO_PASSWORD=...
-DATAFORSEO_STAGE_A_TOKEN=충분히-긴-임의-실행-토큰
 ```
 
-원본 파일 보존 조건 때문에 Stage A UI 실행은 로컬 환경으로 제한한다. 인증 기능을 사용하는 환경에서는 staff 권한만 화면과 API에 접근할 수 있다. 인증 기능 사용 여부와 관계없이 서버 환경변수와 화면 입력값의 `DATAFORSEO_STAGE_A_TOKEN`이 일치해야 한다.
+원본 파일 보존 조건 때문에 Stage A UI 실행은 로컬 환경으로 제한한다. 인증 기능을 사용하는 환경에서는 staff 권한만 화면과 API에 접근할 수 있다. 별도 실행 토큰은 사용하지 않는다.
 
 서버는 `.tmp/dataforseo-stage-a/first-execution-lock.json`을 원자적으로 생성해 최초 2건을 한 번만 예약한다. 프로세스 재시작이나 버튼 재클릭으로 추가 유료 Task가 제출되지 않는다. 일부 제출이 실패해도 잠금을 자동 해제하거나 재제출하지 않는다.
 

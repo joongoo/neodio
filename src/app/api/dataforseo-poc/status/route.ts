@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardApi } from "@/lib/backend/auth/guard";
-import { checkStageA, verifyStageAAccessToken } from "../../../../../scripts/dataforseo-poc/service.mjs";
+import { checkStageA } from "../../../../../scripts/dataforseo-poc/service.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -8,9 +8,6 @@ export const maxDuration = 30;
 export async function GET(request: NextRequest) {
   const denied = await guardApi("staff");
   if (denied) return denied;
-  if (!verifyStageAAccessToken(request.headers.get("x-neodio-stage-a-token"))) {
-    return NextResponse.json({ error: "Stage A 실행 토큰이 올바르지 않습니다." }, { status: 403 });
-  }
   const runId = request.nextUrl.searchParams.get("runId") ?? "";
   if (!runId) return NextResponse.json({ error: "runId가 필요합니다." }, { status: 400 });
   try {

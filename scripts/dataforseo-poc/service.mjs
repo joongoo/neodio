@@ -1,5 +1,5 @@
-import { mkdir, open, readFile, writeFile } from "node:fs/promises";
-import { timingSafeEqual } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, open, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assertTaskAccepted, DataForSeoClient, firstTask, isTaskComplete, isTaskFailure } from "./client.mjs";
 import { buildTaskPayload, STAGE_A_PLAN } from "./config.mjs";
@@ -37,17 +37,26 @@ export function stageAReadiness() {
   return {
     enabled: process.env.DATAFORSEO_STAGE_A_ENABLED === "true",
     credentialsReady: Boolean(auth.login && auth.password),
-    accessTokenReady: Boolean(process.env.DATAFORSEO_STAGE_A_TOKEN),
+    executionLocked: existsSync(EXECUTION_LOCK),
     localOnly: true,
   };
 }
 
-export function verifyStageAAccessToken(candidate) {
-  const expected = process.env.DATAFORSEO_STAGE_A_TOKEN;
-  if (!expected || typeof candidate !== "string") return false;
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  const candidateBuffer = Buffer.from(candidate, "utf8");
-  return expectedBuffer.length === candidateBuffer.length && timingSafeEqual(expectedBuffer, candidateBuffer);
+export async function getLatestStageARun() {
+  try {
+    const entries = await readdir(ROOT, { withFileTypes: true });
+    const runIds = entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("stage-a-")).map((entry) => entry.name).sort().reverse();
+    for (const id of runIds) {
+      try {
+        return await loadJson(path.join(runDirectory(id), "state.json"));
+      } catch {
+        // 불완전한 디렉터리는 건너뛰고 다음 실행을 확인한다.
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function reserveFirstExecution(query) {
