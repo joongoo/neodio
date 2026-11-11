@@ -1,12 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, writeFile } from "node:fs/promises";
+import { timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { assertTaskAccepted, DataForSeoClient, firstTask, isTaskComplete, isTaskFailure } from "./client.mjs";
 import { buildTaskPayload, STAGE_A_PLAN } from "./config.mjs";
 import { normalizeResult } from "./normalize.mjs";
 
 const ROOT = path.resolve(".tmp", "dataforseo-stage-a");
-const ACTIVE_WINDOW_MS = 60_000;
-let lastStartedAt = 0;
+const EXECUTION_LOCK = path.join(ROOT, "first-execution-lock.json");
 
 function runId() {
   return `stage-a-${new Date().toISOString().replaceAll(":", "-").replace(".", "-")}`;
@@ -37,8 +37,37 @@ export function stageAReadiness() {
   return {
     enabled: process.env.DATAFORSEO_STAGE_A_ENABLED === "true",
     credentialsReady: Boolean(auth.login && auth.password),
+    accessTokenReady: Boolean(process.env.DATAFORSEO_STAGE_A_TOKEN),
     localOnly: true,
   };
+}
+
+export function verifyStageAAccessToken(candidate) {
+  const expected = process.env.DATAFORSEO_STAGE_A_TOKEN;
+  if (!expected || typeof candidate !== "string") return false;
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const candidateBuffer = Buffer.from(candidate, "utf8");
+  return expectedBuffer.length === candidateBuffer.length && timingSafeEqual(expectedBuffer, candidateBuffer);
+}
+
+async function reserveFirstExecution(query) {
+  await mkdir(ROOT, { recursive: true });
+  let handle;
+  try {
+    handle = await open(EXECUTION_LOCK, "wx");
+    await handle.writeFile(`${JSON.stringify({
+      reservedAt: new Date().toISOString(),
+      query,
+      reservedTaskCount: STAGE_A_PLAN.tasks.length,
+      reservedMaxCostUsd: STAGE_A_PLAN.estimatedMaxCostUsd,
+      stageBudgetUsd: STAGE_A_PLAN.stageBudgetUsd,
+    }, null, 2)}\n`, "utf8");
+  } catch (error) {
+    if (error?.code === "EEXIST") throw new Error("최초 Stage A 2건이 이미 예약 또는 실행되어 추가 제출을 차단했습니다.");
+    throw error;
+  } finally {
+    await handle?.close();
+  }
 }
 
 export function publicStageAPlan() {
@@ -59,8 +88,10 @@ export async function startStageA(query) {
   if (!readiness.enabled) throw new Error("DATAFORSEO_STAGE_A_ENABLED=true 설정 후 실행할 수 있습니다.");
   if (!readiness.credentialsReady) throw new Error("DataForSEO API 인증정보가 설정되지 않았습니다.");
   if (process.env.VERCEL) throw new Error("Stage A 원본 파일 보존을 위해 로컬 개발 환경에서만 실행할 수 있습니다.");
-  if (Date.now() - lastStartedAt < ACTIVE_WINDOW_MS) throw new Error("중복 제출 방지를 위해 1분 후 다시 시도해주세요.");
-  lastStartedAt = Date.now();
+  if (STAGE_A_PLAN.tasks.length !== 2 || STAGE_A_PLAN.estimatedMaxCostUsd > STAGE_A_PLAN.stageBudgetUsd) {
+    throw new Error("Stage A 요청 수 또는 예산 안전장치가 충족되지 않았습니다.");
+  }
+  await reserveFirstExecution(query);
 
   const id = runId();
   const directory = runDirectory(id);
@@ -96,8 +127,8 @@ export async function startStageA(query) {
     }
     state.status = "queued";
   } catch (error) {
-    state.status = "failed";
-    state.error = error instanceof Error ? error.message : String(error);
+    state.status = state.tasks.length ? "queued" : "failed";
+    state.submissionError = error instanceof Error ? error.message : String(error);
   }
   await saveJson(path.join(directory, "state.json"), state);
   return state;
@@ -113,7 +144,7 @@ export async function checkStageA(id) {
   const client = new DataForSeoClient(credentials());
   const normalized = [];
   let pending = false;
-  let failed = false;
+  let failed = state.tasks.length !== STAGE_A_PLAN.tasks.length || Boolean(state.submissionError);
 
   for (const taskState of state.tasks) {
     const task = STAGE_A_PLAN.tasks.find((candidate) => candidate.surface === taskState.surface);

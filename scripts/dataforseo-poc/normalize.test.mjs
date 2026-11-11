@@ -26,6 +26,7 @@ test("AI 본문과 중복 제거된 인용 순서를 정규화한다", () => {
       id: "task-1",
       status_code: 20000,
       status_message: "Ok.",
+      data: { se_type: "organic" },
       result: [{
         item_types: ["ai_overview"],
         items: [{
@@ -50,10 +51,43 @@ test("AI 본문과 중복 제거된 인용 순서를 정규화한다", () => {
   assert.equal(normalized.answer, "한국어 답변 [예시](https://example.com/a)");
   assert.equal(normalized.providerTaskId, "task-1");
   assert.equal(normalized.actualCostUsd, 0.0012);
-  assert.deepEqual(normalized.citations.map(({ order, url }) => ({ order, url })), [
-    { order: 1, url: "https://example.com/a" },
-    { order: 2, url: "https://example.org/b" },
+  assert.deepEqual(normalized.citations.map(({ order, url, origins }) => ({ order, url, origins })), [
+    { order: 1, url: "https://example.com/a", origins: ["markdown", "reference"] },
+    { order: 2, url: "https://example.org/b", origins: ["reference"] },
   ]);
+  assert.deepEqual(normalized.citationOccurrences.map(({ order, origin }) => ({ order, origin })), [
+    { order: 1, origin: "markdown" },
+    { order: 2, origin: "reference" },
+    { order: 3, origin: "reference" },
+  ]);
+  assert.equal(normalized.responseSearchType, "organic");
+  assert.equal(normalized.responseSurfaceMatched, true);
+});
+
+test("일반 링크와 AI reference의 Provider 원본 유형을 별도로 보존한다", () => {
+  const normalized = normalizeResult({
+    surface: "google_ai_mode",
+    submission: { tasks: [{ id: "task-4", status_code: 20100, cost: 0.0012 }] },
+    result: {
+      status_code: 20000,
+      tasks: [{
+        id: "task-4",
+        status_code: 20000,
+        data: { se_type: "ai_mode" },
+        result: [{ items: [{
+          type: "ai_overview",
+          text: "답변",
+          links: [{ type: "link_element", url: "https://example.com/general" }],
+          references: [{ type: "ai_overview_reference", url: "https://example.com/cited" }],
+        }] }],
+      }],
+    },
+  });
+  assert.deepEqual(normalized.citationOccurrences.map(({ origin, providerType }) => ({ origin, providerType })), [
+    { origin: "link", providerType: "link_element" },
+    { origin: "reference", providerType: "ai_overview_reference" },
+  ]);
+  assert.equal(normalized.responseSurfaceMatched, true);
 });
 
 test("성공 응답에 AI 요소가 없으면 absent로 구분한다", () => {

@@ -22,8 +22,9 @@ type Run = {
   results?: { surface: string; aiAnswerStatus: string; answer: string | null; citations: { url: string }[] }[];
 };
 
-export function DataForSeoPocClient({ plan, enabled, credentialsReady }: { plan: Plan; enabled: boolean; credentialsReady: boolean }) {
+export function DataForSeoPocClient({ plan, enabled, credentialsReady, accessTokenReady }: { plan: Plan; enabled: boolean; credentialsReady: boolean; accessTokenReady: boolean }) {
   const [query, setQuery] = useState(plan.query);
+  const [accessToken, setAccessToken] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,19 +33,19 @@ export function DataForSeoPocClient({ plan, enabled, credentialsReady }: { plan:
   useEffect(() => {
     if (!run || !busy) return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(`/api/dataforseo-poc/status?runId=${encodeURIComponent(run.runId)}`, { cache: "no-store" });
+      const response = await fetch(`/api/dataforseo-poc/status?runId=${encodeURIComponent(run.runId)}`, { cache: "no-store", headers: { "x-neodio-stage-a-token": accessToken } });
       const data = (await response.json().catch(() => ({}))) as { run?: Run; error?: string };
       if (data.run) setRun(data.run);
       if (!response.ok) setError(data.error ?? `상태 조회 오류 ${response.status}`);
     }, 15_000);
     return () => window.clearInterval(timer);
-  }, [run, busy]);
+  }, [run, busy, accessToken]);
 
   async function submit() {
     setError(null);
     const response = await fetch("/api/dataforseo-poc/start", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-neodio-stage-a-token": accessToken },
       body: JSON.stringify({
         query,
         confirmation: "SUBMIT_STAGE_A_2_TASKS",
@@ -74,17 +75,20 @@ export function DataForSeoPocClient({ plan, enabled, credentialsReady }: { plan:
         </ul>
         <label className="mt-5 block text-sm font-medium text-neutral-800" htmlFor="stage-a-query">테스트 질의</label>
         <textarea id="stage-a-query" value={query} onChange={(event) => setQuery(event.target.value)} disabled={busy} maxLength={700} className="mt-2 min-h-24 w-full rounded-lg border border-neutral-300 p-3 text-sm" />
+        <label className="mt-4 block text-sm font-medium text-neutral-800" htmlFor="stage-a-token">Stage A 실행 토큰</label>
+        <input id="stage-a-token" type="password" autoComplete="off" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} disabled={busy} className="mt-2 w-full rounded-lg border border-neutral-300 p-3 text-sm" />
 
-        {!enabled || !credentialsReady ? (
+        {!enabled || !credentialsReady || !accessTokenReady ? (
           <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
             {!enabled ? "DATAFORSEO_STAGE_A_ENABLED=true 설정이 필요합니다. " : ""}
             {!credentialsReady ? "DATAFORSEO_LOGIN·DATAFORSEO_PASSWORD 설정이 필요합니다." : ""}
+            {!accessTokenReady ? " DATAFORSEO_STAGE_A_TOKEN 설정이 필요합니다." : ""}
           </p>
         ) : null}
 
         <div className="mt-5 flex flex-wrap gap-2">
           {!reviewing ? (
-            <button type="button" onClick={() => setReviewing(true)} disabled={!enabled || !credentialsReady || busy || !query.trim()} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">요청 내용 검토</button>
+            <button type="button" onClick={() => setReviewing(true)} disabled={!enabled || !credentialsReady || !accessTokenReady || busy || !query.trim() || !accessToken} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">요청 내용 검토</button>
           ) : (
             <>
               <button type="button" onClick={submit} disabled={busy} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">확인 후 2건 제출</button>
