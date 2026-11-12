@@ -148,6 +148,33 @@ CREATE TABLE IF NOT EXISTS aio_observations (
   has_youtube BOOLEAN NOT NULL, has_own_video BOOLEAN NOT NULL, own_best_position INTEGER, source_count INTEGER NOT NULL,
   UNIQUE(keyword_id,device,collected_date)
 );
+-- DataForSEO처럼 제출과 결과 회수가 분리된 Provider 작업. 제품 결과(prompt_runs/aio_observations)와
+-- 외부 task 상태를 분리해 timeout 뒤 중복 제출·과금을 막는다.
+CREATE TABLE IF NOT EXISTS provider_tasks (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
+  brand_id TEXT REFERENCES brands(id), prompt_id TEXT,
+  provider TEXT NOT NULL, surface TEXT NOT NULL, device TEXT NOT NULL CHECK(device IN ('desktop','mobile')),
+  market_id TEXT NOT NULL, query_snapshot TEXT NOT NULL, scheduled_window TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE,
+  endpoint TEXT NOT NULL, tag TEXT NOT NULL UNIQUE, provider_task_id TEXT,
+  status TEXT NOT NULL CHECK(status IN (
+    'reserved','submitting','submission_unknown','queued','collecting','raw_saved','normalized','completed',
+    'provider_failed','artifact_failed','projection_failed','parse_failed','cancelled'
+  )),
+  attempt INTEGER NOT NULL DEFAULT 1 CHECK(attempt >= 1),
+  estimated_cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
+  actual_cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
+  error_code TEXT, error_message TEXT, normalizer_version TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, submitted_at TEXT, completed_at TEXT,
+  FOREIGN KEY(organization_id,prompt_id) REFERENCES prompts(organization_id,id)
+);
+CREATE TABLE IF NOT EXISTS provider_artifacts (
+  id TEXT PRIMARY KEY, provider_task_id TEXT NOT NULL REFERENCES provider_tasks(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('request','post_response','advanced_result','html')),
+  object_key TEXT NOT NULL, content_type TEXT NOT NULL, encoding TEXT,
+  byte_size INTEGER NOT NULL CHECK(byte_size >= 0), checksum_sha256 TEXT NOT NULL,
+  created_at TEXT NOT NULL, expires_at TEXT,
+  UNIQUE(provider_task_id,kind)
+);
 CREATE TABLE IF NOT EXISTS aio_citations (
   observation_id TEXT NOT NULL REFERENCES aio_observations(id) ON DELETE CASCADE, position INTEGER NOT NULL,
   url TEXT NOT NULL, domain TEXT NOT NULL, title TEXT NOT NULL,
@@ -187,6 +214,21 @@ CREATE INDEX IF NOT EXISTS citations_domain ON citations(domain,analysis_id);
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS organizations_slug ON organizations(slug);
 CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand_id,collected_date);
+CREATE INDEX IF NOT EXISTS provider_tasks_recovery ON provider_tasks(provider,status,updated_at);
+CREATE INDEX IF NOT EXISTS provider_tasks_scope ON provider_tasks(organization_id,brand_id,surface,scheduled_window);
+CREATE INDEX IF NOT EXISTS provider_artifacts_task ON provider_artifacts(provider_task_id,kind);
+ALTER TABLE provider_tasks DROP CONSTRAINT IF EXISTS provider_tasks_status_check;
+ALTER TABLE provider_tasks ADD CONSTRAINT provider_tasks_status_check CHECK(status IN (
+  'reserved','submitting','submission_unknown','queued','collecting','raw_saved','normalized','completed',
+  'provider_failed','artifact_failed','projection_failed','parse_failed','cancelled'
+));
+ALTER TABLE prompt_runs ADD COLUMN IF NOT EXISTS provider_task_id TEXT REFERENCES provider_tasks(id);
+ALTER TABLE prompt_runs ADD COLUMN IF NOT EXISTS observation_outcome TEXT;
+ALTER TABLE prompt_runs DROP CONSTRAINT IF EXISTS prompt_runs_observation_outcome_check;
+ALTER TABLE prompt_runs ADD CONSTRAINT prompt_runs_observation_outcome_check CHECK(
+  observation_outcome IS NULL OR observation_outcome IN ('ai_answered','ai_absent','collection_error','parse_error')
+);
+ALTER TABLE aio_observations ADD COLUMN IF NOT EXISTS provider_task_id TEXT REFERENCES provider_tasks(id);
 ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS channel_title TEXT;
 -- YouTube 관리: 채널 영상 동기화로 가져온 게시일·설명, 그리고 "체크"(예상 프롬프트를 만들고 인용을 추적할 영상) 표시.
 -- 직접 등록한 영상은 이미 추적 대상이므로 checked 기본값은 true, 동기화가 새로 넣는 영상만 false로 넣는다.
