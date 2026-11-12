@@ -19,6 +19,7 @@
 | --- | --- | --- | --- |
 | 제품 범위·화면 | [P0 범위](product/p0-scope-spec.md), [화면 명세](product/screen-spec.md) | [`src/app`](../src/app) | 초기 제품 범위와 Figma 화면 요구 기록. 실제 화면은 코드 확인 |
 | DB·수집 파이프라인 | [데이터베이스](data/database-guide.md), [수집·가공](data/collection-pipeline-spec.md) | [`src/lib/backend/database`](../src/lib/backend/database), [`scripts`](../scripts) | Postgres 저장과 수집/가공 경로 구현. 소스별 계획은 구현과 구분 |
+| DataForSEO 전환 | [DataForSEO 수집 전환 실행 계획](v2-dataforseo/README.md) | [`scripts/dataforseo-poc`](../scripts/dataforseo-poc), [`collector`](../collector) | Google AIO·AI Mode와 Naver AI 브리핑의 서버 수집 전환 계획. 구현 전 |
 | 계정·조직 | [계정·조직·권한](features/access/access-and-organization-spec.md) | [`src/lib/backend/auth`](../src/lib/backend/auth), [`src/app`](../src/app) | 개인 계정, 조직 역할, 브랜드 접근 권한 구현. 로그인 강제는 `AUTH_ENABLED` 설정 확인 |
 | 프롬프트·AIO | [프롬프트와 플랫폼](features/visibility/prompt-surfaces-spec.md) | [`src/lib/backend/aio`](../src/lib/backend/aio), [`src/lib/promptSurfaces.ts`](../src/lib/promptSurfaces.ts) | 프롬프트 통합 1~3단계와 AIO 결과의 `prompt_runs` 동시 적재 구현. 정리 단계 보류 |
 | GSC·네이버 검색 | [GSC 연동](features/integrations/gsc-integration-spec.md), [네이버 데이터랩](features/integrations/naver-datalab-search-trend-spec.md) | [`src/lib/backend/gscSearchAnalyticsReader.ts`](../src/lib/backend/gscSearchAnalyticsReader.ts), [`src/lib/backend/naverDatalab.ts`](../src/lib/backend/naverDatalab.ts) | GSC OAuth·검색 성과 조회와 네이버 검색어 트렌드 경로 구현. 추가 신호는 항목별 상태 확인 |
@@ -31,6 +32,7 @@
 
 | 우선 확인할 작업 | 근거와 확인할 코드 |
 | --- | --- |
+| DataForSEO provider task·artifact 계층과 중복 과금 방지 상태 머신 구현 | [DataForSEO 실행 계획](v2-dataforseo/README.md), [`scripts/dataforseo-poc`](../scripts/dataforseo-poc) |
 | AIO 실제 수집으로 `prompt_runs` 동시 적재 확인, 과거 관측 백필 범위 결정 | [프롬프트와 플랫폼 §7](features/visibility/prompt-surfaces-spec.md), [`aio/collector.ts`](../src/lib/backend/aio/collector.ts) |
 | YouTube AIO 집계를 `prompt_runs`로 옮길지 기존 집계와 비교 검증 | [프롬프트와 플랫폼 §7](features/visibility/prompt-surfaces-spec.md), [`aio/store.ts`](../src/lib/backend/aio/store.ts) |
 | 에이전틱 트래픽의 실제 로그 골드셋 검증과 업로드 UI 범위 결정 | [에이전틱 트래픽 §16](features/traffic/agentic-traffic-spec.md#section-01), [`src/lib/agentic`](../src/lib/agentic) |

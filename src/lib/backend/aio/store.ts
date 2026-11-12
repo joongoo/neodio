@@ -264,6 +264,7 @@ export async function hasMeasurementSince(brandId: string, device: AioDevice, si
 // ---- 관측 ----
 
 export interface AioObservationInput {
+  providerTaskId?: string | null;
   keywordId: string;
   device: AioDevice;
   country: string;
@@ -301,8 +302,8 @@ export async function saveAioObservation(brandId: string, input: AioObservationI
     await s.query("DELETE FROM aio_observations WHERE keyword_id=$1 AND device=$2 AND collected_date=$3", [input.keywordId, input.device, collectedDate]);
     await s.query(
       `INSERT INTO aio_observations (id,brand_id,keyword_id,device,country,language,collected_at,collected_date,status,
-         aio_text,paragraphs_json,screenshot_path,html_path,error_message,has_youtube,has_own_video,own_best_position,source_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+         aio_text,paragraphs_json,screenshot_path,html_path,error_message,has_youtube,has_own_video,own_best_position,source_count,provider_task_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
         id,
         brandId,
@@ -322,6 +323,7 @@ export async function saveAioObservation(brandId: string, input: AioObservationI
         own.length > 0,
         own.length > 0 ? Math.min(...own.map((c) => c.position)) : null,
         input.citations.length,
+        input.providerTaskId ?? null,
       ]
     );
     for (const c of input.citations) {

@@ -666,20 +666,31 @@ export class PromptStore {
     });
   }
 
-  async importRun(orgId: string, file: CollectedRunFile, jobId: string | null = null): Promise<string> {
+  async importRun(orgId: string, file: CollectedRunFile, jobId: string | null = null, promptIdOverride: string | null = null): Promise<string> {
     return this.transaction(async () => {
       const run = file.promptRun;
       const existingRun = await this.one<{ organization_id: string; prompt_id: string }>("SELECT organization_id,prompt_id FROM prompt_runs WHERE id=$1", [run.id]);
       if (existingRun && existingRun.organization_id !== orgId) throw new Error("Run belongs to another organization");
       const text = run.rawMetadata.query?.trim();
       if (!text) throw new Error(`Missing prompt text in run ${run.id}`);
-      const promptId = existingRun?.prompt_id ?? await this.upsertPrompt(orgId, { text, category: run.rawMetadata.category, topic: run.rawMetadata.topic,
+      if (promptIdOverride) {
+        const prompt = await this.one<{ id: string }>("SELECT id FROM prompts WHERE organization_id=$1 AND id=$2", [orgId, promptIdOverride]);
+        if (!prompt) throw new Error(`Prompt does not belong to organization: ${promptIdOverride}`);
+      }
+      const promptId = existingRun?.prompt_id ?? promptIdOverride ?? await this.upsertPrompt(orgId, { text, category: run.rawMetadata.category, topic: run.rawMetadata.topic,
         sourceType: run.rawMetadata.source, sourceKey: run.id, createdAt: run.runAt });
-      await this.run(`INSERT INTO prompt_runs VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      const providerTaskId = typeof run.rawMetadata.providerData?.providerTaskId === "string" ? run.rawMetadata.providerData.providerTaskId : null;
+      const observationOutcome = run.rawMetadata.observationOutcome ?? null;
+      await this.run(`INSERT INTO prompt_runs (
+          id,organization_id,prompt_id,job_id,retry_of_run_id,prompt_text_snapshot,platform,model_id,market_id,locale,run_at,status,
+          raw_response,error_message,original_json,source_dir,source_filename,provider_task_id,observation_outcome
+        ) VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
         ON CONFLICT(id) DO UPDATE SET job_id=coalesce(excluded.job_id,prompt_runs.job_id),status=excluded.status,
-        raw_response=excluded.raw_response,error_message=excluded.error_message,original_json=excluded.original_json`,
+        raw_response=excluded.raw_response,error_message=excluded.error_message,original_json=excluded.original_json,
+        provider_task_id=excluded.provider_task_id,observation_outcome=excluded.observation_outcome`,
         [run.id, orgId, promptId, jobId, text, run.rawMetadata.source, run.llmModelId, run.marketId, run.rawMetadata.locale ?? null,
-          run.runAt, run.status, run.rawResponse, run.rawMetadata.errorMessage ?? null, JSON.stringify(run), file.dir, file.filename]);
+          run.runAt, run.status, run.rawResponse, run.rawMetadata.errorMessage ?? null, JSON.stringify(run), file.dir, file.filename,
+          providerTaskId, observationOutcome]);
       return promptId;
     });
   }

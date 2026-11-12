@@ -35,6 +35,11 @@ export function isBotBlocked(run: PromptRunSeed): boolean {
 export type RunOutcome = "ai-answered" | "ai-absent" | "collection-error";
 
 export function getRunOutcome(run: PromptRunSeed): RunOutcome {
+  if (run.rawMetadata.observationOutcome === "ai_answered") return "ai-answered";
+  if (run.rawMetadata.observationOutcome === "ai_absent") return "ai-absent";
+  if (run.rawMetadata.observationOutcome === "collection_error" || run.rawMetadata.observationOutcome === "parse_error") {
+    return "collection-error";
+  }
   if (run.status === "success") return "ai-answered";
   const message = run.rawMetadata.errorMessage ?? "";
   if (message.startsWith("empty_ai_mode_answer") || message.startsWith("empty_ai_briefing")) return "ai-absent";
