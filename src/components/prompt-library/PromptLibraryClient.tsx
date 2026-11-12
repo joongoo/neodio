@@ -18,7 +18,9 @@ import { SurfaceChips } from "@/components/prompt-library/SurfacePicker";
 import { BulkSurfaceModal } from "@/components/prompt-library/BulkSurfaceModal";
 import { AioCollectButton } from "@/components/youtube-aio/AioCollectButton";
 import { SelectionCollectModal } from "@/components/prompt-library/SelectionCollectModal";
+import { SerpApiCostConfirmModal } from "@/components/prompt-library/SerpApiCostConfirmModal";
 import { buildCollectSteps, surfacesOf, type CollectStep } from "@/lib/collectSteps";
+import type { SerpApiSurface } from "@/lib/dataforseoPricing";
 import { AI_ANSWER_SURFACES, PROMPT_SURFACES, SURFACE_LABEL, aioDailyLoad, type PromptSurface } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { GeminiCollectModal } from "@/components/prompt-library/GeminiCollectModal";
@@ -79,6 +81,7 @@ export function PromptLibraryClient({
   const [surfaceFilter, setSurfaceFilter] = useState<"전체" | PromptSurface>("전체");
   // 선택 수집: 플랫폼 고르기 창 → 플랫폼별 수집 단계(queue)를 차례로.
   const [chooseOpen, setChooseOpen] = useState(false);
+  const [pendingCollection, setPendingCollection] = useState<{ enabled: Set<PromptSurface>; serpApiEnabled: Set<SerpApiSurface> } | null>(null);
   const [queue, setQueue] = useState<CollectStep[]>([]);
   const stepDoneRef = useRef(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
@@ -520,13 +523,34 @@ export function PromptLibraryClient({
       {chooseOpen && (
         <SelectionCollectModal
           open
-          onClose={() => setChooseOpen(false)}
+          onClose={() => {
+            setChooseOpen(false);
+            setPendingCollection(null);
+          }}
           rows={selectedRows}
           aioDeviceCount={aioDeviceCount}
-          onStart={(enabled) => {
+          initialEnabled={pendingCollection?.enabled}
+          initialSerpApiEnabled={pendingCollection?.serpApiEnabled}
+          onReview={(enabled, serpApiEnabled) => {
             setChooseOpen(false);
+            setPendingCollection({ enabled, serpApiEnabled });
+          }}
+        />
+      )}
+      {pendingCollection && !chooseOpen && (
+        <SerpApiCostConfirmModal
+          rows={selectedRows}
+          enabled={pendingCollection.enabled}
+          serpApiEnabled={pendingCollection.serpApiEnabled}
+          aioDeviceCount={aioDeviceCount}
+          onBack={() => {
+            setChooseOpen(true);
+          }}
+          onConfirm={() => {
+            const requestId = crypto.randomUUID();
             stepDoneRef.current = false;
-            setQueue(buildCollectSteps(selectedRows, enabled));
+            setQueue(buildCollectSteps(selectedRows, pendingCollection.enabled, pendingCollection.serpApiEnabled, requestId));
+            setPendingCollection(null);
           }}
         />
       )}
@@ -536,6 +560,19 @@ export function PromptLibraryClient({
           orgName={collectionAgent.orgName}
           brandId={brandId}
           downloadPlatforms={collectionAgent.downloadPlatforms}
+          onDone={() => {
+            stepDoneRef.current = true;
+          }}
+          onClose={finishStep}
+        />
+      )}
+      {!parallel && step?.kind === "serp-api" && (
+        <ParallelCollectModal
+          key={`serp-${queue.length}`}
+          steps={[step]}
+          orgName=""
+          brandId={brandId}
+          downloadPlatforms={[]}
           onDone={() => {
             stepDoneRef.current = true;
           }}

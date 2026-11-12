@@ -35,7 +35,8 @@ const API_ENGINE_LABEL: Record<string, string> = {
 
 export function engineLabel({ source, collectedBy }: { source: string; collectedBy?: string }) {
   if (source === "api") return API_ENGINE_LABEL[collectedBy ?? ""] ?? "API";
-  return ENGINE_LABEL[source] ?? source;
+  const label = ENGINE_LABEL[source] ?? source;
+  return collectedBy === "dataforseo" ? `${label} · SERP API` : label;
 }
 
 export function toRunListRow(file: CollectedRunFile): RunListRow {

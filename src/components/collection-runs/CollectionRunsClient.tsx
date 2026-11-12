@@ -39,7 +39,7 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
     {
       key: "engine",
       label: "엔진",
-      width: "w-[150px]",
+      width: "w-[190px]",
       render: (file) => (
         <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
           {engineLabel(file)}
@@ -204,7 +204,7 @@ export function CollectionRunsClient({
       <div>
         <h1 className="text-2xl font-semibold text-neutral-900">수집 로그</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          네이버 AI검색·구글AI모드·구글AIO 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai` / YouTube AIO 트래커)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다.
+          설치형 수집기, SERP API, LLM API가 저장한 실행을 함께 나열합니다. SERP API로 수집한 실행은 엔진명에 별도로 표시됩니다.
         </p>
       </div>
 

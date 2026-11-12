@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { MemoryArtifactStore } from "./artifacts";
+import { LocalArtifactStore, MemoryArtifactStore } from "./artifacts";
 import { DataForSeoClient, DataForSeoDisabledError } from "./client";
 import { DataForSeoOrchestrator } from "./orchestrator";
 import { MemoryObservationProjector } from "./projector";
@@ -24,6 +27,20 @@ test("같은 관측은 한 번만 예약한다", async () => {
   assert.equal(first.created, true);
   assert.equal(second.created, false);
   assert.equal(second.task.id, first.task.id);
+});
+
+test("로컬 artifact 저장소는 원본과 checksum 메타데이터를 보존한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "neodio-dataforseo-"));
+  try {
+    const store = new MemoryProviderTaskStore();
+    const { task } = await store.reserve(input);
+    const artifact = await new LocalArtifactStore(root).save(task, "request", "[{\"keyword\":\"CRM 추천\"}]\n", "application/json");
+    const relativePath = artifact.objectKey.slice("local:".length).split("/");
+    assert.equal(await readFile(path.join(root, ...relativePath), "utf8"), "[{\"keyword\":\"CRM 추천\"}]\n");
+    assert.equal(artifact.checksumSha256.length, 64);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("비활성화 상태에서는 artifact와 fetch를 건드리지 않는다", async () => {
