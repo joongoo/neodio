@@ -41,3 +41,18 @@ test("naver-aio maps to the overview engine and gemini is its own step after AIO
   ]);
   assert.deepEqual(buildCollectSteps(extra, new Set(["gemini"] as const)), [{ kind: "gemini", keywords: ["N", "G"] }]);
 });
+
+test("SERP API surfaces become separate reservation steps while other surfaces keep their collector lanes", () => {
+  const selected = [
+    { prompt: "A", promptId: "pa", surfaces: ["google-aio", "google-ai-mode", "naver-ai"] as const },
+    { prompt: "B", promptId: "pb", surfaces: ["naver-aio", "naver-ai"] as const },
+  ].map((row) => ({ ...row, surfaces: [...row.surfaces] }));
+  const enabled = new Set(["google-aio", "google-ai-mode", "naver-aio", "naver-ai"] as const);
+  const serpApi = new Set(["google-ai-mode", "naver-aio"] as const);
+  assert.deepEqual(buildCollectSteps(selected, enabled, serpApi, "batch-1"), [
+    { kind: "ai", engines: ["naver"], keywords: ["A", "B"] },
+    { kind: "aio", promptIds: ["pa"] },
+    { kind: "serp-api", surface: "google-ai-mode", prompts: [{ promptId: "pa", query: "A" }], requestId: "batch-1" },
+    { kind: "serp-api", surface: "naver-aio", prompts: [{ promptId: "pb", query: "B" }], requestId: "batch-1" },
+  ]);
+});

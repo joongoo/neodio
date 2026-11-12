@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getRunOutcome } from "@/lib/backend/collectionRunsTypes";
+import { engineLabel, toRunListRow } from "@/lib/collectionRunList";
 import { observationRunFile } from "./projector";
 import type { NormalizedAiObservation, ProviderTaskRecord } from "./types";
 
@@ -26,9 +27,13 @@ function observation(outcome: NormalizedAiObservation["outcome"]): NormalizedAiO
 }
 
 test("projects an answered provider observation into the existing prompt run contract", () => {
-  const run = observationRunFile(task, observation("ai_answered")).promptRun;
+  const file = observationRunFile(task, observation("ai_answered"));
+  const run = file.promptRun;
   assert.equal(run.llmModelId, "model-google-aio");
   assert.equal(run.status, "success");
+  assert.equal(file.dir, "dataforseo");
+  assert.equal(run.rawMetadata.collectedBy, "dataforseo");
+  assert.equal(engineLabel(toRunListRow(file)), "구글AIO · SERP API");
   assert.equal(run.rawMetadata.observationOutcome, "ai_answered");
   assert.equal(run.rawMetadata.providerData?.providerTaskId, task.id);
   assert.equal(run.rawMetadata.citations?.[0].domain, "example.com");

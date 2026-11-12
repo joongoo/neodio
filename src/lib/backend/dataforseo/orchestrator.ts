@@ -18,6 +18,10 @@ export class DataForSeoOrchestrator {
     return this.tasks.reserve(input);
   }
 
+  get(id: string) {
+    return this.tasks.get(id);
+  }
+
   async submit(id: string): Promise<ProviderTaskRecord> {
     const task = await this.requireTask(id);
     if (task.status !== "reserved") return task;

@@ -32,7 +32,7 @@
 
 | 우선 확인할 작업 | 근거와 확인할 코드 |
 | --- | --- |
-| DataForSEO provider task·artifact 계층과 중복 과금 방지 상태 머신 구현 | [DataForSEO 실행 계획](v2-dataforseo/README.md), [`scripts/dataforseo-poc`](../scripts/dataforseo-poc) |
+| DataForSEO provider task·artifact 계층과 중복 과금 방지 상태 머신 구현 | [DataForSEO 실행 계획](v2/README.md), [`scripts/dataforseo-poc`](../scripts/dataforseo-poc) |
 | AIO 실제 수집으로 `prompt_runs` 동시 적재 확인, 과거 관측 백필 범위 결정 | [프롬프트와 플랫폼 §7](features/visibility/prompt-surfaces-spec.md), [`aio/collector.ts`](../src/lib/backend/aio/collector.ts) |
 | YouTube AIO 집계를 `prompt_runs`로 옮길지 기존 집계와 비교 검증 | [프롬프트와 플랫폼 §7](features/visibility/prompt-surfaces-spec.md), [`aio/store.ts`](../src/lib/backend/aio/store.ts) |
 | 에이전틱 트래픽의 실제 로그 골드셋 검증과 업로드 UI 범위 결정 | [에이전틱 트래픽 §16](features/traffic/agentic-traffic-spec.md#section-01), [`src/lib/agentic`](../src/lib/agentic) |

@@ -1,6 +1,6 @@
 # DataForSEO 수집 전환 실행 계획
 
-> 상태: 구현 전 기준 문서
+> 상태: 구현 진행 중
 > 작성일: 2026-11-12
 > 문서 역할: DataForSEO 전환의 단일 기준 문서. 과거 계획·PoC 문서를 전제로 읽지 않는다.
 
@@ -11,37 +11,55 @@
 - 완료: Google AIO·Google AI Mode 구조화 결과 및 Naver HTML 정규화
 - 완료: 기존 `prompt_runs`와 Google AIO `aio_observations` 투영, AI 미노출 outcome 분리
 - 완료: 메모리 응답 기반 단위 테스트(실제 DataForSEO 호출 없음)
-- 미완료: 수동·예약 수집 진입점 연결, recovery worker, 운영 비용/상태 화면
+- 완료: 프롬프트 라이브러리 선택 수집의 SERP API 일괄·표면별 스위치와 예상 USD 비용 확인 모달
+- 완료: 선택 수집을 `provider_tasks` 예약 → DataForSEO 제출 → 결과 polling/recovery → 제품 데이터 저장까지 연결
+- 완료: 20건 단위 제출·회수 API, 테넌트/브랜드 소유권 검사, 화면의 완료·실패·실제 비용 표시
+- 완료: 로컬·self-hosted 환경의 `.data/dataforseo` 원본 저장과 Vercel Blob 저장 분기
+- 완료: DataForSEO 결과를 수집 로그에 저장하고 엔진명을 `구글AIO · SERP API` 형식으로 구분
+- 미완료: 화면을 닫아도 회수를 계속하는 durable recovery worker, 운영 비용/상태 화면
 - 미완료: 실제 API 병행 검증과 표면별 전환 승인
 
-현재 운영 factory는 준비되어 있으나 기능 플래그 기본값이 꺼져 있고, 제품의 수집 진입점에도 아직 연결하지 않았다. 따라서 이 단계의 코드는 DataForSEO로 네트워크 요청을 만들지 않는다.
+현재 선택 수집에서 SERP API를 켜고 비용 확인 후 시작하면 task를 예약한 뒤 DataForSEO POST를 실행하고, 15초 간격으로 결과를 회수해 기존 `prompt_runs`와 Google AIO `aio_observations`에 반영한다. 기능 플래그 기본값은 계속 꺼져 있으며 `DATAFORSEO_ENABLED=true`와 자격 증명이 모두 있어야 Provider 호출이 시작된다.
+
+### 인수인계: 2026-11-12 실제 실행 차단 오류
+
+프롬프트 라이브러리에서 SERP API 수집을 시작했을 때 Provider task 예약 INSERT가 아래 오류로 중단됐다.
+
+```text
+PostgreSQL 42703
+column "query_snapshot" of relation "provider_tasks" does not exist
+POST /api/dataforseo/tasks/reserve 500
+```
+
+- 실패 위치: `PostgresProviderTaskStore.reserve()`가 `provider_tasks.query_snapshot`에 INSERT하는 단계
+- 추정 원인: 기존 DB에 과거 형태의 `provider_tasks` 테이블이 이미 있어 `CREATE TABLE IF NOT EXISTS`가 최신 컬럼을 추가하지 못한 스키마 불일치
+- 과금 여부: 예약 INSERT에서 실패했으므로 DataForSEO Provider POST까지 도달하지 않았고 이 시도에서는 외부 API 비용이 발생하지 않음
+- 다음 세션 첫 작업: 실제 DB의 `provider_tasks`·`provider_artifacts` 컬럼을 조회하고, 누락 컬럼·인덱스·제약조건을 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 방식의 전진 마이그레이션으로 보정한 뒤 예약 1건을 다시 검증
+- 주의: 테이블을 삭제하거나 기존 task 데이터를 초기화하지 말고, 현재 데이터 보존형 마이그레이션으로 처리한다.
 
 ## 다음 스텝
 
-다음 작업은 **실제 DataForSEO API를 호출하지 않는 상태에서 제품 수집 흐름을 연결하는 것**이다. 사용자의 별도 승인 전까지 `DATAFORSEO_ENABLED` 기본값은 `false`로 유지하며, 실제 자격 증명을 사용한 호출·병행 검증·운영 전환은 진행하지 않는다.
+다음 작업은 **소량 실제 검증 후 화면 수명과 무관한 recovery worker와 비용 안전장치를 운영 수준으로 만드는 것**이다. `DATAFORSEO_ENABLED` 기본값은 `false`로 유지하며, 실제 호출은 사용자가 화면에서 비용을 확인하고 수집 시작을 누른 요청에만 허용한다.
 
-1. 수동·선택·예약 수집 계획을 `provider_tasks` 예약 단계에 연결한다.
-   - 기존 프롬프트와 표면 선택을 `google-aio`, `google-ai-mode`, `naver-aio` task로 변환한다.
-   - 이 단계에서는 task를 DB에 `reserved`로만 기록하고 Provider POST는 실행하지 않는다.
-   - 동일 조직·브랜드·프롬프트·표면·기기·시장·예약 구간의 중복 예약을 검증한다.
-2. 기존 수집 작업 상태 API가 Provider 상태를 읽도록 어댑터를 추가한다.
-   - `reserved`, `queued`, `collecting`, `completed`와 오류 상태를 기존 진행 화면 형식으로 매핑한다.
-   - Collector 작업과 DataForSEO 작업을 전환 기간 동안 구분해서 표시한다.
-3. recovery worker의 실행 경계만 구현한다.
-   - 회수 대상 조회, 동시 실행 잠금, 재시도 간격, 최대 처리 건수를 구현한다.
-   - 테스트에서는 가짜 응답만 사용하고 실제 GET 요청은 금지한다.
-4. 비용 안전장치를 추가한다.
+1. 표면별 실제 1건 검증을 수행한다.
+   - Google AIO, Google AI Mode, Naver AIO를 각각 고정 질의 1건으로 실행한다.
+   - Provider 원본, AI 노출/미노출 판정, 출처, 실제 비용, 제품 화면 반영을 대조한다.
+2. durable recovery worker를 추가한다.
+   - `queued`, `collecting`, `artifact_failed`, `projection_failed` 대상 조회와 동시 실행 잠금을 구현한다.
+   - 화면을 닫거나 서버 인스턴스가 교체되어도 제출된 task를 끝까지 회수한다.
+   - `submission_unknown`은 자동 재제출하지 않고 운영 확인 대상으로 유지한다.
+3. 비용 안전장치를 추가한다.
    - 조직별 일일 예상 비용과 실제 비용을 집계한다.
    - 예산 초과 시 신규 예약·제출을 차단하고 이미 제출된 task의 회수는 허용한다.
    - `submission_unknown`, `artifact_failed`, `projection_failed`를 운영 확인 대상으로 노출한다.
-5. 로컬 PostgreSQL 하네스로 스키마와 멱등성을 검증한다.
+4. 로컬 PostgreSQL 하네스로 스키마와 멱등성을 검증한다.
    - 현재 환경에는 PostgreSQL 실행 파일이 없어 DB 하네스를 실행하지 못했다.
    - 신규 설치나 연결이 가능해지면 스키마 초기화, 중복 예약, 재회수, 제품 투영 재시도를 검증한다.
-6. 별도 승인 후에만 실제 호출 검증을 시작한다.
-   - 표면별 소량의 고정 질의로 1건씩 호출한다.
-   - 원본 artifact, 비용, 정규화 결과를 확인한 뒤 병행 검증 단계로 이동한다.
+5. 병행 검증과 표면별 전환 승인을 진행한다.
+   - 기존 Collector 결과와 DataForSEO 결과의 노출 판정·본문·출처를 비교한다.
+   - 품질 게이트를 통과한 표면부터 기본 수집 경로를 전환한다.
 
-다음 스텝의 완료 기준은 기능 플래그가 꺼진 상태에서 수동·예약 요청이 Provider task 예약과 상태 조회까지 이어지고, 테스트 중 DataForSEO 네트워크 호출이 0회임을 자동 검증하는 것이다.
+다음 스텝의 완료 기준은 표면별 실제 1건이 제품 데이터까지 정상 반영되고, 화면 종료 후에도 recovery worker가 미완료 task를 회수하며, 조직별 예산 한도가 신규 제출을 차단하는 것이다.
 
 ## 1. 결론
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pageRunList, toRunListRow, type RunListRow } from "./collectionRunList";
+import { engineLabel, pageRunList, toRunListRow, type RunListRow } from "./collectionRunList";
 import type { CollectedRunFile } from "@/lib/backend/collectionRunsTypes";
 
 const file = (n: number, extra: Record<string, unknown> = {}): CollectedRunFile => ({
@@ -24,6 +24,11 @@ test("행에는 원문이 없고 길이·인용 수만 있다", () => {
 
 test("캡차로 막힌 실행은 blocked", () => {
   assert.equal(toRunListRow(file(1, { finalUrl: "https://google.com/sorry/index" })).state, "blocked");
+});
+
+test("DataForSEO 실행은 수집 로그 엔진에 SERP API를 명시한다", () => {
+  const row = toRunListRow(file(1, { source: "google-aio", collectedBy: "dataforseo" }));
+  assert.equal(engineLabel(row), "구글AIO · SERP API");
 });
 
 const rows: RunListRow[] = Array.from({ length: 60 }, (_, i) => toRunListRow(file(i + 1)));

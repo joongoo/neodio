@@ -11,12 +11,15 @@ import { cancelAgentJob, createAgentJob, getAgentJob, getAgentResults, getAgentS
 import { cancelAioCollect, pollAioCollect, startAioCollect } from "@/lib/aioCollectClient";
 import type { AioCollectJob } from "@/lib/backend/aio/jobTypes";
 import type { CollectStep } from "@/lib/collectSteps";
+import { SURFACE_LABEL } from "@/lib/promptSurfaces";
 
 // "선택 수집"의 통합 진행 창 — 선택한 플랫폼을 한꺼번에 시작한다. 레인(네이버 / 구글 / Gemini)이 서로 기다리지 않아서
 // 구글에서 캡차가 떠도 네이버·Gemini 수집은 계속 돌아간다. 답변 수집(네이버·구글AI) 결과는 끝나는 대로 자동 반영하고,
 // AIO는 검색마다 서버에 올려 판정·저장한다.
 
 const POLL_MS = 2000;
+const SERP_POLL_MS = 15_000;
+const SERP_BATCH_SIZE = 20;
 const IMPORT_CHUNK = 20;
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 
@@ -25,11 +28,13 @@ type PanelState = { label: string; done: number; total: number; current: string 
 function stepLabel(step: CollectStep): string {
   if (step.kind === "aio") return "구글AIO";
   if (step.kind === "gemini") return "Gemini";
+  if (step.kind === "serp-api") return `${SURFACE_LABEL[step.surface]} · SERP API`;
   return step.engines.map((e) => ENGINE_LABEL[e]).join(" · ");
 }
 
 function stepTotal(step: CollectStep): number {
   if (step.kind === "aio") return step.promptIds.length;
+  if (step.kind === "serp-api") return step.prompts.length;
   return step.keywords.length;
 }
 
@@ -48,7 +53,7 @@ export function ParallelCollectModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const needsAgent = steps.some((s) => s.kind !== "gemini");
+  const needsAgent = steps.some((s) => s.kind === "ai" || s.kind === "aio");
   const [gate, setGate] = useState<"checking" | "ready" | { problem: Problem; status: CollectorAgentStatus | null }>(needsAgent ? "checking" : "ready");
   const [states, setStates] = useState<PanelState[]>(() =>
     steps.map((s) => ({ label: stepLabel(s), done: 0, total: stepTotal(s), current: null, waitUntil: null, phase: "running", note: null }))
@@ -123,7 +128,9 @@ export function ParallelCollectModal({
           </p>
           {steps.map((step, index) => (
             <PanelShell key={index} state={states[index]} onCancel={() => cancels.current[index]()}>
-              {step.kind === "ai" ? (
+              {step.kind === "serp-api" ? (
+                <SerpApiRunner step={step} brandId={brandId} index={index} patch={patch} setCancel={setCancel} />
+              ) : step.kind === "ai" ? (
                 <AgentAiRunner step={step} orgName={orgName} index={index} patch={patch} setCancel={setCancel} />
               ) : step.kind === "aio" ? (
                 <AioRunner brandId={brandId} promptIds={step.promptIds} index={index} patch={patch} setCancel={setCancel} />
@@ -201,6 +208,122 @@ interface RunnerProps {
   index: number;
   patch: (index: number, next: Partial<PanelState>) => void;
   setCancel: (index: number, fn: () => void) => void;
+}
+
+type SerpProviderTask = {
+  id: string;
+  status: string;
+  estimatedCostUsd: number;
+  actualCostUsd: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+const SERP_TERMINAL = new Set(["completed", "submission_unknown", "provider_failed", "parse_failed", "cancelled"]);
+
+function chunks<T>(values: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
+}
+
+async function postSerpTasks(path: "submit" | "status", brandId: string, taskIds: string[], signal: AbortSignal): Promise<SerpProviderTask[]> {
+  const response = await fetch(`/api/dataforseo/tasks/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ brandId, taskIds }),
+    signal,
+  });
+  const data = await response.json().catch(() => ({})) as { error?: string; tasks?: SerpProviderTask[] };
+  if (!response.ok) throw new Error(data.error ?? `SERP API ${path === "submit" ? "제출" : "상태 조회"}에 실패했습니다.`);
+  return data.tasks ?? [];
+}
+
+// 예약 → Provider 제출 → 결과 회수·저장까지 같은 진행 패널에서 수행한다.
+function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps & { step: Extract<CollectStep, { kind: "serp-api" }>; brandId: string }) {
+  const router = useRouter();
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    let stopped = false;
+    const controller = new AbortController();
+    setCancel(index, () => {
+      stopped = true;
+      controller.abort();
+      patch(index, { phase: "stopped", note: "화면의 상태 확인을 중단했습니다. 이미 제출된 작업은 DataForSEO에서 계속 처리됩니다." });
+    });
+
+    (async () => {
+      try {
+        const res = await fetch("/api/dataforseo/tasks/reserve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ brandId, surface: step.surface, prompts: step.prompts, requestId: step.requestId }),
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; tasks?: SerpProviderTask[] };
+        if (!res.ok) throw new Error(data.error ?? "SERP API 작업을 예약하지 못했습니다.");
+        if (stopped) return;
+        const taskIds = (data.tasks ?? []).map((task) => task.id);
+        if (taskIds.length === 0) throw new Error("예약된 SERP API 작업이 없습니다.");
+        patch(index, { done: 0, total: taskIds.length, current: `0/${taskIds.length}건 제출`, note: `${data.created ?? taskIds.length}건을 예약했습니다.` });
+
+        const state = new Map<string, SerpProviderTask>();
+        let submitted = 0;
+        for (const batch of chunks(taskIds, SERP_BATCH_SIZE)) {
+          const tasks = await postSerpTasks("submit", brandId, batch, controller.signal);
+          if (tasks.length !== batch.length) throw new Error("DataForSEO 제출 응답의 작업 수가 일치하지 않습니다.");
+          for (const task of tasks) state.set(task.id, task);
+          submitted += batch.length;
+          patch(index, { current: `${submitted}/${taskIds.length}건 제출` });
+          const blocked = tasks.find((task) => task.status === "reserved" || task.status === "submitting");
+          if (blocked) throw new Error(blocked.errorMessage ?? "DataForSEO 작업이 제출되지 않았습니다.");
+          if (stopped) return;
+        }
+
+        while (!stopped) {
+          for (const batch of chunks(taskIds, SERP_BATCH_SIZE)) {
+            const tasks = await postSerpTasks("status", brandId, batch, controller.signal);
+            if (tasks.length !== batch.length) throw new Error("DataForSEO 상태 응답의 작업 수가 일치하지 않습니다.");
+            for (const task of tasks) state.set(task.id, task);
+          }
+          const tasks = [...state.values()];
+          const completed = tasks.filter((task) => task.status === "completed").length;
+          const terminal = tasks.filter((task) => SERP_TERMINAL.has(task.status)).length;
+          const failed = tasks.filter((task) => SERP_TERMINAL.has(task.status) && task.status !== "completed").length;
+          const actualCost = tasks.reduce((sum, task) => sum + (task.actualCostUsd || 0), 0);
+          patch(index, {
+            done: terminal,
+            total: taskIds.length,
+            current: terminal < taskIds.length ? `${completed}건 저장 · ${taskIds.length - terminal}건 처리 중` : null,
+            note: `실제 비용 USD ${actualCost.toFixed(4)}${failed ? ` · 실패 ${failed}건` : ""}`,
+          });
+          if (terminal >= taskIds.length) {
+            const firstFailure = tasks.find((task) => task.status !== "completed");
+            patch(index, {
+              phase: failed === taskIds.length ? "error" : "done",
+              current: null,
+              note: failed
+                ? `저장 ${completed}건 · 실패 ${failed}건 · USD ${actualCost.toFixed(4)}${firstFailure?.errorMessage ? ` (${firstFailure.errorMessage})` : ""}`
+                : `${completed}건을 저장했습니다. 실제 비용 USD ${actualCost.toFixed(4)}`,
+            });
+            router.refresh();
+            return;
+          }
+          await new Promise<void>((resolve) => {
+            const timer = window.setTimeout(resolve, SERP_POLL_MS);
+            controller.signal.addEventListener("abort", () => { window.clearTimeout(timer); resolve(); }, { once: true });
+          });
+        }
+      } catch (error) {
+        if (!stopped) patch(index, { phase: "error", current: null, note: error instanceof Error ? error.message : "SERP API 수집에 실패했습니다." });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
 }
 
 // 네이버 / 구글AI — 수집기에 작업을 만들고, 끝나면 결과를 서버에 반영한다.
