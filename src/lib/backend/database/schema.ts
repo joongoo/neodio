@@ -276,6 +276,17 @@ CREATE TABLE IF NOT EXISTS neodio_membership_brands (
   PRIMARY KEY(user_id,organization_id,brand_id),
   FOREIGN KEY(user_id,organization_id) REFERENCES neodio_memberships(user_id,organization_id) ON DELETE CASCADE
 );
+-- 조직 계약 단위의 제품 권한. 사용자별로 중복 저장하지 않고 조직 구성원이 상속한다.
+-- 홈과 관리는 공통 기능이며 제품 코드에 포함하지 않는다.
+CREATE TABLE IF NOT EXISTS neodio_organization_products (
+  organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  product_code TEXT NOT NULL CHECK(product_code IN ('AI_VISIBILITY','SEARCH_CONTENT','YOUTUBE')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended')),
+  granted_by TEXT REFERENCES neodio_users(id), granted_at TEXT NOT NULL, expires_at TEXT,
+  PRIMARY KEY(organization_id,product_code)
+);
+CREATE INDEX IF NOT EXISTS neodio_organization_products_active
+  ON neodio_organization_products(organization_id,status,expires_at);
 CREATE TABLE IF NOT EXISTS neodio_audit_log (
   id TEXT PRIMARY KEY, organization_id TEXT, actor_user_id TEXT, action TEXT NOT NULL,
   target_type TEXT, target_id TEXT, detail_json JSONB, at TEXT NOT NULL

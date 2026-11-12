@@ -117,6 +117,26 @@ async function nameSeedOrganizations(store: PromptStore) {
   });
 }
 
+// 제품 권한 도입 전부터 사용하던 조직은 기존 화면이 갑자기 막히지 않도록 세 제품을 모두 할당한다.
+// data_migrations에 한 번만 기록하므로 이후 새 조직은 직원이 명시적으로 제품을 할당해야 한다.
+async function grantExistingOrganizationsAllProducts(store: PromptStore) {
+  const migration = "organization-products-v1";
+  if (await store.query("SELECT name FROM data_migrations WHERE name=$1", [migration]).then((rows) => rows.length)) return;
+  await store.transaction(async () => {
+    if (await store.query("SELECT name FROM data_migrations WHERE name=$1", [migration]).then((rows) => rows.length)) return;
+    await store.query(
+      `INSERT INTO neodio_organization_products
+         (organization_id,product_code,status,granted_by,granted_at,expires_at)
+       SELECT o.id,p.product_code,'active',NULL,$1,NULL
+         FROM organizations o
+         CROSS JOIN (VALUES ('AI_VISIBILITY'),('SEARCH_CONTENT'),('YOUTUBE')) AS p(product_code)
+       ON CONFLICT(organization_id,product_code) DO NOTHING`,
+      [new Date().toISOString()]
+    );
+    await store.query("INSERT INTO data_migrations VALUES ($1,$2)", [migration, new Date().toISOString()]);
+  });
+}
+
 // Vercel Postgres(및 다른 표준 Postgres)는 POSTGRES_URL/POSTGRES_URL_NON_POOLING
 // 환경변수로 접속 정보를 주입한다 — SQLite 시절의 파일 경로/디렉토리 생성 로직은
 // 더 이상 필요 없다(과거엔 여기서 mkdir을 하다 Vercel의 읽기전용 배포 번들에서
@@ -137,7 +157,7 @@ function createPool(): Pool {
 export function getPromptStore(): Promise<PromptStore> {
   if (!initializing) initializing = (async () => {
     const store = new PromptStore(createPool());
-    try { await store.init(); await importLegacy(store); await importLegacyBrands(store); await nameSeedOrganizations(store); await syncCollectedFiles(store); return store; }
+    try { await store.init(); await importLegacy(store); await importLegacyBrands(store); await nameSeedOrganizations(store); await grantExistingOrganizationsAllProducts(store); await syncCollectedFiles(store); return store; }
     catch (error) { await store.close(); throw error; }
   })().catch(error => { initializing = undefined; throw error; });
   return initializing;
