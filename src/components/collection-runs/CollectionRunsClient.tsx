@@ -20,7 +20,7 @@ import { useTenantBase } from "@/lib/useTenantBase";
 
 function StatusBadge({ file }: { file: RunListRow }) {
   if (file.state === "pending" && file.progressStatus === "reserved") {
-    return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">제출 대기</span>;
+    return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">수집 대기</span>;
   }
   if (file.state === "pending") {
     return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">진행 중</span>;
