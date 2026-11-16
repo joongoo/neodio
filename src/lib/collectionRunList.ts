@@ -1,4 +1,5 @@
 import type { CollectedRunFile } from "@/lib/backend/collectionRunsTypes";
+import type { ProviderTaskRecord, ProviderTaskStatus } from "@/lib/backend/dataforseo/types";
 import { isBotBlocked } from "@/lib/backend/collectionRunsTypes";
 
 // 수집 로그 화면용 가벼운 행 — 답변 원문·인용 목록은 빼고 표시에 필요한 값만 담는다.
@@ -15,9 +16,10 @@ export interface RunListRow {
   query: string;
   category?: string;
   topic?: string;
-  answerLength: number;
-  citationCount: number;
-  state: "success" | "blocked" | "failed";
+  answerLength: number | null;
+  citationCount: number | null;
+  state: "pending" | "success" | "blocked" | "failed";
+  progressStatus?: ProviderTaskStatus;
 }
 
 const ENGINE_LABEL: Record<string, string> = {
@@ -55,6 +57,28 @@ export function toRunListRow(file: CollectedRunFile): RunListRow {
     answerLength: meta.answerTextLength ?? run.rawResponse.length,
     citationCount: meta.citations?.length ?? 0,
     state: isBotBlocked(run) ? "blocked" : run.status === "success" ? "success" : "failed",
+  };
+}
+
+const SOURCE_BY_PROVIDER_SURFACE: Record<ProviderTaskRecord["surface"], string> = {
+  "google-aio": "google-aio",
+  "google-ai-mode": "google-ai-overview",
+  "naver-aio": "naver-overview",
+};
+
+export function toPendingRunListRow(task: ProviderTaskRecord): RunListRow {
+  return {
+    key: `provider-task/${task.id}`,
+    dir: "provider-task",
+    filename: task.id,
+    runAt: task.createdAt,
+    source: SOURCE_BY_PROVIDER_SURFACE[task.surface],
+    collectedBy: "dataforseo",
+    query: task.querySnapshot,
+    answerLength: null,
+    citationCount: null,
+    state: "pending",
+    progressStatus: task.status,
   };
 }
 

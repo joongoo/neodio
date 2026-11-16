@@ -19,6 +19,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
 
 function StatusBadge({ file }: { file: RunListRow }) {
+  if (file.state === "pending") {
+    return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">진행 중</span>;
+  }
   if (file.state === "blocked") {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">차단됨(캡차)</span>;
   }
@@ -62,13 +65,13 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       key: "length",
       label: "답변 길이",
       width: "w-[90px]",
-      render: (file) => file.answerLength,
+      render: (file) => file.answerLength ?? <span className="text-neutral-400">—</span>,
     },
     {
       key: "citations",
       label: "인용 수",
       width: "w-[80px]",
-      render: (file) => file.citationCount,
+      render: (file) => file.citationCount ?? <span className="text-neutral-400">—</span>,
     },
     {
       key: "category",
@@ -88,7 +91,7 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       label: "",
       width: "w-[90px]",
       render: (file) => (
-        <EditOnly>
+        file.state === "pending" ? null : <EditOnly>
           <button
             type="button"
             onClick={(e) => {
@@ -103,6 +106,21 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       ),
     },
   ];
+}
+
+const PROVIDER_PROGRESS_LABEL: Record<string, string> = {
+  reserved: "API 제출을 기다리고 있습니다.",
+  submitting: "SERP API에 작업을 제출하고 있습니다.",
+  queued: "SERP API가 작업을 처리하고 있습니다.",
+  collecting: "완료 여부를 확인하고 있습니다.",
+  raw_saved: "수집 원본을 저장했습니다. 결과 반영 중입니다.",
+  normalized: "수집 결과를 분석 데이터로 반영하고 있습니다.",
+  artifact_failed: "수집 원본 저장을 다시 시도하고 있습니다.",
+  projection_failed: "수집 결과 반영을 다시 시도하고 있습니다.",
+};
+
+function PendingRunDetail({ file }: { file: RunListRow }) {
+  return <p className="text-xs text-blue-700">{PROVIDER_PROGRESS_LABEL[file.progressStatus ?? ""] ?? "SERP API 수집이 진행 중입니다."}</p>;
 }
 
 // 원문·인용은 행을 펼칠 때 처음 불러온다(목록 payload에는 싣지 않는다).
@@ -164,7 +182,7 @@ export function CollectionRunsClient({
 }: {
   listPage: RunListPage;
   search: string;
-  stats: { total: number; success: number; ownMentions: number; ownCitations: number };
+  stats: { total: number; pending: number; success: number; ownMentions: number; ownCitations: number };
   categories: string[];
 }) {
   const router = useRouter();
@@ -174,6 +192,17 @@ export function CollectionRunsClient({
   const [analyzingFile, setAnalyzingFile] = useState<RunListRow | null>(null);
   const [searchText, setSearchText] = useState(search);
   const columns = runColumns((file) => setAnalyzingFile(file));
+
+  useEffect(() => {
+    if (stats.pending === 0) return;
+    const refresh = () => router.refresh();
+    const timer = window.setInterval(refresh, 15_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [router, stats.pending]);
 
   // 페이지·검색은 주소(쿼리)에 두어 서버가 한 페이지만 보낸다.
   function navigate(changes: Record<string, string | null>) {
@@ -219,7 +248,7 @@ export function CollectionRunsClient({
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <SimpleStatCard label="수집 실행 수" value={stats.total} tooltip="지금까지 저장된 수집 실행 수입니다." />
+            <SimpleStatCard label="수집 실행 수" value={stats.total} tooltip={`저장된 실행과 현재 진행 중인 실행 수입니다${stats.pending ? ` · 진행 중 ${stats.pending}건` : ""}.`} />
             <SimpleStatCard
               label="성공한 실행"
               value={stats.success}
@@ -242,7 +271,12 @@ export function CollectionRunsClient({
               <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p>
             ) : (
               <>
-                <DataTable columns={columns} rows={listPage.rows} getRowId={(file) => file.key} renderExpanded={(file) => <RunDetail file={file} />} />
+                <DataTable
+                  columns={columns}
+                  rows={listPage.rows}
+                  getRowId={(file) => file.key}
+                  renderExpanded={(file) => file.state === "pending" ? <PendingRunDetail file={file} /> : <RunDetail file={file} />}
+                />
                 <div className="mt-3">
                   <Pagination
                     page={listPage.page}
