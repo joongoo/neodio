@@ -34,7 +34,7 @@ function stepLabel(step: CollectStep): string {
 
 function stepTotal(step: CollectStep): number {
   if (step.kind === "aio") return step.promptIds.length;
-  if (step.kind === "serp-api") return step.prompts.length;
+  if (step.kind === "serp-api") return step.taskIds?.length ?? step.prompts.length;
   return step.keywords.length;
 }
 
@@ -257,18 +257,23 @@ function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps &
 
     (async () => {
       try {
-        const res = await fetch("/api/dataforseo/tasks/reserve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brandId, surface: step.surface, prompts: step.prompts, requestId: step.requestId }),
-          signal: controller.signal,
-        });
-        const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; tasks?: SerpProviderTask[] };
-        if (!res.ok) throw new Error(data.error ?? "SERP API 작업을 예약하지 못했습니다.");
-        if (stopped) return;
-        const taskIds = (data.tasks ?? []).map((task) => task.id);
-        if (taskIds.length === 0) throw new Error("예약된 SERP API 작업이 없습니다.");
-        patch(index, { done: 0, total: taskIds.length, current: `0/${taskIds.length}건 제출`, note: `${data.created ?? taskIds.length}건을 예약했습니다.` });
+        let taskIds = step.taskIds ?? [];
+        if (taskIds.length === 0) {
+          const res = await fetch("/api/dataforseo/tasks/reserve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brandId, surface: step.surface, prompts: step.prompts, requestId: step.requestId }),
+            signal: controller.signal,
+          });
+          const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; tasks?: SerpProviderTask[] };
+          if (!res.ok) throw new Error(data.error ?? "SERP API 작업을 예약하지 못했습니다.");
+          if (stopped) return;
+          taskIds = (data.tasks ?? []).map((task) => task.id);
+          if (taskIds.length === 0) throw new Error("예약된 SERP API 작업이 없습니다.");
+          patch(index, { done: 0, total: taskIds.length, current: `0/${taskIds.length}건 제출`, note: `${data.created ?? taskIds.length}건을 예약했습니다.` });
+        } else {
+          patch(index, { done: 0, total: taskIds.length, current: "진행 상태 확인 중", note: "이전에 시작한 작업을 복원했습니다." });
+        }
 
         const state = new Map<string, SerpProviderTask>();
         let submitted = 0;

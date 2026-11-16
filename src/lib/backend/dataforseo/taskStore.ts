@@ -82,6 +82,19 @@ function rowToTask(row: Record<string, unknown>): ProviderTaskRecord {
 }
 
 export class PostgresProviderTaskStore implements ProviderTaskStore {
+  async listActive(organizationId: string, brandId: string, options: { manualOnly?: boolean } = {}): Promise<ProviderTaskRecord[]> {
+    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+      `SELECT * FROM provider_tasks
+       WHERE organization_id=$1 AND brand_id=$2
+         AND ($3::boolean = false OR scheduled_window LIKE 'manual:%')
+         AND status = ANY($4)
+       ORDER BY created_at,id`,
+      [organizationId, brandId, options.manualOnly === true,
+        ["reserved", "submitting", "queued", "collecting", "raw_saved", "normalized", "artifact_failed", "projection_failed"]],
+    );
+    return rows.map(rowToTask);
+  }
+
   async reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
     const store = await getPromptStore();
     const key = dedupeKey(input);
