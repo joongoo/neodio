@@ -10,8 +10,14 @@ export type CollectEngine = "naver" | "naver-overview" | "google";
 export type CollectStep =
   | { kind: "ai"; engines: CollectEngine[]; keywords: string[] }
   | { kind: "aio"; promptIds: string[] }
-  | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string }
+  | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[] }
   | { kind: "gemini"; keywords: string[] };
+
+export interface ActiveSerpApiTask {
+  id: string;
+  surface: SerpApiSurface;
+  scheduledWindow: string;
+}
 
 export interface CollectRow {
   prompt: string;
@@ -65,4 +71,22 @@ export function buildCollectSteps(
   const geminiKeywords = enabled.has("gemini") ? rows.filter((row) => surfacesOf(row).includes("gemini")).map((row) => row.prompt) : [];
   if (geminiKeywords.length > 0) steps.push({ kind: "gemini", keywords: geminiKeywords });
   return steps;
+}
+
+/** DB에 남은 미완료 Provider 작업을 원래 수집 묶음·표면별 진행 단계로 복원한다. */
+export function resumeSerpApiSteps(tasks: ActiveSerpApiTask[]): CollectStep[] {
+  const groups = new Map<string, Extract<CollectStep, { kind: "serp-api" }>>();
+  for (const task of tasks) {
+    const key = `${task.scheduledWindow}\u001f${task.surface}`;
+    const step = groups.get(key) ?? {
+      kind: "serp-api" as const,
+      surface: task.surface,
+      prompts: [],
+      requestId: task.scheduledWindow.replace(/^manual:/, ""),
+      taskIds: [],
+    };
+    step.taskIds?.push(task.id);
+    groups.set(key, step);
+  }
+  return [...groups.values()];
 }

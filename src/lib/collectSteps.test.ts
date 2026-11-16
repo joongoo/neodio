@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildCollectSteps, countBySurface } from "./collectSteps";
+import { buildCollectSteps, countBySurface, resumeSerpApiSteps } from "./collectSteps";
 
 const rows = [
   { prompt: "A", promptId: "pa", surfaces: ["naver-ai", "google-ai-mode"] as const },
@@ -54,5 +54,18 @@ test("SERP API surfaces become separate reservation steps while other surfaces k
     { kind: "aio", promptIds: ["pa"] },
     { kind: "serp-api", surface: "google-ai-mode", prompts: [{ promptId: "pa", query: "A" }], requestId: "batch-1" },
     { kind: "serp-api", surface: "naver-aio", prompts: [{ promptId: "pb", query: "B" }], requestId: "batch-1" },
+  ]);
+});
+
+test("미완료 SERP API 작업을 수집 묶음과 표면별로 복원한다", () => {
+  assert.deepEqual(resumeSerpApiSteps([
+    { id: "ptask-1", surface: "google-aio", scheduledWindow: "manual:batch-1" },
+    { id: "ptask-2", surface: "google-aio", scheduledWindow: "manual:batch-1" },
+    { id: "ptask-3", surface: "naver-aio", scheduledWindow: "manual:batch-1" },
+    { id: "ptask-4", surface: "google-aio", scheduledWindow: "manual:batch-2" },
+  ]), [
+    { kind: "serp-api", surface: "google-aio", prompts: [], requestId: "batch-1", taskIds: ["ptask-1", "ptask-2"] },
+    { kind: "serp-api", surface: "naver-aio", prompts: [], requestId: "batch-1", taskIds: ["ptask-3"] },
+    { kind: "serp-api", surface: "google-aio", prompts: [], requestId: "batch-2", taskIds: ["ptask-4"] },
   ]);
 });

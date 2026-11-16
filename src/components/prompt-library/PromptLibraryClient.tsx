@@ -2,7 +2,7 @@
 
 import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
@@ -19,7 +19,7 @@ import { BulkSurfaceModal } from "@/components/prompt-library/BulkSurfaceModal";
 import { AioCollectButton } from "@/components/youtube-aio/AioCollectButton";
 import { SelectionCollectModal } from "@/components/prompt-library/SelectionCollectModal";
 import { SerpApiCostConfirmModal } from "@/components/prompt-library/SerpApiCostConfirmModal";
-import { buildCollectSteps, surfacesOf, type CollectStep } from "@/lib/collectSteps";
+import { buildCollectSteps, resumeSerpApiSteps, surfacesOf, type ActiveSerpApiTask, type CollectStep } from "@/lib/collectSteps";
 import type { SerpApiSurface } from "@/lib/dataforseoPricing";
 import { AI_ANSWER_SURFACES, PROMPT_SURFACES, SURFACE_LABEL, aioDailyLoad, type PromptSurface } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
@@ -84,6 +84,7 @@ export function PromptLibraryClient({
   const [pendingCollection, setPendingCollection] = useState<{ enabled: Set<PromptSurface>; serpApiEnabled: Set<SerpApiSurface> } | null>(null);
   const [queue, setQueue] = useState<CollectStep[]>([]);
   const stepDoneRef = useRef(false);
+  const restoredSerpBrandRef = useRef<string | null>(null);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
     new Set(["origin", "category", "topic", "surfaces", "lastModifiedAt", "lastModifiedBy"])
   );
@@ -93,6 +94,23 @@ export function PromptLibraryClient({
     "전체",
     ...new Set(rows.filter((r) => category === "전체" || r.category === category).map((r) => r.topic)),
   ];
+
+  useEffect(() => {
+    if (!canEdit || !brandId || restoredSerpBrandRef.current === brandId) return;
+    restoredSerpBrandRef.current = brandId;
+    const controller = new AbortController();
+    void fetch(`/api/dataforseo/tasks/active?brandId=${encodeURIComponent(brandId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ tasks?: ActiveSerpApiTask[] }>;
+      })
+      .then((data) => {
+        if (!data?.tasks?.length) return;
+        setQueue((current) => current.length > 0 ? current : resumeSerpApiSteps(data.tasks ?? []));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [brandId, canEdit]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
