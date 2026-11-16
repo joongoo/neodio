@@ -38,6 +38,17 @@ export interface ProviderTaskStore {
   saveArtifact(artifact: ProviderArtifactRecord): Promise<void>;
 }
 
+const ACTIVE_PROVIDER_STATUSES: ProviderTaskStatus[] = [
+  "reserved",
+  "submitting",
+  "queued",
+  "collecting",
+  "raw_saved",
+  "normalized",
+  "artifact_failed",
+  "projection_failed",
+];
+
 function dedupeKey(input: ReserveProviderTaskInput): string {
   return createHash("sha256").update([
     input.organizationId,
@@ -49,6 +60,29 @@ function dedupeKey(input: ReserveProviderTaskInput): string {
     input.marketId,
     input.scheduledWindow,
   ].join("\u001f")).digest("hex");
+}
+
+function activeIdentityKey(input: ReserveProviderTaskInput): string {
+  return [
+    input.organizationId,
+    input.brandId ?? "",
+    input.promptId ?? "",
+    input.query.trim(),
+    input.surface,
+    input.device,
+    input.marketId,
+  ].join("\u001f");
+}
+
+function sameActiveIdentity(task: ProviderTaskRecord, input: ReserveProviderTaskInput): boolean {
+  return task.organizationId === input.organizationId
+    && task.brandId === (input.brandId ?? null)
+    && task.promptId === (input.promptId ?? null)
+    && task.querySnapshot === input.query.trim()
+    && task.surface === input.surface
+    && task.device === input.device
+    && task.marketId === input.marketId
+    && ACTIVE_PROVIDER_STATUSES.includes(task.status);
 }
 
 function rowToTask(row: Record<string, unknown>): ProviderTaskRecord {
@@ -104,6 +138,25 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
       [id, organizationId, brandId],
     );
     return rows.length === 1;
+  }
+
+  async reserveActive(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
+    const store = await getPromptStore();
+    return store.transaction(async () => {
+      // 요청 ID가 달라도 같은 프롬프트·엔진·기기의 활성 작업은 하나만 둔다.
+      // advisory lock으로 동시에 들어온 두 예약 요청도 같은 기존 작업을 보게 한다.
+      await store.query("SELECT pg_advisory_xact_lock(hashtext($1))", [activeIdentityKey(input)]);
+      const [active] = await store.query<Record<string, unknown>>(
+        `SELECT * FROM provider_tasks
+         WHERE organization_id=$1 AND brand_id IS NOT DISTINCT FROM $2 AND prompt_id IS NOT DISTINCT FROM $3
+           AND query_snapshot=$4 AND surface=$5 AND device=$6 AND market_id=$7 AND status = ANY($8)
+         ORDER BY created_at,id LIMIT 1`,
+        [input.organizationId, input.brandId ?? null, input.promptId ?? null, input.query.trim(), input.surface,
+          input.device, input.marketId, ACTIVE_PROVIDER_STATUSES],
+      );
+      if (active) return { task: rowToTask(active), created: false };
+      return this.reserve(input);
+    });
   }
 
   async reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
@@ -173,7 +226,7 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
 
   async reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
     const key = dedupeKey(input);
-    const existing = [...this.tasks.values()].find((task) => task.dedupeKey === key);
+    const existing = [...this.tasks.values()].find((task) => task.dedupeKey === key || sameActiveIdentity(task, input));
     if (existing) return { task: existing, created: false };
     const id = `ptask-${randomUUID()}`;
     const now = new Date().toISOString();

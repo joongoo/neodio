@@ -20,6 +20,7 @@ import { SURFACE_LABEL } from "@/lib/promptSurfaces";
 const POLL_MS = 2000;
 const SERP_POLL_MS = 15_000;
 const SERP_BATCH_SIZE = 20;
+const SERP_RESERVE_BATCH_SIZE = 200;
 const IMPORT_CHUNK = 20;
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 
@@ -213,11 +214,52 @@ interface RunnerProps {
 type SerpProviderTask = {
   id: string;
   status: string;
+  created?: boolean;
+  query?: string;
+  device?: "desktop" | "mobile";
   estimatedCostUsd: number;
   actualCostUsd: number;
   errorCode: string | null;
   errorMessage: string | null;
 };
+
+async function reserveSerpTaskBatches(
+  step: Extract<CollectStep, { kind: "serp-api" }>,
+  brandId: string,
+  signal: AbortSignal,
+  onProgress: (done: number, total: number) => void,
+): Promise<Response> {
+  const tasks: SerpProviderTask[] = [];
+  let created = 0;
+  let estimatedCostUsd = 0;
+  let processedPrompts = 0;
+  for (const promptBatch of chunks(step.prompts, SERP_RESERVE_BATCH_SIZE)) {
+    const response = await fetch("/api/dataforseo/tasks/reserve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId, surface: step.surface, prompts: promptBatch, requestId: step.requestId }),
+      signal,
+    });
+    const data = await response.json().catch(() => ({})) as {
+      error?: string;
+      created?: number;
+      estimatedCostUsd?: number;
+      tasks?: SerpProviderTask[];
+    };
+    if (!response.ok) return Response.json({ error: data.error }, { status: response.status });
+    tasks.push(...(data.tasks ?? []));
+    created += data.created ?? 0;
+    estimatedCostUsd += data.estimatedCostUsd ?? 0;
+    processedPrompts += promptBatch.length;
+    onProgress(processedPrompts, step.prompts.length);
+  }
+  const activeQueries = [...new Set(tasks.filter((task) => task.created === false).map((task) => task.query).filter(Boolean))] as string[];
+  const examples = activeQueries.slice(0, 3).map((query) => `“${query}”`).join(", ");
+  const notice = activeQueries.length > 0
+    ? `${created}건 신규 예약 · ${activeQueries.length}개 프롬프트는 ${SURFACE_LABEL[step.surface]}에서 이미 수집 중이라 기존 진행을 이어갑니다.${examples ? ` (${examples}${activeQueries.length > 3 ? " 외" : ""})` : ""}`
+    : `${created}건을 신규 예약했습니다.`;
+  return Response.json({ reserved: tasks.length, created, alreadyActive: tasks.length - created, estimatedCostUsd, notice, tasks });
+}
 
 const SERP_TERMINAL = new Set(["completed", "submission_unknown", "provider_failed", "parse_failed", "cancelled"]);
 
@@ -259,18 +301,20 @@ function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps &
       try {
         let taskIds = step.taskIds ?? [];
         if (taskIds.length === 0) {
-          const res = await fetch("/api/dataforseo/tasks/reserve", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ brandId, surface: step.surface, prompts: step.prompts, requestId: step.requestId }),
-            signal: controller.signal,
+          const res = await reserveSerpTaskBatches(step, brandId, controller.signal, (done, total) => {
+            patch(index, { current: `${done}/${total}건 예약 확인` });
           });
-          const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; tasks?: SerpProviderTask[] };
+          const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; notice?: string; tasks?: SerpProviderTask[] };
           if (!res.ok) throw new Error(data.error ?? "SERP API 작업을 예약하지 못했습니다.");
           if (stopped) return;
           taskIds = (data.tasks ?? []).map((task) => task.id);
           if (taskIds.length === 0) throw new Error("예약된 SERP API 작업이 없습니다.");
-          patch(index, { done: 0, total: taskIds.length, current: `0/${taskIds.length}건 제출`, note: `${data.created ?? taskIds.length}건을 예약했습니다.` });
+          patch(index, {
+            done: 0,
+            total: taskIds.length,
+            current: `0/${taskIds.length}건 제출`,
+            note: data.notice ?? `${data.created ?? taskIds.length}건을 예약했습니다.`,
+          });
         } else {
           patch(index, { done: 0, total: taskIds.length, current: "진행 상태 확인 중", note: "이전에 시작한 작업을 복원했습니다." });
         }
