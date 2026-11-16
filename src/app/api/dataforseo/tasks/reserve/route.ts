@@ -8,8 +8,12 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { SERP_API_SURFACES, type SerpApiSurface } from "@/lib/dataforseoPricing";
 import type { AioDevice } from "@/lib/db/types";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const REQUEST_ID = /^[a-zA-Z0-9:_-]{1,100}$/;
 const SURFACES = new Set<string>(SERP_API_SURFACES);
+const MAX_PROMPTS = 200;
 
 type RequestedPrompt = { promptId?: string; query: string };
 
@@ -23,13 +27,17 @@ export async function POST(request: NextRequest) {
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";
   const surface = typeof body?.surface === "string" && SURFACES.has(body.surface) ? body.surface as SerpApiSurface : null;
   const requestId = typeof body?.requestId === "string" && REQUEST_ID.test(body.requestId) ? body.requestId : null;
-  const rawPrompts = Array.isArray(body?.prompts) ? body.prompts.slice(0, 200) : [];
+  const rawPrompts = Array.isArray(body?.prompts) ? body.prompts : [];
 
   if (!brandId || !(await getManagedBrand(tenant.orgId, brandId))) {
     return NextResponse.json({ error: "브랜드를 찾을 수 없습니다." }, { status: 404 });
   }
   if (!surface || !requestId || rawPrompts.length === 0) {
     return NextResponse.json({ error: "surface, requestId, prompts가 필요합니다." }, { status: 400 });
+  }
+
+  if (rawPrompts.length > MAX_PROMPTS) {
+    return NextResponse.json({ error: `한 번에 최대 ${MAX_PROMPTS}개의 프롬프트를 예약할 수 있습니다.` }, { status: 400 });
   }
 
   const requested: RequestedPrompt[] = rawPrompts
@@ -66,27 +74,34 @@ export async function POST(request: NextRequest) {
     ? (await getBrandAioSettings(brandId)).devices
     : ["desktop"];
   const taskStore = new PostgresProviderTaskStore();
-  const tasks = [];
-  for (const prompt of canonical) {
-    for (const device of devices) {
-      const result = await taskStore.reserve({
-        organizationId: tenant.orgId,
-        brandId,
-        promptId: prompt.promptId ?? null,
-        query: prompt.query,
-        surface,
-        device,
-        marketId: "market-kr",
-        scheduledWindow: `manual:${requestId}`,
-      });
-      tasks.push({ id: result.task.id, status: result.task.status, created: result.created, estimatedCostUsd: result.task.estimatedCostUsd });
-    }
-  }
+  const tasks = await Promise.all(canonical.flatMap((prompt) => devices.map(async (device) => {
+    const result = await taskStore.reserveActive({
+      organizationId: tenant.orgId,
+      brandId,
+      promptId: prompt.promptId ?? null,
+      query: prompt.query,
+      surface,
+      device,
+      marketId: "market-kr",
+      scheduledWindow: `manual:${requestId}`,
+    });
+    return {
+      id: result.task.id,
+      status: result.task.status,
+      created: result.created,
+      promptId: result.task.promptId,
+      query: result.task.querySnapshot,
+      surface: result.task.surface,
+      device: result.task.device,
+      estimatedCostUsd: result.task.estimatedCostUsd,
+    };
+  })));
 
   return NextResponse.json({
     reserved: tasks.length,
     created: tasks.filter((task) => task.created).length,
-    estimatedCostUsd: tasks.reduce((sum, task) => sum + task.estimatedCostUsd, 0),
+    alreadyActive: tasks.filter((task) => !task.created).length,
+    estimatedCostUsd: tasks.filter((task) => task.created).reduce((sum, task) => sum + task.estimatedCostUsd, 0),
     networkCalls: 0,
     tasks,
   });

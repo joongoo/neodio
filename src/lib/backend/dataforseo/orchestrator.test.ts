@@ -85,3 +85,18 @@ test("가짜 POST와 GET으로 제출·회수·정규화를 완료한다", async
   assert.equal(fetchCalls, 2);
   assert.deepEqual([...store.artifacts.values()].map((item) => item.kind).sort(), ["advanced_result", "post_response", "request"]);
 });
+
+test("an active prompt and engine task is reused across collection requests", async () => {
+  const store = new MemoryProviderTaskStore();
+  const first = await store.reserve({ ...input, scheduledWindow: "manual:first" });
+  const duplicate = await store.reserve({ ...input, scheduledWindow: "manual:second" });
+
+  assert.equal(first.created, true);
+  assert.equal(duplicate.created, false);
+  assert.equal(duplicate.task.id, first.task.id);
+
+  await store.update(first.task.id, "reserved", { status: "cancelled" });
+  const next = await store.reserve({ ...input, scheduledWindow: "manual:third" });
+  assert.equal(next.created, true);
+  assert.notEqual(next.task.id, first.task.id);
+});
