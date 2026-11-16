@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { PROMPT_SURFACES, SURFACE_LABEL, AIO_DAILY_CAP, type PromptSurface } from "@/lib/promptSurfaces";
@@ -21,6 +21,7 @@ export function SelectionCollectModal({
   open,
   onClose,
   rows,
+  brandId,
   aioDeviceCount,
   initialEnabled,
   initialSerpApiEnabled,
@@ -29,6 +30,7 @@ export function SelectionCollectModal({
   open: boolean;
   onClose: () => void;
   rows: CollectRow[];
+  brandId?: string;
   aioDeviceCount: number;
   initialEnabled?: ReadonlySet<PromptSurface>;
   initialSerpApiEnabled?: ReadonlySet<SerpApiSurface>;
@@ -37,10 +39,39 @@ export function SelectionCollectModal({
   const counts = countBySurface(rows);
   const [enabled, setEnabled] = useState<Set<PromptSurface>>(() => new Set(initialEnabled ?? PROMPT_SURFACES.filter((s) => counts[s] > 0)));
   const [serpApiEnabled, setSerpApiEnabled] = useState<Set<SerpApiSurface>>(() => new Set(initialSerpApiEnabled));
+  const [activeSerpCounts, setActiveSerpCounts] = useState<Partial<Record<SerpApiSurface, number>>>({});
   const active = PROMPT_SURFACES.filter((s) => enabled.has(s) && counts[s] > 0);
   const aioSearches = counts["google-aio"] * Math.max(1, aioDeviceCount);
   const eligibleSerpSurfaces = SERP_API_SURFACES.filter((surface) => enabled.has(surface) && counts[surface] > 0);
   const allSerpEnabled = eligibleSerpSurfaces.length > 0 && eligibleSerpSurfaces.every((surface) => serpApiEnabled.has(surface));
+
+  useEffect(() => {
+    if (!open || !brandId || rows.length === 0) return;
+    const controller = new AbortController();
+    void fetch("/api/dataforseo/tasks/active", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brandId,
+        prompts: rows.map((row) => ({ promptId: row.promptId, query: row.prompt })),
+        surfaces: SERP_API_SURFACES,
+      }),
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) return;
+      const data = await response.json() as {
+        tasks?: { promptId: string | null; query: string; surface: SerpApiSurface }[];
+      };
+      const promptsBySurface = new Map<SerpApiSurface, Set<string>>();
+      for (const task of data.tasks ?? []) {
+        const prompts = promptsBySurface.get(task.surface) ?? new Set<string>();
+        prompts.add(task.promptId ?? task.query);
+        promptsBySurface.set(task.surface, prompts);
+      }
+      setActiveSerpCounts(Object.fromEntries([...promptsBySurface].map(([surface, prompts]) => [surface, prompts.size])));
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [brandId, open, rows]);
 
   function toggle(surface: PromptSurface) {
     setEnabled((prev) => {
@@ -98,9 +129,11 @@ export function SelectionCollectModal({
         {PROMPT_SURFACES.map((surface) => {
           const count = counts[surface];
           const canUseSerpApi = isSerpApiSurface(surface);
+          const activeCount = canUseSerpApi ? activeSerpCounts[surface] ?? 0 : 0;
           return (
             <div
               key={surface}
+              onClick={() => { if (count > 0) toggle(surface); }}
               className={`flex items-start gap-2 rounded-md border border-neutral-200 px-3 py-2 ${count === 0 ? "opacity-50" : "cursor-pointer hover:bg-neutral-50"}`}
             >
               <input
@@ -109,27 +142,29 @@ export function SelectionCollectModal({
                 disabled={count === 0}
                 checked={enabled.has(surface) && count > 0}
                 onChange={() => toggle(surface)}
+                onClick={(event) => event.stopPropagation()}
                 className="mt-0.5 size-4 cursor-pointer accent-slate-800"
               />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-center justify-between text-sm font-medium text-neutral-800">
-                  {SURFACE_LABEL[surface]}
-                  <span className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-neutral-600">{count}개</span>
-                    {canUseSerpApi && (
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                        SERP API
-                        <Switch
-                          checked={serpApiEnabled.has(surface)}
-                          disabled={count === 0 || !enabled.has(surface)}
-                          label={`${SURFACE_LABEL[surface]} SERP API 사용`}
-                          onChange={() => toggleSerpApi(surface)}
-                        />
-                      </span>
-                    )}
-                  </span>
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-neutral-800">
+                  <span>{SURFACE_LABEL[surface]}</span>
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-bold text-neutral-600">{count}개</span>
+                  {activeCount > 0 && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">수집 중 {activeCount}개</span>
+                  )}
                 </span>
                 <span className="text-xs text-neutral-500">{HINT[surface]}</span>
+                {canUseSerpApi && (
+                  <span className="mt-2 flex items-center justify-between border-t border-neutral-100 pt-2 text-xs font-medium text-slate-600">
+                    <span>SERP API로 수집</span>
+                    <Switch
+                      checked={serpApiEnabled.has(surface)}
+                      disabled={count === 0 || !enabled.has(surface)}
+                      label={`${SURFACE_LABEL[surface]} SERP API 사용`}
+                      onChange={() => toggleSerpApi(surface)}
+                    />
+                  </span>
+                )}
               </span>
             </div>
           );
