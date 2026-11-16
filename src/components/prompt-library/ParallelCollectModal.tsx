@@ -237,7 +237,7 @@ async function reserveSerpTaskBatches(
     const response = await fetch("/api/dataforseo/tasks/reserve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandId, surface: step.surface, prompts: promptBatch, requestId: step.requestId }),
+      body: JSON.stringify({ brandId, surface: step.surface, prompts: promptBatch, requestId: step.requestId, force: step.force === true }),
       signal,
     });
     const data = await response.json().catch(() => ({})) as {

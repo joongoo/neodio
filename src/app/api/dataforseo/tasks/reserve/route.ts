@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
   const brandId = typeof body?.brandId === "string" ? body.brandId : "";
   const surface = typeof body?.surface === "string" && SURFACES.has(body.surface) ? body.surface as SerpApiSurface : null;
   const requestId = typeof body?.requestId === "string" && REQUEST_ID.test(body.requestId) ? body.requestId : null;
+  const force = body?.force === true;
   const rawPrompts = Array.isArray(body?.prompts) ? body.prompts : [];
 
   if (!brandId || !(await getManagedBrand(tenant.orgId, brandId))) {
@@ -75,7 +76,8 @@ export async function POST(request: NextRequest) {
     : ["desktop"];
   const taskStore = new PostgresProviderTaskStore();
   const tasks = await Promise.all(canonical.flatMap((prompt) => devices.map(async (device) => {
-    const result = await taskStore.reserveActive({
+    const reserve = force ? taskStore.reserve.bind(taskStore) : taskStore.reserveActive.bind(taskStore);
+    const result = await reserve({
       organizationId: tenant.orgId,
       brandId,
       promptId: prompt.promptId ?? null,
