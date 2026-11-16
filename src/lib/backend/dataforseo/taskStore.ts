@@ -95,6 +95,17 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     return rows.map(rowToTask);
   }
 
+  async deleteReserved(id: string, organizationId: string, brandId: string): Promise<boolean> {
+    const rows = await (await getPromptStore()).query<{ id: string }>(
+      `DELETE FROM provider_tasks
+       WHERE id=$1 AND organization_id=$2 AND brand_id=$3
+         AND status='reserved' AND provider_task_id IS NULL
+       RETURNING id`,
+      [id, organizationId, brandId],
+    );
+    return rows.length === 1;
+  }
+
   async reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
     const store = await getPromptStore();
     const key = dedupeKey(input);

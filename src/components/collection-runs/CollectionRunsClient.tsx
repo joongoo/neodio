@@ -1,6 +1,6 @@
 "use client";
 
-import { EditOnly } from "@/components/auth/PermissionsProvider";
+import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
@@ -19,6 +19,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
 
 function StatusBadge({ file }: { file: RunListRow }) {
+  if (file.state === "pending" && file.progressStatus === "reserved") {
+    return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">제출 대기</span>;
+  }
   if (file.state === "pending") {
     return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">진행 중</span>;
   }
@@ -119,8 +122,64 @@ const PROVIDER_PROGRESS_LABEL: Record<string, string> = {
   projection_failed: "수집 결과 반영을 다시 시도하고 있습니다.",
 };
 
-function PendingRunDetail({ file }: { file: RunListRow }) {
-  return <p className="text-xs text-blue-700">{PROVIDER_PROGRESS_LABEL[file.progressStatus ?? ""] ?? "SERP API 수집이 진행 중입니다."}</p>;
+function PendingRunDetail({ file, brandId, onChanged }: { file: RunListRow; brandId: string; onChanged: () => void }) {
+  const [busy, setBusy] = useState<"submit" | "delete" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const reserved = file.progressStatus === "reserved";
+
+  async function submitNow() {
+    setBusy("submit");
+    setError(null);
+    try {
+      const response = await fetch("/api/dataforseo/tasks/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId, taskIds: [file.filename] }),
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string; tasks?: { errorMessage?: string | null }[] };
+      const taskError = data.tasks?.[0]?.errorMessage;
+      if (!response.ok || taskError) throw new Error(taskError ?? data.error ?? "작업을 제출하지 못했습니다.");
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "작업을 제출하지 못했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteReservation() {
+    if (!window.confirm("외부 API에 제출되지 않은 이 예약을 삭제할까요?")) return;
+    setBusy("delete");
+    setError(null);
+    try {
+      const response = await fetch(`/api/dataforseo/tasks/${encodeURIComponent(file.filename)}?brandId=${encodeURIComponent(brandId)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "예약을 삭제하지 못했습니다.");
+      onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "예약을 삭제하지 못했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className={`text-xs ${reserved ? "text-amber-700" : "text-blue-700"}`}>
+        {PROVIDER_PROGRESS_LABEL[file.progressStatus ?? ""] ?? "SERP API 수집이 진행 중입니다."}
+      </p>
+      {reserved && (
+        <EditOnly>
+          <div className="flex items-center gap-2">
+            <Button variant="primary" disabled={busy !== null} onClick={submitNow}>{busy === "submit" ? "제출 중…" : "지금 제출"}</Button>
+            <Button variant="secondary" disabled={busy !== null} onClick={deleteReservation}>{busy === "delete" ? "삭제 중…" : "예약 삭제"}</Button>
+            <span className="text-xs text-neutral-400">외부 task ID가 없어 아직 과금되지 않은 예약입니다.</span>
+          </div>
+        </EditOnly>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 // 원문·인용은 행을 펼칠 때 처음 불러온다(목록 payload에는 싣지 않는다).
@@ -177,32 +236,62 @@ function RunDetail({ file }: { file: RunListRow }) {
 export function CollectionRunsClient({
   listPage,
   search,
+  brandId,
+  pollingTaskIds,
   stats,
   categories,
 }: {
   listPage: RunListPage;
   search: string;
+  brandId: string;
+  pollingTaskIds: string[];
   stats: { total: number; pending: number; success: number; ownMentions: number; ownCitations: number };
   categories: string[];
 }) {
   const router = useRouter();
+  const canEdit = useCanEdit();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tenantBase = useTenantBase();
   const [analyzingFile, setAnalyzingFile] = useState<RunListRow | null>(null);
   const [searchText, setSearchText] = useState(search);
   const columns = runColumns((file) => setAnalyzingFile(file));
+  const pollingProviderTasks = useRef(false);
+  const pollingTaskKey = pollingTaskIds.join(",");
 
   useEffect(() => {
-    if (stats.pending === 0) return;
-    const refresh = () => router.refresh();
-    const timer = window.setInterval(refresh, 15_000);
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
+    if (!canEdit || !brandId || pollingTaskIds.length === 0) return;
+    let stopped = false;
+    const poll = async () => {
+      if (stopped || pollingProviderTasks.current) return;
+      pollingProviderTasks.current = true;
+      try {
+        for (let index = 0; index < pollingTaskIds.length; index += 20) {
+          const response = await fetch("/api/dataforseo/tasks/status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brandId, taskIds: pollingTaskIds.slice(index, index + 20) }),
+          });
+          if (!response.ok) return;
+        }
+        if (!stopped) router.refresh();
+      } catch {
+        // 일시적인 네트워크 오류는 다음 15초 폴링이나 창 포커스 때 다시 시도한다.
+      } finally {
+        pollingProviderTasks.current = false;
+      }
     };
-  }, [router, stats.pending]);
+    void poll();
+    const timer = window.setInterval(() => void poll(), 15_000);
+    window.addEventListener("focus", poll);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", poll);
+    };
+    // pollingTaskKey는 task ID 목록이 바뀔 때만 폴링 대상을 다시 설정한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId, canEdit, pollingTaskKey, router]);
 
   // 페이지·검색은 주소(쿼리)에 두어 서버가 한 페이지만 보낸다.
   function navigate(changes: Record<string, string | null>) {
@@ -275,7 +364,9 @@ export function CollectionRunsClient({
                   columns={columns}
                   rows={listPage.rows}
                   getRowId={(file) => file.key}
-                  renderExpanded={(file) => file.state === "pending" ? <PendingRunDetail file={file} /> : <RunDetail file={file} />}
+                  renderExpanded={(file) => file.state === "pending"
+                    ? <PendingRunDetail file={file} brandId={brandId} onChanged={() => router.refresh()} />
+                    : <RunDetail file={file} />}
                 />
                 <div className="mt-3">
                   <Pagination

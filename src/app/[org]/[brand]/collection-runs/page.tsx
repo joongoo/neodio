@@ -54,6 +54,8 @@ export default async function CollectionRunsPage({
     <CollectionRunsClient
       listPage={listPage}
       search={params.q ?? ""}
+      brandId={tenant.brandId ?? ""}
+      pollingTaskIds={activeProviderTasks.filter((task) => task.status !== "reserved").map((task) => task.id)}
       stats={{
         total: listRows.length,
         pending: activeProviderTasks.length,
