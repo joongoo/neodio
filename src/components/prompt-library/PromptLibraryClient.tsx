@@ -596,6 +596,7 @@ export function PromptLibraryClient({
             setPendingCollection(null);
           }}
           rows={selectedRows}
+          brandId={brandId}
           aioDeviceCount={aioDeviceCount}
           initialEnabled={pendingCollection?.enabled}
           initialSerpApiEnabled={pendingCollection?.serpApiEnabled}
