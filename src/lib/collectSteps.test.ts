@@ -55,6 +55,8 @@ test("SERP API surfaces become separate reservation steps while other surfaces k
     { kind: "serp-api", surface: "google-ai-mode", prompts: [{ promptId: "pa", query: "A" }], requestId: "batch-1" },
     { kind: "serp-api", surface: "naver-aio", prompts: [{ promptId: "pb", query: "B" }], requestId: "batch-1" },
   ]);
+  const forced = buildCollectSteps(selected, enabled, serpApi, "batch-2", true);
+  assert.equal(forced.filter((step) => step.kind === "serp-api").every((step) => step.force === true), true);
 });
 
 test("미완료 SERP API 작업을 수집 묶음과 표면별로 복원한다", () => {

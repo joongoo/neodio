@@ -10,7 +10,7 @@ export type CollectEngine = "naver" | "naver-overview" | "google";
 export type CollectStep =
   | { kind: "ai"; engines: CollectEngine[]; keywords: string[] }
   | { kind: "aio"; promptIds: string[] }
-  | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[] }
+  | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[]; force?: boolean }
   | { kind: "gemini"; keywords: string[] };
 
 export interface ActiveSerpApiTask {
@@ -39,6 +39,7 @@ export function buildCollectSteps(
   enabled: ReadonlySet<PromptSurface>,
   serpApiEnabled: ReadonlySet<SerpApiSurface> = new Set(),
   requestId = "manual",
+  forceSerpDuplicate = false,
 ): CollectStep[] {
   const groups = new Map<string, { engines: CollectEngine[]; keywords: string[] }>();
   const add = (engines: CollectEngine[], keyword: string) => {
@@ -66,7 +67,13 @@ export function buildCollectSteps(
     const prompts = rows
       .filter((row) => surfacesOf(row).includes(surface))
       .map((row) => ({ promptId: row.promptId, query: row.prompt }));
-    if (prompts.length > 0) steps.push({ kind: "serp-api", surface, prompts, requestId });
+    if (prompts.length > 0) steps.push({
+      kind: "serp-api",
+      surface,
+      prompts,
+      requestId,
+      ...(forceSerpDuplicate ? { force: true } : {}),
+    });
   }
   const geminiKeywords = enabled.has("gemini") ? rows.filter((row) => surfacesOf(row).includes("gemini")).map((row) => row.prompt) : [];
   if (geminiKeywords.length > 0) steps.push({ kind: "gemini", keywords: geminiKeywords });

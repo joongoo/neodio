@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { countBySurface, type CollectRow } from "@/lib/collectSteps";
@@ -21,10 +22,23 @@ export function SerpApiCostConfirmModal({
   serpApiEnabled: ReadonlySet<SerpApiSurface>;
   aioDeviceCount: number;
   onBack: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const estimate = estimateSerpApiCost(countBySurface(rows), serpApiEnabled, aioDeviceCount);
   const collectorSurfaces = [...enabled].filter((surface) => !serpApiEnabled.has(surface as SerpApiSurface));
+
+  async function confirm() {
+    setConfirming(true);
+    setError(null);
+    try {
+      await onConfirm();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "진행 중인 수집을 확인하지 못했습니다.");
+      setConfirming(false);
+    }
+  }
 
   return (
     <Modal open onClose={onBack}>
@@ -65,10 +79,11 @@ export function SerpApiCostConfirmModal({
         <strong className="text-2xl tabular-nums text-slate-900">{usd(estimate.totalCostUsd)}</strong>
       </div>
       <p className="mt-2 text-xs text-neutral-500">예상 금액이며 실제 청구액은 DataForSEO 응답의 task 비용을 기준으로 기록됩니다.</p>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 
       <div className="mt-5 flex justify-end gap-2">
-        <Button variant="secondary" onClick={onBack}>이전</Button>
-        <Button variant="primary" onClick={onConfirm}>확인 후 수집 시작</Button>
+        <Button variant="secondary" disabled={confirming} onClick={onBack}>이전</Button>
+        <Button variant="primary" disabled={confirming} onClick={confirm}>{confirming ? "확인 중…" : "확인 후 수집 시작"}</Button>
       </div>
     </Modal>
   );

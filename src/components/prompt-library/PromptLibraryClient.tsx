@@ -31,6 +31,17 @@ import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectio
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
 import { downloadCsv } from "@/lib/csv";
+import { formatKst } from "@/lib/backend/collectionRunsTypes";
+
+type ActiveCollectionConflict = {
+  id: string;
+  promptId: string | null;
+  query: string;
+  surface: SerpApiSurface;
+  device: "desktop" | "mobile";
+  status: string;
+  startedAt: string;
+};
 
 const ORIGIN_LABEL: Record<PromptLibraryRow["origin"], string> = {
   ai_generated: "AI 생성",
@@ -82,6 +93,7 @@ export function PromptLibraryClient({
   // 선택 수집: 플랫폼 고르기 창 → 플랫폼별 수집 단계(queue)를 차례로.
   const [chooseOpen, setChooseOpen] = useState(false);
   const [pendingCollection, setPendingCollection] = useState<{ enabled: Set<PromptSurface>; serpApiEnabled: Set<SerpApiSurface> } | null>(null);
+  const [activeCollectionConflicts, setActiveCollectionConflicts] = useState<ActiveCollectionConflict[] | null>(null);
   const [queue, setQueue] = useState<CollectStep[]>([]);
   const stepDoneRef = useRef(false);
   const restoredSerpBrandRef = useRef<string | null>(null);
@@ -282,6 +294,44 @@ export function PromptLibraryClient({
   const selectedRows = rows.filter((r) => selected.has(r.id));
   const parallel = Boolean(collectionAgent && brandId);
   const step = parallel ? undefined : queue[0];
+
+  function startPendingCollection(forceSerpDuplicate: boolean) {
+    if (!pendingCollection) return;
+    const requestId = crypto.randomUUID();
+    stepDoneRef.current = false;
+    setQueue(buildCollectSteps(
+      selectedRows,
+      pendingCollection.enabled,
+      pendingCollection.serpApiEnabled,
+      requestId,
+      forceSerpDuplicate,
+    ));
+    setActiveCollectionConflicts(null);
+    setPendingCollection(null);
+  }
+
+  async function checkActiveCollections() {
+    if (!pendingCollection || pendingCollection.serpApiEnabled.size === 0) {
+      startPendingCollection(false);
+      return;
+    }
+    const response = await fetch("/api/dataforseo/tasks/active", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brandId,
+        prompts: selectedRows.map((row) => ({ promptId: row.promptId, query: row.prompt })),
+        surfaces: [...pendingCollection.serpApiEnabled],
+      }),
+    });
+    const data = await response.json().catch(() => ({})) as { error?: string; tasks?: ActiveCollectionConflict[] };
+    if (!response.ok) throw new Error(data.error ?? "진행 중인 수집을 확인하지 못했습니다.");
+    if (data.tasks?.length) {
+      setActiveCollectionConflicts(data.tasks);
+      return;
+    }
+    startPendingCollection(false);
+  }
   // 단계 창을 닫을 때: 끝까지 수집해 반영했으면 다음 단계로, 중간에 닫았으면 남은 단계를 모두 접는다.
   function finishStep() {
     if (!parallel && stepDoneRef.current && queue.length > 1) {
@@ -555,7 +605,7 @@ export function PromptLibraryClient({
           }}
         />
       )}
-      {pendingCollection && !chooseOpen && (
+      {pendingCollection && !chooseOpen && !activeCollectionConflicts && (
         <SerpApiCostConfirmModal
           rows={selectedRows}
           enabled={pendingCollection.enabled}
@@ -564,13 +614,30 @@ export function PromptLibraryClient({
           onBack={() => {
             setChooseOpen(true);
           }}
-          onConfirm={() => {
-            const requestId = crypto.randomUUID();
-            stepDoneRef.current = false;
-            setQueue(buildCollectSteps(selectedRows, pendingCollection.enabled, pendingCollection.serpApiEnabled, requestId));
-            setPendingCollection(null);
-          }}
+          onConfirm={checkActiveCollections}
         />
+      )}
+      {pendingCollection && activeCollectionConflicts && (
+        <Modal open onClose={() => setActiveCollectionConflicts(null)}>
+          <h2 className="text-lg font-bold text-neutral-900">이미 수집 중인 프롬프트가 있습니다</h2>
+          <p className="mt-2 text-sm text-neutral-600">
+            선택한 프롬프트 중 아래 작업이 아직 진행 중입니다. 계속하면 동일 프롬프트와 엔진으로 새 작업을 추가하며 비용이 다시 발생할 수 있습니다.
+          </p>
+          <div className="mt-4 max-h-72 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50">
+            {activeCollectionConflicts.map((conflict) => (
+              <div key={conflict.id} className="flex flex-col gap-1 border-b border-amber-100 px-3 py-2.5 last:border-b-0">
+                <span className="text-sm font-medium text-neutral-900">{conflict.query}</span>
+                <span className="text-xs text-amber-800">
+                  {SURFACE_LABEL[conflict.surface]} · {conflict.device === "mobile" ? "모바일" : "데스크톱"} · {formatKst(conflict.startedAt)} 시작
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setActiveCollectionConflicts(null)}>돌아가기</Button>
+            <Button variant="primary" onClick={() => startPendingCollection(true)}>그래도 중복 수집 시작</Button>
+          </div>
+        </Modal>
       )}
       {parallel && collectionAgent && queue.length > 0 && (
         <ParallelCollectModal
