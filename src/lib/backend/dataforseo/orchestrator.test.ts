@@ -108,6 +108,34 @@ test("가짜 POST와 GET으로 제출·회수·정규화를 완료한다", async
   assert.deepEqual([...store.artifacts.values()].map((item) => item.kind).sort(), ["advanced_result", "post_response", "request"]);
 });
 
+test("recovery lease를 검증하고 처리 중 결과의 다음 조회를 예약한다", async () => {
+  const store = new MemoryProviderTaskStore();
+  let fetchCalls = 0;
+  const responses = [
+    { status_code: 20000, tasks: [{ id: "provider-pending", status_code: 20100, cost: 0.0012 }] },
+    { status_code: 20000, tasks: [{ id: "provider-pending", status_code: 20100, status_message: "Task In Queue" }] },
+  ];
+  const client = new DataForSeoClient({
+    enabled: true, login: "x", password: "y",
+    fetchImpl: async () => Response.json(responses[fetchCalls++]),
+  });
+  const orchestrator = new DataForSeoOrchestrator(store, new MemoryArtifactStore(), client, new MemoryObservationProjector());
+  const { task } = await orchestrator.reserve({ ...input, scheduledWindow: "manual:pending" });
+  await orchestrator.submit(task.id);
+  const claimedAt = new Date().toISOString();
+  await store.claimRecoverable({ owner: "recovery-a", limit: 1, leaseMs: 60_000, now: claimedAt });
+
+  await assert.rejects(orchestrator.recover(task.id, "recovery-b"), /lease를 잃어/);
+  assert.equal(fetchCalls, 1);
+
+  const recovered = await orchestrator.recover(task.id, "recovery-a");
+  assert.equal(recovered.task.status, "collecting");
+  assert.equal(recovered.task.leaseOwner, null);
+  assert.equal(recovered.task.leaseExpiresAt, null);
+  assert.ok(recovered.task.nextPollAt && recovered.task.nextPollAt > claimedAt);
+  assert.equal(fetchCalls, 2);
+});
+
 test("an active prompt and engine task is reused across collection requests", async () => {
   const store = new MemoryProviderTaskStore();
   const first = await store.reserve({ ...input, scheduledWindow: "manual:first" });

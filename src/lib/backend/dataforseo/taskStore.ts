@@ -46,10 +46,19 @@ export interface ClaimReservedProviderTasksInput {
   now?: string;
 }
 
+export interface ClaimRecoverableProviderTasksInput {
+  owner: string;
+  limit: number;
+  leaseMs: number;
+  organizationId?: string;
+  now?: string;
+}
+
 export interface ProviderTaskStore {
   reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
   reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
   claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]>;
+  claimRecoverable(input: ClaimRecoverableProviderTasksInput): Promise<ProviderTaskRecord[]>;
   beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null>;
   get(id: string): Promise<ProviderTaskRecord | null>;
   update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord>;
@@ -74,6 +83,13 @@ const IN_FLIGHT_PROVIDER_STATUSES: ProviderTaskStatus[] = [
   "collecting",
   "raw_saved",
   "normalized",
+  "artifact_failed",
+  "projection_failed",
+];
+
+const RECOVERABLE_PROVIDER_STATUSES: ProviderTaskStatus[] = [
+  "queued",
+  "collecting",
   "artifact_failed",
   "projection_failed",
 ];
@@ -329,6 +345,33 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     });
   }
 
+  async claimRecoverable(input: ClaimRecoverableProviderTasksInput): Promise<ProviderTaskRecord[]> {
+    if (!input.owner.trim()) throw new Error("worker owner가 필요합니다.");
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("선점 limit은 1 이상이어야 합니다.");
+    if (!Number.isFinite(input.leaseMs) || input.leaseMs < 1_000) throw new Error("lease는 1초 이상이어야 합니다.");
+
+    const now = input.now ?? new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.parse(now) + input.leaseMs).toISOString();
+    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+      `WITH candidates AS (
+         SELECT id FROM provider_tasks
+         WHERE provider='dataforseo' AND status = ANY($1::text[])
+           AND (next_poll_at IS NULL OR next_poll_at <= $2)
+           AND (lease_expires_at IS NULL OR lease_expires_at <= $2)
+           AND ($3::text IS NULL OR organization_id=$3)
+         ORDER BY COALESCE(next_poll_at,updated_at),created_at,id
+         FOR UPDATE SKIP LOCKED
+         LIMIT $4
+       )
+       UPDATE provider_tasks p
+       SET lease_owner=$5,lease_expires_at=$6,updated_at=$2
+       FROM candidates c WHERE p.id=c.id
+       RETURNING p.*`,
+      [RECOVERABLE_PROVIDER_STATUSES, now, input.organizationId ?? null, input.limit, input.owner.trim(), leaseExpiresAt],
+    );
+    return rows.map(rowToTask);
+  }
+
   async beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null> {
     const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
       `UPDATE provider_tasks
@@ -436,6 +479,27 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
         && (!input.organizationId || task.organizationId === input.organizationId))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
       .slice(0, available);
+    return candidates.map((task) => {
+      const claimed = { ...task, leaseOwner: input.owner.trim(), leaseExpiresAt, updatedAt: now };
+      this.tasks.set(task.id, claimed);
+      return claimed;
+    });
+  }
+
+  async claimRecoverable(input: ClaimRecoverableProviderTasksInput): Promise<ProviderTaskRecord[]> {
+    if (!input.owner.trim()) throw new Error("worker owner가 필요합니다.");
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("선점 limit은 1 이상이어야 합니다.");
+    if (!Number.isFinite(input.leaseMs) || input.leaseMs < 1_000) throw new Error("lease는 1초 이상이어야 합니다.");
+    const now = input.now ?? new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.parse(now) + input.leaseMs).toISOString();
+    const candidates = [...this.tasks.values()]
+      .filter((task) => RECOVERABLE_PROVIDER_STATUSES.includes(task.status)
+        && (!task.nextPollAt || task.nextPollAt <= now)
+        && (!task.leaseExpiresAt || task.leaseExpiresAt <= now)
+        && (!input.organizationId || task.organizationId === input.organizationId))
+      .sort((a, b) => (a.nextPollAt ?? a.updatedAt).localeCompare(b.nextPollAt ?? b.updatedAt)
+        || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .slice(0, input.limit);
     return candidates.map((task) => {
       const claimed = { ...task, leaseOwner: input.owner.trim(), leaseExpiresAt, updatedAt: now };
       this.tasks.set(task.id, claimed);

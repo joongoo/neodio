@@ -84,3 +84,28 @@ test("an expired reserved lease can be reclaimed without submitting it automatic
   assert.equal(reclaimed[0]?.status, "reserved");
   assert.equal(reclaimed[0]?.leaseOwner, "worker-b");
 });
+
+test("recovery claims only due tasks and respects a live lease", async () => {
+  const store = new MemoryProviderTaskStore();
+  const reserved = await store.reserveMany(inputs(3));
+  await store.update(reserved[0].task.id, "reserved", {
+    status: "queued", providerTaskId: "provider-1", nextPollAt: "2026-11-17T09:59:00.000Z",
+  });
+  await store.update(reserved[1].task.id, "reserved", {
+    status: "collecting", providerTaskId: "provider-2", nextPollAt: "2026-11-17T10:01:00.000Z",
+  });
+  await store.update(reserved[2].task.id, "reserved", {
+    status: "queued", providerTaskId: "provider-3", nextPollAt: "2026-11-17T09:58:00.000Z",
+    leaseOwner: "worker-a", leaseExpiresAt: "2026-11-17T10:00:30.000Z",
+  });
+
+  const first = await store.claimRecoverable({
+    owner: "worker-b", limit: 10, leaseMs: 60_000, now: "2026-11-17T10:00:00.000Z",
+  });
+  assert.deepEqual(first.map((task) => task.providerTaskId), ["provider-1"]);
+
+  const reclaimed = await store.claimRecoverable({
+    owner: "worker-c", limit: 10, leaseMs: 60_000, now: "2026-11-17T10:00:31.000Z",
+  });
+  assert.deepEqual(reclaimed.map((task) => task.providerTaskId), ["provider-3"]);
+});

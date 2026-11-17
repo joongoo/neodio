@@ -6,6 +6,12 @@ import type { NormalizedAiObservation, ProviderTaskRecord } from "./types";
 import type { ProviderTaskStore, ReserveProviderTaskInput } from "./taskStore";
 import type { ObservationProjector } from "./projector";
 
+const RECOVERY_POLL_DELAY_MS = 60_000;
+
+function nextRecoveryPollAt(): string {
+  return new Date(Date.now() + RECOVERY_POLL_DELAY_MS).toISOString();
+}
+
 export class DataForSeoOrchestrator {
   constructor(
     private readonly tasks: ProviderTaskStore,
@@ -90,7 +96,7 @@ export class DataForSeoOrchestrator {
     });
   }
 
-  async recover(id: string): Promise<{ task: ProviderTaskRecord; observation: NormalizedAiObservation | null }> {
+  async recover(id: string, leaseOwner?: string): Promise<{ task: ProviderTaskRecord; observation: NormalizedAiObservation | null }> {
     let task = await this.requireTask(id);
     if (task.status === "completed" || task.status === "parse_failed" || task.status === "provider_failed") {
       return { task, observation: null };
@@ -99,6 +105,9 @@ export class DataForSeoOrchestrator {
       throw new Error(`결과를 회수할 수 없는 상태입니다: ${task.status}`);
     }
     if (!task.providerTaskId) throw new Error("Provider task ID가 없습니다.");
+    if (leaseOwner && (task.leaseOwner !== leaseOwner || !task.leaseExpiresAt || task.leaseExpiresAt <= new Date().toISOString())) {
+      throw new Error(`Provider task lease를 잃어 결과를 회수하지 않습니다: ${task.id}`);
+    }
     this.client.assertReady();
 
     const config = DATAFORSEO_SURFACE_CONFIG[task.surface];
@@ -108,6 +117,9 @@ export class DataForSeoOrchestrator {
     } catch (error) {
       task = await this.tasks.update(task.id, ["queued", "collecting", "artifact_failed", "projection_failed"], {
         status: "collecting",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: nextRecoveryPollAt(),
         errorCode: error instanceof DataForSeoRequestError ? error.kind : "result_fetch",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
@@ -116,12 +128,18 @@ export class DataForSeoOrchestrator {
 
     const providerTask = firstApiTask(response);
     if (apiTaskPending(providerTask)) {
-      task = await this.tasks.update(task.id, ["queued", "collecting", "artifact_failed", "projection_failed"], { status: "collecting", errorCode: null, errorMessage: null });
+      task = await this.tasks.update(task.id, ["queued", "collecting", "artifact_failed", "projection_failed"], {
+        status: "collecting", leaseOwner: null, leaseExpiresAt: null, nextPollAt: nextRecoveryPollAt(),
+        errorCode: null, errorMessage: null,
+      });
       return { task, observation: null };
     }
     if (apiTaskFailed(providerTask) || !apiTaskComplete(providerTask)) {
       task = await this.tasks.update(task.id, ["queued", "collecting", "artifact_failed", "projection_failed"], {
         status: "provider_failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: null,
         errorCode: String(providerTask.status_code ?? "provider"),
         errorMessage: providerTask.status_message ?? "Provider task failed",
         completedAt: new Date().toISOString(),
@@ -138,6 +156,9 @@ export class DataForSeoOrchestrator {
     } catch (error) {
       task = await this.tasks.update(task.id, ["queued", "collecting", "artifact_failed", "projection_failed"], {
         status: "artifact_failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: nextRecoveryPollAt(),
         errorCode: "result_artifact",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
@@ -157,6 +178,9 @@ export class DataForSeoOrchestrator {
     if (observation.outcome === "parse_error") {
       task = await this.tasks.update(task.id, "raw_saved", {
         status: "parse_failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: null,
         normalizerVersion: observation.normalizerVersion,
         errorCode: "normalization",
         errorMessage: observation.errorMessage ?? "정규화 실패",
@@ -167,6 +191,9 @@ export class DataForSeoOrchestrator {
     if (observation.outcome === "collection_error") {
       task = await this.tasks.update(task.id, "raw_saved", {
         status: "provider_failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: null,
         normalizerVersion: observation.normalizerVersion,
         errorCode: "normalization_provider_state",
         errorMessage: observation.errorMessage ?? "Provider 결과 상태 오류",
@@ -180,12 +207,18 @@ export class DataForSeoOrchestrator {
     } catch (error) {
       task = await this.tasks.update(task.id, "normalized", {
         status: "projection_failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: nextRecoveryPollAt(),
         errorCode: "product_projection",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
       return { task, observation };
     }
-    task = await this.tasks.update(task.id, "normalized", { status: "completed", completedAt: new Date().toISOString() });
+    task = await this.tasks.update(task.id, "normalized", {
+      status: "completed", leaseOwner: null, leaseExpiresAt: null, nextPollAt: null,
+      completedAt: new Date().toISOString(),
+    });
     return { task, observation };
   }
 
