@@ -109,3 +109,16 @@ test("recovery claims only due tasks and respects a live lease", async () => {
   });
   assert.deepEqual(reclaimed.map((task) => task.providerTaskId), ["provider-3"]);
 });
+
+test("batch status lookup is read-only and preserves requested order", async () => {
+  const store = new MemoryProviderTaskStore();
+  const reserved = await store.reserveMany(inputs(3));
+  await store.update(reserved[1].task.id, "reserved", { status: "queued", providerTaskId: "provider-2" });
+
+  const tasks = await store.getMany([reserved[1].task.id, "ptask-missing", reserved[0].task.id]);
+
+  assert.deepEqual(tasks.map((task) => task.id), [reserved[1].task.id, reserved[0].task.id]);
+  assert.equal(tasks[0]?.status, "queued");
+  assert.equal((await store.get(reserved[1].task.id))?.status, "queued");
+  assert.equal((await store.get(reserved[1].task.id))?.leaseOwner, null);
+});

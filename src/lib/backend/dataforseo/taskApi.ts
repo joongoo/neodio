@@ -1,12 +1,5 @@
 import type { ProviderTaskRecord, ProviderTaskStatus } from "./types";
 
-export const RECOVERABLE_PROVIDER_STATUSES = new Set<ProviderTaskStatus>([
-  "queued",
-  "collecting",
-  "artifact_failed",
-  "projection_failed",
-]);
-
 export const TERMINAL_PROVIDER_STATUSES = new Set<ProviderTaskStatus>([
   "completed",
   "submission_unknown",

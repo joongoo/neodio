@@ -1,6 +1,6 @@
 "use client";
 
-import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
+import { EditOnly } from "@/components/auth/PermissionsProvider";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
@@ -249,7 +249,6 @@ export function CollectionRunsClient({
   categories: string[];
 }) {
   const router = useRouter();
-  const canEdit = useCanEdit();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tenantBase = useTenantBase();
@@ -260,7 +259,7 @@ export function CollectionRunsClient({
   const pollingTaskKey = pollingTaskIds.join(",");
 
   useEffect(() => {
-    if (!canEdit || !brandId || pollingTaskIds.length === 0) return;
+    if (!brandId || pollingTaskIds.length === 0) return;
     let stopped = false;
     const poll = async () => {
       if (stopped || pollingProviderTasks.current) return;
@@ -291,7 +290,7 @@ export function CollectionRunsClient({
     };
     // pollingTaskKey는 task ID 목록이 바뀔 때만 폴링 대상을 다시 설정한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId, canEdit, pollingTaskKey, router]);
+  }, [brandId, pollingTaskKey, router]);
 
   // 페이지·검색은 주소(쿼리)에 두어 서버가 한 페이지만 보낸다.
   function navigate(changes: Record<string, string | null>) {

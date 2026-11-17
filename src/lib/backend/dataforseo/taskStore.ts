@@ -61,6 +61,7 @@ export interface ProviderTaskStore {
   claimRecoverable(input: ClaimRecoverableProviderTasksInput): Promise<ProviderTaskRecord[]>;
   beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null>;
   get(id: string): Promise<ProviderTaskRecord | null>;
+  getMany(ids: string[]): Promise<ProviderTaskRecord[]>;
   update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord>;
   saveArtifact(artifact: ProviderArtifactRecord): Promise<void>;
 }
@@ -388,6 +389,19 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     return row ? rowToTask(row) : null;
   }
 
+  async getMany(ids: string[]): Promise<ProviderTaskRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+      "SELECT * FROM provider_tasks WHERE id = ANY($1::text[])",
+      [ids],
+    );
+    const byId = new Map(rows.map((row) => [row.id as string, rowToTask(row)]));
+    return ids.flatMap((id) => {
+      const task = byId.get(id);
+      return task ? [task] : [];
+    });
+  }
+
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {
     const store = await getPromptStore();
     const current = await this.get(id);
@@ -518,6 +532,13 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
   }
 
   async get(id: string): Promise<ProviderTaskRecord | null> { return this.tasks.get(id) ?? null; }
+
+  async getMany(ids: string[]): Promise<ProviderTaskRecord[]> {
+    return ids.flatMap((id) => {
+      const task = this.tasks.get(id);
+      return task ? [task] : [];
+    });
+  }
 
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {
     const current = this.tasks.get(id);
