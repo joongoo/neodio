@@ -17,6 +17,7 @@ test("stores an approved request and all provider tasks in one transaction bound
     organizationId: "org-1",
     brandId: "brand-1",
     requestedBy: "user-1",
+    clientRequestId: "manual-request-1",
     requestKind: "manual",
     tasks: [
       {
@@ -40,6 +41,7 @@ test("stores an approved request and all provider tasks in one transaction bound
 
   assert.equal(transactions, 1);
   assert.equal(queued.request.totalTaskCount, 2);
+  assert.equal(queued.request.clientRequestId, "manual-request-1");
   assert.equal(queued.request.estimatedCostUsd, 0.0018);
   assert.equal(queued.tasks.length, 2);
   assert.equal(queued.tasks.every((task) => task.collectionRequestId === queued.request.id), true);

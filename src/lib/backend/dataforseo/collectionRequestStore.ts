@@ -9,6 +9,7 @@ export interface CollectionRequestRecord {
   organizationId: string;
   brandId: string | null;
   requestedBy: string | null;
+  clientRequestId: string | null;
   requestKind: CollectionRequestKind;
   status: CollectionRequestStatus;
   totalTaskCount: number;
@@ -35,6 +36,7 @@ export interface CreateCollectionRequestInput {
   organizationId: string;
   brandId?: string | null;
   requestedBy?: string | null;
+  clientRequestId?: string | null;
   requestKind: CollectionRequestKind;
   totalTaskCount: number;
   estimatedCostUsd: number;
@@ -45,6 +47,7 @@ export interface CreateCollectionRequestInput {
 export interface CollectionRequestStore {
   create(input: CreateCollectionRequestInput): Promise<CollectionRequestRecord>;
   get(id: string): Promise<CollectionRequestRecord | null>;
+  getByClientRequestId(organizationId: string, clientRequestId: string): Promise<CollectionRequestRecord | null>;
   listRecentSummaries(organizationId: string, brandId: string | null, limit?: number): Promise<CollectionRequestSummary[]>;
 }
 
@@ -54,6 +57,7 @@ function rowToRequest(row: Record<string, unknown>): CollectionRequestRecord {
     organizationId: row.organization_id as string,
     brandId: row.brand_id as string | null,
     requestedBy: row.requested_by as string | null,
+    clientRequestId: row.client_request_id as string | null,
     requestKind: row.request_kind as CollectionRequestKind,
     status: row.status as CollectionRequestStatus,
     totalTaskCount: Number(row.total_task_count),
@@ -93,13 +97,13 @@ export class PostgresCollectionRequestStore implements CollectionRequestStore {
     const now = new Date().toISOString();
     const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
       `INSERT INTO collection_requests (
-         id,organization_id,brand_id,requested_by,request_kind,status,total_task_count,
+         id,organization_id,brand_id,requested_by,client_request_id,request_kind,status,total_task_count,
          estimated_cost_usd,actual_cost_usd,cancel_requested,retry_of_request_id,
          created_at,updated_at,approved_at,completed_at
-       ) VALUES ($1,$2,$3,$4,$5,'queued',$6,$7,0,false,$8,$9,$9,$10,NULL)
+       ) VALUES ($1,$2,$3,$4,$5,$6,'queued',$7,$8,0,false,$9,$10,$10,$11,NULL)
        RETURNING *`,
-      [id, input.organizationId, input.brandId ?? null, input.requestedBy ?? null, input.requestKind,
-        input.totalTaskCount, input.estimatedCostUsd, input.retryOfRequestId ?? null, now, input.approvedAt ?? now],
+      [id, input.organizationId, input.brandId ?? null, input.requestedBy ?? null, input.clientRequestId ?? null,
+        input.requestKind, input.totalTaskCount, input.estimatedCostUsd, input.retryOfRequestId ?? null, now, input.approvedAt ?? now],
     );
     return rowToRequest(row);
   }
@@ -108,6 +112,14 @@ export class PostgresCollectionRequestStore implements CollectionRequestStore {
     const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
       "SELECT * FROM collection_requests WHERE id=$1",
       [id],
+    );
+    return row ? rowToRequest(row) : null;
+  }
+
+  async getByClientRequestId(organizationId: string, clientRequestId: string): Promise<CollectionRequestRecord | null> {
+    const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
+      "SELECT * FROM collection_requests WHERE organization_id=$1 AND client_request_id=$2",
+      [organizationId, clientRequestId],
     );
     return row ? rowToRequest(row) : null;
   }
@@ -145,12 +157,17 @@ export class MemoryCollectionRequestStore implements CollectionRequestStore {
     if (!Number.isFinite(input.estimatedCostUsd) || input.estimatedCostUsd < 0) {
       throw new Error("수집 요청 예상 비용이 올바르지 않습니다.");
     }
+    if (input.clientRequestId && [...this.requests.values()].some((request) =>
+      request.organizationId === input.organizationId && request.clientRequestId === input.clientRequestId)) {
+      throw new Error("이미 저장된 사용자 수집 요청입니다.");
+    }
     const now = new Date().toISOString();
     const request: CollectionRequestRecord = {
       id: `creq-${randomUUID()}`,
       organizationId: input.organizationId,
       brandId: input.brandId ?? null,
       requestedBy: input.requestedBy ?? null,
+      clientRequestId: input.clientRequestId ?? null,
       requestKind: input.requestKind,
       status: "queued",
       totalTaskCount: input.totalTaskCount,
@@ -169,6 +186,11 @@ export class MemoryCollectionRequestStore implements CollectionRequestStore {
 
   async get(id: string): Promise<CollectionRequestRecord | null> {
     return this.requests.get(id) ?? null;
+  }
+
+  async getByClientRequestId(organizationId: string, clientRequestId: string): Promise<CollectionRequestRecord | null> {
+    return [...this.requests.values()].find((request) =>
+      request.organizationId === organizationId && request.clientRequestId === clientRequestId) ?? null;
   }
 
   async listRecentSummaries(organizationId: string, brandId: string | null, limit = 5): Promise<CollectionRequestSummary[]> {

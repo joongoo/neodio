@@ -5,7 +5,7 @@ import { collectionRequestDisplayStatus, collectionRequestFinishedCount } from "
 
 function summary(patch: Partial<CollectionRequestSummary> = {}): CollectionRequestSummary {
   return {
-    id: "creq-1", organizationId: "org-1", brandId: "brand-1", requestedBy: null, requestKind: "manual",
+    id: "creq-1", organizationId: "org-1", brandId: "brand-1", requestedBy: null, clientRequestId: null, requestKind: "manual",
     status: "queued", totalTaskCount: 10, estimatedCostUsd: 0.024, actualCostUsd: 0,
     cancelRequested: false, retryOfRequestId: null, createdAt: "2026-11-17T00:00:00.000Z",
     updatedAt: "2026-11-17T00:00:00.000Z", approvedAt: "2026-11-17T00:00:00.000Z", completedAt: null,

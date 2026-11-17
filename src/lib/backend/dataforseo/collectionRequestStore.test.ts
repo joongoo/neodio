@@ -8,6 +8,7 @@ test("stores one user-approved collection request with its expected cost", async
     organizationId: "org-1",
     brandId: "brand-1",
     requestedBy: "user-1",
+    clientRequestId: "manual-request-1",
     requestKind: "manual",
     totalTaskCount: 2_000,
     estimatedCostUsd: 2.4,
@@ -19,7 +20,28 @@ test("stores one user-approved collection request with its expected cost", async
   assert.equal(request.totalTaskCount, 2_000);
   assert.equal(request.estimatedCostUsd, 2.4);
   assert.equal(request.actualCostUsd, 0);
+  assert.equal(request.clientRequestId, "manual-request-1");
   assert.deepEqual(await store.get(request.id), request);
+  assert.deepEqual(await store.getByClientRequestId("org-1", "manual-request-1"), request);
+});
+
+test("keeps a client collection id unique within an organization", async () => {
+  const store = new MemoryCollectionRequestStore();
+  await store.create({
+    organizationId: "org-1", clientRequestId: "manual-request-1", requestKind: "manual",
+    totalTaskCount: 1, estimatedCostUsd: 0.001,
+  });
+  await assert.rejects(
+    store.create({
+      organizationId: "org-1", clientRequestId: "manual-request-1", requestKind: "manual",
+      totalTaskCount: 1, estimatedCostUsd: 0.001,
+    }),
+    /이미 저장된 사용자 수집 요청/,
+  );
+  await store.create({
+    organizationId: "org-2", clientRequestId: "manual-request-1", requestKind: "manual",
+    totalTaskCount: 1, estimatedCostUsd: 0.001,
+  });
 });
 
 test("rejects a collection request without tasks or with a negative cost", async () => {

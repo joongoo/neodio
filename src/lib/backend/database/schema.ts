@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS aio_observations (
 -- 사용자가 비용을 확인하고 승인한 수집 묶음. Provider task와 별도로 요청 단위 진행률·취소·재제출을 추적한다.
 CREATE TABLE IF NOT EXISTS collection_requests (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
-  brand_id TEXT REFERENCES brands(id), requested_by TEXT,
+  brand_id TEXT REFERENCES brands(id), requested_by TEXT, client_request_id TEXT,
   request_kind TEXT NOT NULL CHECK(request_kind IN ('manual','scheduled','retry')),
   status TEXT NOT NULL CHECK(status IN ('queued','running','completed','partially_failed','needs_attention','cancelled')),
   total_task_count INTEGER NOT NULL DEFAULT 0 CHECK(total_task_count >= 0),
@@ -231,6 +231,9 @@ CREATE INDEX IF NOT EXISTS provider_tasks_recovery ON provider_tasks(provider,st
 CREATE INDEX IF NOT EXISTS provider_tasks_scope ON provider_tasks(organization_id,brand_id,surface,scheduled_window);
 CREATE INDEX IF NOT EXISTS provider_artifacts_task ON provider_artifacts(provider_task_id,kind);
 CREATE INDEX IF NOT EXISTS collection_requests_scope ON collection_requests(organization_id,brand_id,status,created_at);
+ALTER TABLE collection_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS collection_requests_client_request
+  ON collection_requests(organization_id,client_request_id) WHERE client_request_id IS NOT NULL;
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS collection_request_id TEXT REFERENCES collection_requests(id);
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS retry_of_task_id TEXT REFERENCES provider_tasks(id);
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS submission_attempted_at TEXT;

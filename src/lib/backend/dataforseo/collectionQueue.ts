@@ -22,6 +22,7 @@ export interface EnqueueApprovedCollectionInput {
   organizationId: string;
   brandId?: string | null;
   requestedBy?: string | null;
+  clientRequestId?: string | null;
   requestKind: CollectionRequestKind;
   retryOfRequestId?: string | null;
   tasks: ApprovedCollectionTaskInput[];
@@ -60,6 +61,7 @@ export class CollectionQueueService {
         organizationId: input.organizationId,
         brandId: input.brandId,
         requestedBy: input.requestedBy,
+        clientRequestId: input.clientRequestId,
         requestKind: input.requestKind,
         totalTaskCount: input.tasks.length,
         estimatedCostUsd,
