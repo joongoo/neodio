@@ -4,6 +4,7 @@ import { getBrandAioSettings } from "@/lib/backend/brandAioConfig";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getPromptStore } from "@/lib/backend/database";
 import { CollectionQueueService } from "@/lib/backend/dataforseo/collectionQueue";
+import { providerTaskWakeSeed, publishDataForSeoWake } from "@/lib/backend/dataforseo/queueWake";
 import { getCurrentUser } from "@/lib/backend/auth/session";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { SERP_API_SURFACES, type SerpApiSurface } from "@/lib/dataforseoPricing";
@@ -103,6 +104,15 @@ export async function POST(request: NextRequest) {
       estimatedCostUsd: result.task.estimatedCostUsd,
     };
   });
+  const wake = tasks.length > 0
+    ? await publishDataForSeoWake({
+        version: 1,
+        organizationId: tenant.orgId,
+        brandId,
+        clientRequestId: requestId,
+        idempotencySeed: providerTaskWakeSeed(tasks.map((task) => task.id)),
+      })
+    : { published: false, messageId: null };
 
   return NextResponse.json({
     collectionRequestId: queued.request?.id ?? null,
@@ -111,6 +121,7 @@ export async function POST(request: NextRequest) {
     alreadyActive: tasks.filter((task) => !task.created).length,
     estimatedCostUsd: tasks.filter((task) => task.created).reduce((sum, task) => sum + task.estimatedCostUsd, 0),
     networkCalls: 0,
+    queueWakePublished: wake.published,
     tasks,
   });
 }

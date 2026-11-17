@@ -175,7 +175,27 @@ collection_request
 - 안전한 내부 재처리만 자동 수행한다.
 - `submitting`, `submission_unknown`은 재POST하지 않고 확인 필요로 노출한다.
 
-### 7.4 수집 실행 계층 독립 확장 기준
+### 7.4 이벤트 기반 실행과 배포 설정
+
+- 예약 API가 Provider task를 DB에 저장한 뒤 Vercel Queue에 wake 메시지를 발행한다.
+- Queue consumer는 recovery를 먼저 실행해 빈 슬롯을 만든 뒤 신규 task를 제출한다.
+- 처리할 task가 남은 경우에만 지연 메시지를 한 번 더 발행하며, 유휴 상태에서는 polling이나 cron 호출을 만들지 않는다.
+- Queue 전달은 중복될 수 있으므로 DB lease와 task 상태 전이를 실행 멱등성의 기준으로 삼는다.
+- 큐 메시지 중복 방지 키는 Provider task ID 묶음으로 만들며, 후속 wake는 조직·브랜드·실행 예정 분 단위로 합친다.
+- `submission_unknown`은 running 대상에서 제외하고 자동 재제출하지 않는다.
+- 기존 `/api/cron/dataforseo-queue`는 자동 스케줄 없이 수동 복구 진입점으로 유지한다.
+
+운영 활성화에는 아래 환경변수가 모두 필요하다.
+
+- `DATAFORSEO_QUEUE_ENABLED=true`
+- `DATAFORSEO_ENABLED=true`
+- `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`
+- Vercel에서는 Blob OIDC 설정 또는 `BLOB_READ_WRITE_TOKEN`
+- 선택 설정: `DATAFORSEO_SUBMIT_BATCH_SIZE`, `DATAFORSEO_RECOVERY_BATCH_SIZE`, `DATAFORSEO_MAX_IN_FLIGHT`, `DATAFORSEO_QUEUE_DELAY_SECONDS`
+
+하나라도 빠지면 wake 메시지를 발행하지 않는다. 설정 불완전 상태에서 Queue가 반복 재시도해 Vercel 사용량을 만드는 것을 막기 위한 정책이다.
+
+### 7.5 수집 실행 계층 독립 확장 기준
 
 초기에는 같은 Vercel 프로젝트 안의 Schedule/Function으로 실행해도 되지만, 수집량이 늘면 웹 화면과 무관하게 실행 계층만 별도 서비스나 Queue consumer로 확장할 수 있어야 한다.
 
