@@ -61,7 +61,9 @@ export interface ProviderTaskActivitySummary {
 
 export interface ProviderTaskStore {
   reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
+  reserveActive(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
   reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
+  attachToCollectionRequest(ids: string[], collectionRequestId: string): Promise<ProviderTaskRecord[]>;
   claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]>;
   claimRecoverable(input: ClaimRecoverableProviderTasksInput): Promise<ProviderTaskRecord[]>;
   beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null>;
@@ -304,6 +306,18 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     });
   }
 
+  async attachToCollectionRequest(ids: string[], collectionRequestId: string): Promise<ProviderTaskRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+      `UPDATE provider_tasks SET collection_request_id=$2,updated_at=$3
+       WHERE id = ANY($1::text[]) AND collection_request_id IS NULL
+       RETURNING *`,
+      [ids, collectionRequestId, new Date().toISOString()],
+    );
+    if (rows.length !== ids.length) throw new Error("Provider task를 수집 요청에 모두 연결하지 못했습니다.");
+    return rows.map(rowToTask);
+  }
+
   async claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]> {
     if (!input.owner.trim()) throw new Error("worker owner가 필요합니다.");
     if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("선점 limit은 1 이상이어야 합니다.");
@@ -468,7 +482,7 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
 
   async reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
     const key = dedupeKey(input);
-    const existing = [...this.tasks.values()].find((task) => task.dedupeKey === key || sameActiveIdentity(task, input));
+    const existing = [...this.tasks.values()].find((task) => task.dedupeKey === key);
     if (existing) return { task: existing, created: false };
     const id = `ptask-${randomUUID()}`;
     const now = new Date().toISOString();
@@ -487,12 +501,28 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
     return { task, created: true };
   }
 
+  async reserveActive(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
+    const active = [...this.tasks.values()].find((task) => sameActiveIdentity(task, input));
+    if (active) return { task: active, created: false };
+    return this.reserve(input);
+  }
+
   async reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>> {
     const keys = inputs.map(dedupeKey);
     if (new Set(keys).size !== keys.length) throw new Error("한 수집 요청에 중복된 Provider task가 포함되어 있습니다.");
     const result = [];
     for (const input of inputs) result.push(await this.reserve(input));
     return result;
+  }
+
+  async attachToCollectionRequest(ids: string[], collectionRequestId: string): Promise<ProviderTaskRecord[]> {
+    return ids.map((id) => {
+      const current = this.tasks.get(id);
+      if (!current || current.collectionRequestId) throw new Error("Provider task를 수집 요청에 모두 연결하지 못했습니다.");
+      const updated = { ...current, collectionRequestId, updatedAt: new Date().toISOString() };
+      this.tasks.set(id, updated);
+      return updated;
+    });
   }
 
   async claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]> {

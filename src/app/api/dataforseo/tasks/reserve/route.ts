@@ -3,7 +3,8 @@ import { guardApi } from "@/lib/backend/auth/guard";
 import { getBrandAioSettings } from "@/lib/backend/brandAioConfig";
 import { getManagedBrand } from "@/lib/backend/brandsManagementStore";
 import { getPromptStore } from "@/lib/backend/database";
-import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
+import { CollectionQueueService } from "@/lib/backend/dataforseo/collectionQueue";
+import { getCurrentUser } from "@/lib/backend/auth/session";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { SERP_API_SURFACES, type SerpApiSurface } from "@/lib/dataforseoPricing";
 import type { AioDevice } from "@/lib/db/types";
@@ -74,19 +75,23 @@ export async function POST(request: NextRequest) {
   const devices: AioDevice[] = surface === "google-aio"
     ? (await getBrandAioSettings(brandId)).devices
     : ["desktop"];
-  const taskStore = new PostgresProviderTaskStore();
-  const tasks = await Promise.all(canonical.flatMap((prompt) => devices.map(async (device) => {
-    const reserve = force ? taskStore.reserve.bind(taskStore) : taskStore.reserveActive.bind(taskStore);
-    const result = await reserve({
-      organizationId: tenant.orgId,
-      brandId,
+  const queued = await new CollectionQueueService().appendApproved({
+    organizationId: tenant.orgId,
+    brandId,
+    requestedBy: (await getCurrentUser())?.id ?? null,
+    clientRequestId: requestId,
+    requestKind: "manual",
+    reuseActive: !force,
+    tasks: canonical.flatMap((prompt) => devices.map((device) => ({
       promptId: prompt.promptId ?? null,
       query: prompt.query,
       surface,
       device,
       marketId: "market-kr",
       scheduledWindow: `manual:${requestId}`,
-    });
+    }))),
+  });
+  const tasks = queued.reservations.map((result) => {
     return {
       id: result.task.id,
       status: result.task.status,
@@ -97,9 +102,10 @@ export async function POST(request: NextRequest) {
       device: result.task.device,
       estimatedCostUsd: result.task.estimatedCostUsd,
     };
-  })));
+  });
 
   return NextResponse.json({
+    collectionRequestId: queued.request?.id ?? null,
     reserved: tasks.length,
     created: tasks.filter((task) => task.created).length,
     alreadyActive: tasks.filter((task) => !task.created).length,

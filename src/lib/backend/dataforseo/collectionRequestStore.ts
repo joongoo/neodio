@@ -45,9 +45,11 @@ export interface CreateCollectionRequestInput {
 }
 
 export interface CollectionRequestStore {
+  lockClientRequest(organizationId: string, clientRequestId: string): Promise<void>;
   create(input: CreateCollectionRequestInput): Promise<CollectionRequestRecord>;
   get(id: string): Promise<CollectionRequestRecord | null>;
   getByClientRequestId(organizationId: string, clientRequestId: string): Promise<CollectionRequestRecord | null>;
+  addTasks(id: string, taskCount: number, estimatedCostUsd: number): Promise<CollectionRequestRecord>;
   listRecentSummaries(organizationId: string, brandId: string | null, limit?: number): Promise<CollectionRequestSummary[]>;
 }
 
@@ -86,6 +88,13 @@ function rowToSummary(row: Record<string, unknown>): CollectionRequestSummary {
 }
 
 export class PostgresCollectionRequestStore implements CollectionRequestStore {
+  async lockClientRequest(organizationId: string, clientRequestId: string): Promise<void> {
+    await (await getPromptStore()).query(
+      "SELECT pg_advisory_xact_lock(hashtext($1))",
+      [`dataforseo-collection:${organizationId}:${clientRequestId}`],
+    );
+  }
+
   async create(input: CreateCollectionRequestInput): Promise<CollectionRequestRecord> {
     if (!Number.isInteger(input.totalTaskCount) || input.totalTaskCount < 1) {
       throw new Error("수집 요청에는 하나 이상의 task가 필요합니다.");
@@ -124,6 +133,20 @@ export class PostgresCollectionRequestStore implements CollectionRequestStore {
     return row ? rowToRequest(row) : null;
   }
 
+  async addTasks(id: string, taskCount: number, estimatedCostUsd: number): Promise<CollectionRequestRecord> {
+    if (!Number.isInteger(taskCount) || taskCount < 1 || !Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0) {
+      throw new Error("추가할 수집 task 정보가 올바르지 않습니다.");
+    }
+    const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
+      `UPDATE collection_requests
+       SET total_task_count=total_task_count+$2,estimated_cost_usd=estimated_cost_usd+$3,updated_at=$4
+       WHERE id=$1 RETURNING *`,
+      [id, taskCount, estimatedCostUsd, new Date().toISOString()],
+    );
+    if (!row) throw new Error("수집 요청을 찾을 수 없습니다.");
+    return rowToRequest(row);
+  }
+
   async listRecentSummaries(organizationId: string, brandId: string | null, limit = 5): Promise<CollectionRequestSummary[]> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error("요청 조회 limit은 1~20이어야 합니다.");
     const rows = await (await getPromptStore()).query<Record<string, unknown>>(
@@ -149,6 +172,8 @@ export class PostgresCollectionRequestStore implements CollectionRequestStore {
 
 export class MemoryCollectionRequestStore implements CollectionRequestStore {
   readonly requests = new Map<string, CollectionRequestRecord>();
+
+  async lockClientRequest(): Promise<void> {}
 
   async create(input: CreateCollectionRequestInput): Promise<CollectionRequestRecord> {
     if (!Number.isInteger(input.totalTaskCount) || input.totalTaskCount < 1) {
@@ -191,6 +216,22 @@ export class MemoryCollectionRequestStore implements CollectionRequestStore {
   async getByClientRequestId(organizationId: string, clientRequestId: string): Promise<CollectionRequestRecord | null> {
     return [...this.requests.values()].find((request) =>
       request.organizationId === organizationId && request.clientRequestId === clientRequestId) ?? null;
+  }
+
+  async addTasks(id: string, taskCount: number, estimatedCostUsd: number): Promise<CollectionRequestRecord> {
+    if (!Number.isInteger(taskCount) || taskCount < 1 || !Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0) {
+      throw new Error("추가할 수집 task 정보가 올바르지 않습니다.");
+    }
+    const current = this.requests.get(id);
+    if (!current) throw new Error("수집 요청을 찾을 수 없습니다.");
+    const updated = {
+      ...current,
+      totalTaskCount: current.totalTaskCount + taskCount,
+      estimatedCostUsd: current.estimatedCostUsd + estimatedCostUsd,
+      updatedAt: new Date().toISOString(),
+    };
+    this.requests.set(id, updated);
+    return updated;
   }
 
   async listRecentSummaries(organizationId: string, brandId: string | null, limit = 5): Promise<CollectionRequestSummary[]> {

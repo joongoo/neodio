@@ -138,15 +138,15 @@ test("recovery lease를 검증하고 처리 중 결과의 다음 조회를 예�
 
 test("an active prompt and engine task is reused across collection requests", async () => {
   const store = new MemoryProviderTaskStore();
-  const first = await store.reserve({ ...input, scheduledWindow: "manual:first" });
-  const duplicate = await store.reserve({ ...input, scheduledWindow: "manual:second" });
+  const first = await store.reserveActive({ ...input, scheduledWindow: "manual:first" });
+  const duplicate = await store.reserveActive({ ...input, scheduledWindow: "manual:second" });
 
   assert.equal(first.created, true);
   assert.equal(duplicate.created, false);
   assert.equal(duplicate.task.id, first.task.id);
 
   await store.update(first.task.id, "reserved", { status: "cancelled" });
-  const next = await store.reserve({ ...input, scheduledWindow: "manual:third" });
+  const next = await store.reserveActive({ ...input, scheduledWindow: "manual:third" });
   assert.equal(next.created, true);
   assert.notEqual(next.task.id, first.task.id);
 });

@@ -28,6 +28,16 @@ export interface EnqueueApprovedCollectionInput {
   tasks: ApprovedCollectionTaskInput[];
 }
 
+export interface AppendApprovedCollectionInput extends EnqueueApprovedCollectionInput {
+  clientRequestId: string;
+  reuseActive: boolean;
+}
+
+export interface AppendedCollection {
+  request: CollectionRequestRecord | null;
+  reservations: Array<{ task: ProviderTaskRecord; created: boolean }>;
+}
+
 export interface EnqueuedCollection {
   request: CollectionRequestRecord;
   tasks: ProviderTaskRecord[];
@@ -80,6 +90,56 @@ export class CollectionQueueService {
       }
       const tasks: ProviderTaskRecord[] = reserved.map((item) => item.task);
       return { request, tasks };
+    });
+  }
+
+  async appendApproved(input: AppendApprovedCollectionInput): Promise<AppendedCollection> {
+    if (input.tasks.length === 0) throw new Error("수집 요청에는 하나 이상의 task가 필요합니다.");
+    if (!input.clientRequestId.trim()) throw new Error("사용자 수집 실행 ID가 필요합니다.");
+
+    return this.transaction(async () => {
+      await this.requests.lockClientRequest(input.organizationId, input.clientRequestId);
+      let request = await this.requests.getByClientRequestId(input.organizationId, input.clientRequestId);
+      if (request && (request.brandId !== (input.brandId ?? null) || request.requestKind !== input.requestKind)) {
+        throw new Error("사용자 수집 실행 ID의 대상이 기존 요청과 일치하지 않습니다.");
+      }
+
+      const reservations = [];
+      for (const task of input.tasks) {
+        const reserve = input.reuseActive
+          ? this.providerTasks.reserveActive.bind(this.providerTasks)
+          : this.providerTasks.reserve.bind(this.providerTasks);
+        reservations.push(await reserve({
+          ...task,
+          organizationId: input.organizationId,
+          brandId: input.brandId,
+          collectionRequestId: null,
+        }));
+      }
+      const created = reservations.filter((item) => item.created);
+      if (created.length === 0) return { request, reservations };
+
+      const estimatedCostUsd = created.reduce((sum, item) => sum + item.task.estimatedCostUsd, 0);
+      request = request
+        ? await this.requests.addTasks(request.id, created.length, estimatedCostUsd)
+        : await this.requests.create({
+            organizationId: input.organizationId,
+            brandId: input.brandId,
+            requestedBy: input.requestedBy,
+            clientRequestId: input.clientRequestId,
+            requestKind: input.requestKind,
+            totalTaskCount: created.length,
+            estimatedCostUsd,
+            retryOfRequestId: input.retryOfRequestId,
+          });
+      const attached = await this.providerTasks.attachToCollectionRequest(created.map((item) => item.task.id), request.id);
+      const attachedById = new Map(attached.map((task) => [task.id, task]));
+      return {
+        request,
+        reservations: reservations.map((item) => item.created
+          ? { ...item, task: attachedById.get(item.task.id) ?? item.task }
+          : item),
+      };
     });
   }
 }

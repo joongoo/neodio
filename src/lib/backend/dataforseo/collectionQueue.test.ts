@@ -115,3 +115,57 @@ test("rejects duplicate tasks before storing a partial bulk reservation", async 
     /중복된 Provider task/,
   );
 });
+
+test("appends split batches to one client request without counting a repeated batch twice", async () => {
+  const requests = new MemoryCollectionRequestStore();
+  const tasks = new MemoryProviderTaskStore();
+  const queue = new CollectionQueueService(requests, tasks, async (work) => work());
+  const base = {
+    organizationId: "org-1",
+    brandId: "brand-1",
+    clientRequestId: "manual-request-split",
+    requestKind: "manual" as const,
+    reuseActive: true,
+  };
+  const firstTask = {
+    promptId: "prompt-1", query: "CRM 추천", surface: "google-aio" as const, device: "desktop" as const,
+    marketId: "market-kr", scheduledWindow: "manual:manual-request-split",
+  };
+  const secondTask = {
+    promptId: "prompt-2", query: "ERP 추천", surface: "naver-aio" as const, device: "desktop" as const,
+    marketId: "market-kr", scheduledWindow: "manual:manual-request-split",
+  };
+
+  const first = await queue.appendApproved({ ...base, tasks: [firstTask] });
+  const second = await queue.appendApproved({ ...base, tasks: [secondTask] });
+  const repeated = await queue.appendApproved({ ...base, tasks: [secondTask] });
+
+  assert.ok(first.request);
+  assert.equal(second.request?.id, first.request.id);
+  assert.equal(second.request?.totalTaskCount, 2);
+  assert.equal(second.request?.estimatedCostUsd, 0.0018);
+  assert.equal(repeated.request?.totalTaskCount, 2);
+  assert.equal(repeated.reservations[0]?.created, false);
+  assert.equal([...tasks.tasks.values()].every((task) => task.collectionRequestId === first.request?.id), true);
+});
+
+test("does not create an empty collection request when every task is already active", async () => {
+  const requests = new MemoryCollectionRequestStore();
+  const tasks = new MemoryProviderTaskStore();
+  const queue = new CollectionQueueService(requests, tasks, async (work) => work());
+  const task = {
+    organizationId: "org-1", brandId: "brand-1", promptId: "prompt-1", query: "CRM 추천",
+    surface: "google-aio" as const, device: "desktop" as const, marketId: "market-kr", scheduledWindow: "manual:older",
+  };
+  const active = await tasks.reserveActive(task);
+
+  const appended = await queue.appendApproved({
+    organizationId: "org-1", brandId: "brand-1", clientRequestId: "manual-request-active",
+    requestKind: "manual", reuseActive: true,
+    tasks: [{ ...task, scheduledWindow: "manual:manual-request-active" }],
+  });
+
+  assert.equal(appended.request, null);
+  assert.equal(appended.reservations[0]?.task.id, active.task.id);
+  assert.equal(requests.requests.size, 0);
+});
