@@ -6,12 +6,14 @@ import { observationRunFile } from "./projector";
 import type { NormalizedAiObservation, ProviderTaskRecord } from "./types";
 
 const task: ProviderTaskRecord = {
-  id: "ptask-1", organizationId: "org-1", brandId: "brand-1", promptId: "prompt-1", provider: "dataforseo",
+  id: "ptask-1", organizationId: "org-1", brandId: "brand-1", promptId: "prompt-1",
+  collectionRequestId: "creq-1", retryOfTaskId: null, provider: "dataforseo",
   surface: "google-aio", device: "desktop", marketId: "market-kr", querySnapshot: "CRM 추천",
   scheduledWindow: "2026-11-12", dedupeKey: "dedupe", endpoint: "/v3/serp/google/organic/task_post",
   tag: "neodio:ptask-1", providerTaskId: "remote-1", status: "normalized", attempt: 1,
   estimatedCostUsd: 0.002, actualCostUsd: 0.001, errorCode: null, errorMessage: null,
-  normalizerVersion: "dataforseo-v1", createdAt: "2026-11-12T00:00:00.000Z",
+  normalizerVersion: "dataforseo-v1", submissionAttemptedAt: "2026-11-12T00:00:09.000Z",
+  leaseOwner: null, leaseExpiresAt: null, nextPollAt: null, createdAt: "2026-11-12T00:00:00.000Z",
   updatedAt: "2026-11-12T00:01:00.000Z", submittedAt: "2026-11-12T00:00:10.000Z", completedAt: null,
 };
 

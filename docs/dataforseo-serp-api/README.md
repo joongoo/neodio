@@ -4,6 +4,8 @@
 > 작성일: 2026-11-12
 > 문서 역할: DataForSEO 전환의 단일 기준 문서. 과거 계획·PoC 문서를 전제로 읽지 않는다.
 
+> 작업 큐 전환, 비용 안전 재제출 정책, 수집 로그·사이드바·혼합 수집 UX를 구현할 때는 [`QUEUE-AND-COLLECTION-UX.md`](QUEUE-AND-COLLECTION-UX.md)를 먼저 따른다.
+
 ## 현재 구현 상태 (2026-11-12)
 
 - 완료: 기본 비활성화 네트워크 차단(`DATAFORSEO_ENABLED=true` 전에는 fetch 0회)

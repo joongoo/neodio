@@ -13,6 +13,8 @@ export interface ReserveProviderTaskInput {
   organizationId: string;
   brandId?: string | null;
   promptId?: string | null;
+  collectionRequestId?: string | null;
+  retryOfTaskId?: string | null;
   query: string;
   surface: DataForSeoSurface;
   device: DataForSeoDevice;
@@ -91,6 +93,8 @@ function rowToTask(row: Record<string, unknown>): ProviderTaskRecord {
     organizationId: row.organization_id as string,
     brandId: row.brand_id as string | null,
     promptId: row.prompt_id as string | null,
+    collectionRequestId: row.collection_request_id as string | null,
+    retryOfTaskId: row.retry_of_task_id as string | null,
     provider: "dataforseo",
     surface: row.surface as DataForSeoSurface,
     device: row.device as DataForSeoDevice,
@@ -108,6 +112,10 @@ function rowToTask(row: Record<string, unknown>): ProviderTaskRecord {
     errorCode: row.error_code as string | null,
     errorMessage: row.error_message as string | null,
     normalizerVersion: row.normalizer_version as string | null,
+    submissionAttemptedAt: row.submission_attempted_at as string | null,
+    leaseOwner: row.lease_owner as string | null,
+    leaseExpiresAt: row.lease_expires_at as string | null,
+    nextPollAt: row.next_poll_at as string | null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
     submittedAt: row.submitted_at as string | null,
@@ -168,12 +176,13 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     const tag = `neodio:${id}`;
     const inserted = await store.query<Record<string, unknown>>(
       `INSERT INTO provider_tasks (
-         id,organization_id,brand_id,prompt_id,provider,surface,device,market_id,query_snapshot,scheduled_window,dedupe_key,
+         id,organization_id,brand_id,prompt_id,collection_request_id,retry_of_task_id,provider,surface,device,market_id,query_snapshot,scheduled_window,dedupe_key,
          endpoint,tag,provider_task_id,status,attempt,estimated_cost_usd,actual_cost_usd,error_code,error_message,
          normalizer_version,created_at,updated_at,submitted_at,completed_at
-       ) VALUES ($1,$2,$3,$4,'dataforseo',$5,$6,$7,$8,$9,$10,$11,$12,NULL,'reserved',1,$13,0,NULL,NULL,NULL,$14,$14,NULL,NULL)
+       ) VALUES ($1,$2,$3,$4,$5,$6,'dataforseo',$7,$8,$9,$10,$11,$12,$13,$14,NULL,'reserved',1,$15,0,NULL,NULL,NULL,$16,$16,NULL,NULL)
        ON CONFLICT(dedupe_key) DO NOTHING RETURNING *`,
-      [id, input.organizationId, input.brandId ?? null, input.promptId ?? null, input.surface, input.device, input.marketId,
+      [id, input.organizationId, input.brandId ?? null, input.promptId ?? null,
+        input.collectionRequestId ?? null, input.retryOfTaskId ?? null, input.surface, input.device, input.marketId,
         input.query.trim(), input.scheduledWindow, key, config.postPath, tag, config.estimatedCostUsd, now],
     );
     if (inserted[0]) return { task: rowToTask(inserted[0]), created: true };
@@ -233,11 +242,13 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
     const config = DATAFORSEO_SURFACE_CONFIG[input.surface];
     const task: ProviderTaskRecord = {
       id, organizationId: input.organizationId, brandId: input.brandId ?? null, promptId: input.promptId ?? null,
+      collectionRequestId: input.collectionRequestId ?? null, retryOfTaskId: input.retryOfTaskId ?? null,
       provider: "dataforseo", surface: input.surface, device: input.device, marketId: input.marketId,
       querySnapshot: input.query.trim(), scheduledWindow: input.scheduledWindow, dedupeKey: key,
       endpoint: config.postPath, tag: `neodio:${id}`, providerTaskId: null, status: "reserved", attempt: 1,
       estimatedCostUsd: config.estimatedCostUsd, actualCostUsd: 0, errorCode: null, errorMessage: null,
-      normalizerVersion: null, createdAt: now, updatedAt: now, submittedAt: null, completedAt: null,
+      normalizerVersion: null, submissionAttemptedAt: null, leaseOwner: null, leaseExpiresAt: null, nextPollAt: null,
+      createdAt: now, updatedAt: now, submittedAt: null, completedAt: null,
     };
     this.tasks.set(id, task);
     return { task, created: true };

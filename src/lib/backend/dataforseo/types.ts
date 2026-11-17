@@ -71,6 +71,8 @@ export interface ProviderTaskRecord {
   organizationId: string;
   brandId: string | null;
   promptId: string | null;
+  collectionRequestId: string | null;
+  retryOfTaskId: string | null;
   provider: "dataforseo";
   surface: DataForSeoSurface;
   device: DataForSeoDevice;
@@ -88,6 +90,10 @@ export interface ProviderTaskRecord {
   errorCode: string | null;
   errorMessage: string | null;
   normalizerVersion: string | null;
+  submissionAttemptedAt: string | null;
+  leaseOwner: string | null;
+  leaseExpiresAt: string | null;
+  nextPollAt: string | null;
   createdAt: string;
   updatedAt: string;
   submittedAt: string | null;

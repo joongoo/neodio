@@ -148,6 +148,19 @@ CREATE TABLE IF NOT EXISTS aio_observations (
   has_youtube BOOLEAN NOT NULL, has_own_video BOOLEAN NOT NULL, own_best_position INTEGER, source_count INTEGER NOT NULL,
   UNIQUE(keyword_id,device,collected_date)
 );
+-- 사용자가 비용을 확인하고 승인한 수집 묶음. Provider task와 별도로 요청 단위 진행률·취소·재제출을 추적한다.
+CREATE TABLE IF NOT EXISTS collection_requests (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id),
+  brand_id TEXT REFERENCES brands(id), requested_by TEXT,
+  request_kind TEXT NOT NULL CHECK(request_kind IN ('manual','scheduled','retry')),
+  status TEXT NOT NULL CHECK(status IN ('queued','running','completed','partially_failed','needs_attention','cancelled')),
+  total_task_count INTEGER NOT NULL DEFAULT 0 CHECK(total_task_count >= 0),
+  estimated_cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
+  actual_cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
+  cancel_requested BOOLEAN NOT NULL DEFAULT false,
+  retry_of_request_id TEXT REFERENCES collection_requests(id),
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, approved_at TEXT NOT NULL, completed_at TEXT
+);
 -- DataForSEO처럼 제출과 결과 회수가 분리된 Provider 작업. 제품 결과(prompt_runs/aio_observations)와
 -- 외부 task 상태를 분리해 timeout 뒤 중복 제출·과금을 막는다.
 CREATE TABLE IF NOT EXISTS provider_tasks (
@@ -217,6 +230,15 @@ CREATE INDEX IF NOT EXISTS aio_observations_brand_date ON aio_observations(brand
 CREATE INDEX IF NOT EXISTS provider_tasks_recovery ON provider_tasks(provider,status,updated_at);
 CREATE INDEX IF NOT EXISTS provider_tasks_scope ON provider_tasks(organization_id,brand_id,surface,scheduled_window);
 CREATE INDEX IF NOT EXISTS provider_artifacts_task ON provider_artifacts(provider_task_id,kind);
+CREATE INDEX IF NOT EXISTS collection_requests_scope ON collection_requests(organization_id,brand_id,status,created_at);
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS collection_request_id TEXT REFERENCES collection_requests(id);
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS retry_of_task_id TEXT REFERENCES provider_tasks(id);
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS submission_attempted_at TEXT;
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS lease_owner TEXT;
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS lease_expires_at TEXT;
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS next_poll_at TEXT;
+CREATE INDEX IF NOT EXISTS provider_tasks_collection_request ON provider_tasks(collection_request_id,created_at);
+CREATE INDEX IF NOT EXISTS provider_tasks_queue_due ON provider_tasks(provider,status,next_poll_at,lease_expires_at);
 ALTER TABLE provider_tasks DROP CONSTRAINT IF EXISTS provider_tasks_status_check;
 ALTER TABLE provider_tasks ADD CONSTRAINT provider_tasks_status_check CHECK(status IN (
   'reserved','submitting','submission_unknown','queued','collecting','raw_saved','normalized','completed',

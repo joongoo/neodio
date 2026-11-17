@@ -58,6 +58,36 @@ test("옛 email 컬럼 테이블은 스키마 초기화 때 login_id로 바뀌�
   await store.query("DELETE FROM neodio_users WHERE lower(login_id)=$1", [id]);
 });
 
+// 작업 큐 전환은 기존 Provider task를 지우지 않는 전진 마이그레이션이어야 한다. 앱 초기화가 반복돼도
+// 요청 묶음과 lease/조회 예약 컬럼이 그대로 준비되는지 실제 Postgres에서 확인한다.
+test("DataForSEO 작업 큐 스키마를 반복 적용해도 요청·lease 컬럼이 유지된다", async () => {
+  const store = await getPromptStore();
+  const pool = new Pool({ connectionString: process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING });
+  await pool.query(schema);
+  await pool.query(schema);
+  await pool.end();
+
+  const [{ request_table: requestTable }] = await store.query<{ request_table: string | null }>(
+    "SELECT to_regclass(current_schema() || '.collection_requests')::text AS request_table",
+  );
+  assert.ok(requestTable?.endsWith("collection_requests"));
+
+  const columns = await store.query<{ column_name: string }>(
+    "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='provider_tasks'",
+  );
+  const names = new Set(columns.map((column) => column.column_name));
+  for (const name of [
+    "collection_request_id",
+    "retry_of_task_id",
+    "submission_attempted_at",
+    "lease_owner",
+    "lease_expires_at",
+    "next_poll_at",
+  ]) {
+    assert.equal(names.has(name), true, name);
+  }
+});
+
 // 로그인·로그아웃 기록은 유저 상세의 "최근 접속"에 최신순으로 보인다.
 test("접속 기록: 로그인·로그아웃이 최신순으로 유저 상세에 나온다", async () => {
   const store = await getPromptStore();
