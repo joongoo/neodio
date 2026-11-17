@@ -1,5 +1,7 @@
 # DataForSEO 수집 전환 실행 계획
 
+로컬 worker 실행과 mock 환경변수, 현재 후속 작업 순서는 [LOCAL-WORKER.md](LOCAL-WORKER.md)를 참고한다.
+
 > 상태: 구현 진행 중
 > 작성일: 2026-11-12
 > 문서 역할: DataForSEO 전환의 단일 기준 문서. 과거 계획·PoC 문서를 전제로 읽지 않는다.

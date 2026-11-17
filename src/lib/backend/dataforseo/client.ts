@@ -60,6 +60,9 @@ export class DataForSeoClient {
   }
 
   get(pathname: string): Promise<DataForSeoApiResponse> {
+    if (pathname.split("/").at(-1)?.startsWith("mock-")) {
+      throw new DataForSeoRequestError("Mock tasks cannot be recovered in live mode.", "configuration");
+    }
     return this.request(pathname, { method: "GET" }, false);
   }
 

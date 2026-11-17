@@ -1,5 +1,6 @@
 import { LocalArtifactStore, VercelBlobArtifactStore } from "./artifacts";
 import { DataForSeoClient } from "./client";
+import { MockDataForSeoClient } from "./mockClient";
 import { DataForSeoOrchestrator } from "./orchestrator";
 import { PostgresObservationProjector } from "./projector";
 import { PostgresProviderTaskStore, type ProviderTaskStore } from "./taskStore";
@@ -12,7 +13,7 @@ export function createDataForSeoOrchestrator(taskStore: ProviderTaskStore = new 
   return new DataForSeoOrchestrator(
     taskStore,
     artifacts,
-    new DataForSeoClient(),
+    process.env.DATAFORSEO_MOCK === "true" ? new MockDataForSeoClient() : new DataForSeoClient(),
     new PostgresObservationProjector(),
   );
 }

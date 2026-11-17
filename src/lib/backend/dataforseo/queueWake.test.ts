@@ -3,6 +3,12 @@ import test from "node:test";
 import type { DataForSeoQueueSender } from "./queueWake";
 import { followupWakeSeed, isDataForSeoQueueRuntimeReady, providerTaskWakeSeed, publishDataForSeoWake } from "./queueWake";
 
+test("local execution and mock mode never publish to Vercel Queue", () => {
+  const ready = { DATAFORSEO_QUEUE_ENABLED: "true", DATAFORSEO_ENABLED: "true", DATAFORSEO_LOGIN: "login", DATAFORSEO_PASSWORD: "password" };
+  assert.equal(isDataForSeoQueueRuntimeReady({ ...ready, DATAFORSEO_EXECUTOR: "local" }), false);
+  assert.equal(isDataForSeoQueueRuntimeReady({ ...ready, DATAFORSEO_MOCK: "true" }), false);
+});
+
 test("requires provider credentials and durable Vercel artifact storage before queue rollout", () => {
   assert.equal(isDataForSeoQueueRuntimeReady({
     DATAFORSEO_QUEUE_ENABLED: "true", DATAFORSEO_ENABLED: "true",

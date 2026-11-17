@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "next dev",
+    "worker:dataforseo": "node --env-file=.env.local --import tsx scripts/dataforseo-worker.ts",
+    "test:dataforseo:local": "tsx --test src/lib/backend/dataforseo/mockClient.test.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
