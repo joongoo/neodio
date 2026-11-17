@@ -64,6 +64,7 @@ export interface ProviderTaskStore {
   reserveActive(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
   reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
   attachToCollectionRequest(ids: string[], collectionRequestId: string): Promise<ProviderTaskRecord[]>;
+  quarantineStaleSubmissions(input: { limit: number; staleAfterMs: number; now?: string }): Promise<ProviderTaskRecord[]>;
   claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]>;
   claimRecoverable(input: ClaimRecoverableProviderTasksInput): Promise<ProviderTaskRecord[]>;
   beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null>;
@@ -318,6 +319,30 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     return rows.map(rowToTask);
   }
 
+  async quarantineStaleSubmissions(input: { limit: number; staleAfterMs: number; now?: string }): Promise<ProviderTaskRecord[]> {
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("stale task limit은 1 이상이어야 합니다.");
+    if (!Number.isFinite(input.staleAfterMs) || input.staleAfterMs < 60_000) throw new Error("stale 기준은 1분 이상이어야 합니다.");
+    const now = input.now ?? new Date().toISOString();
+    const cutoff = new Date(Date.parse(now) - input.staleAfterMs).toISOString();
+    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+      `WITH stale AS (
+         SELECT id FROM provider_tasks
+         WHERE status='submitting'
+           AND COALESCE(submission_attempted_at,updated_at) <= $1
+           AND (lease_expires_at IS NULL OR lease_expires_at <= $2)
+         ORDER BY COALESCE(submission_attempted_at,updated_at),id
+         FOR UPDATE SKIP LOCKED LIMIT $3
+       )
+       UPDATE provider_tasks p
+       SET status='submission_unknown',error_code='submission_stale',
+         error_message='Provider 제출 결과를 확인할 수 없어 자동 재제출하지 않습니다.',
+         lease_owner=NULL,lease_expires_at=NULL,updated_at=$2
+       FROM stale WHERE p.id=stale.id RETURNING p.*`,
+      [cutoff, now, input.limit],
+    );
+    return rows.map(rowToTask);
+  }
+
   async claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]> {
     if (!input.owner.trim()) throw new Error("worker owner가 필요합니다.");
     if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("선점 limit은 1 이상이어야 합니다.");
@@ -523,6 +548,32 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
       this.tasks.set(id, updated);
       return updated;
     });
+  }
+
+  async quarantineStaleSubmissions(input: { limit: number; staleAfterMs: number; now?: string }): Promise<ProviderTaskRecord[]> {
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("stale task limit은 1 이상이어야 합니다.");
+    if (!Number.isFinite(input.staleAfterMs) || input.staleAfterMs < 60_000) throw new Error("stale 기준은 1분 이상이어야 합니다.");
+    const now = input.now ?? new Date().toISOString();
+    const cutoff = new Date(Date.parse(now) - input.staleAfterMs).toISOString();
+    return [...this.tasks.values()]
+      .filter((task) => task.status === "submitting"
+        && (task.submissionAttemptedAt ?? task.updatedAt) <= cutoff
+        && (!task.leaseExpiresAt || task.leaseExpiresAt <= now))
+      .sort((a, b) => (a.submissionAttemptedAt ?? a.updatedAt).localeCompare(b.submissionAttemptedAt ?? b.updatedAt) || a.id.localeCompare(b.id))
+      .slice(0, input.limit)
+      .map((task) => {
+        const updated: ProviderTaskRecord = {
+          ...task,
+          status: "submission_unknown",
+          errorCode: "submission_stale",
+          errorMessage: "Provider 제출 결과를 확인할 수 없어 자동 재제출하지 않습니다.",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          updatedAt: now,
+        };
+        this.tasks.set(task.id, updated);
+        return updated;
+      });
   }
 
   async claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]> {

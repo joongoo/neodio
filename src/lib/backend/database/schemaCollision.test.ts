@@ -77,6 +77,7 @@ test("DataForSEO 작업 큐 스키마를 반복 적용해도 요청·lease 컬�
   );
   const names = new Set(columns.map((column) => column.column_name));
   for (const name of [
+    "query_snapshot",
     "collection_request_id",
     "retry_of_task_id",
     "submission_attempted_at",

@@ -234,6 +234,15 @@ CREATE INDEX IF NOT EXISTS collection_requests_scope ON collection_requests(orga
 ALTER TABLE collection_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS collection_requests_client_request
   ON collection_requests(organization_id,client_request_id) WHERE client_request_id IS NOT NULL;
+ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS query_snapshot TEXT;
+UPDATE provider_tasks AS task
+SET query_snapshot=COALESCE((
+  SELECT prompt.text FROM prompts AS prompt
+  WHERE prompt.organization_id=task.organization_id AND prompt.id=task.prompt_id
+  LIMIT 1
+), '')
+WHERE task.query_snapshot IS NULL;
+ALTER TABLE provider_tasks ALTER COLUMN query_snapshot SET NOT NULL;
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS collection_request_id TEXT REFERENCES collection_requests(id);
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS retry_of_task_id TEXT REFERENCES provider_tasks(id);
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS submission_attempted_at TEXT;

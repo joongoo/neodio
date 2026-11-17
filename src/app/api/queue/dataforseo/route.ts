@@ -11,6 +11,7 @@ import {
 } from "@/lib/backend/dataforseo/queueWake";
 import { RecoveryWorker } from "@/lib/backend/dataforseo/recoveryWorker";
 import { SubmitWorker } from "@/lib/backend/dataforseo/submitWorker";
+import { StaleTaskSweeper } from "@/lib/backend/dataforseo/staleTaskSweeper";
 import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
 
 export const runtime = "nodejs";
@@ -30,6 +31,7 @@ export const POST = handleCallback<DataForSeoQueueMessage>(async (message, metad
   const worker = new DataForSeoQueueWorker(
     new RecoveryWorker(taskStore, orchestrator),
     new SubmitWorker(taskStore, orchestrator),
+    new StaleTaskSweeper(taskStore),
   );
   await worker.runOnce({
     owner: `queue-${metadata.messageId}-${randomUUID()}`,
@@ -37,6 +39,7 @@ export const POST = handleCallback<DataForSeoQueueMessage>(async (message, metad
     recoveryBatchSize: positiveInteger(process.env.DATAFORSEO_RECOVERY_BATCH_SIZE, 40, 100),
     maxInFlight: positiveInteger(process.env.DATAFORSEO_MAX_IN_FLIGHT, 20, 100),
     leaseMs: 120_000,
+    staleSubmissionAfterMs: Math.max(60, positiveInteger(process.env.DATAFORSEO_SUBMISSION_STALE_SECONDS, 300, 3_600)) * 1_000,
   });
 
   const activity = await taskStore.getActivitySummary(message.organizationId, message.brandId);

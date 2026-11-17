@@ -33,6 +33,8 @@ column "query_snapshot" of relation "provider_tasks" does not exist
 POST /api/dataforseo/tasks/reserve 500
 ```
 
+2026-11-17에 데이터 보존형 전진 마이그레이션을 추가하고 현재 DB에 적용했다. 실제 Provider 호출 없이 강제 롤백 진단을 수행해 요청 1건과 task 1건의 예약·연결이 성공하는 것을 확인했다.
+
 - 실패 위치: `PostgresProviderTaskStore.reserve()`가 `provider_tasks.query_snapshot`에 INSERT하는 단계
 - 추정 원인: 기존 DB에 과거 형태의 `provider_tasks` 테이블이 이미 있어 `CREATE TABLE IF NOT EXISTS`가 최신 컬럼을 추가하지 못한 스키마 불일치
 - 과금 여부: 예약 INSERT에서 실패했으므로 DataForSEO Provider POST까지 도달하지 않았고 이 시도에서는 외부 API 비용이 발생하지 않음

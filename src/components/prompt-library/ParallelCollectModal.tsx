@@ -94,6 +94,11 @@ export function ParallelCollectModal({
   const legacyIndexes = steps.flatMap((step, index) => step.kind === "serp-api" ? [] : [index]);
   const serpRegistering = serpIndexes.some((index) => states[index].phase === "running");
   const serpFailed = serpIndexes.some((index) => states[index].phase === "error" || states[index].phase === "stopped");
+  const serpFailureNotes = [...new Set(serpIndexes.flatMap((index) =>
+    (states[index].phase === "error" || states[index].phase === "stopped") && states[index].note
+      ? [states[index].note]
+      : []
+  ))];
   const serpRegistered = serpIndexes.length > 0 && !serpRegistering && !serpFailed;
   const legacyRunning = legacyIndexes.some((index) => states[index].phase === "running");
   const allFinished = states.every((s) => s.phase !== "running");
@@ -134,6 +139,7 @@ export function ParallelCollectModal({
                 ? "이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
                 : "등록하지 못한 작업을 확인한 뒤 다시 시도해 주세요."}
           </p>
+          {serpFailureNotes.map((note) => <p key={note} className="mt-1 text-xs font-medium">{note}</p>)}
           {serpRegistered && (
             <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => router.push("/collection-runs")}>
               수집 로그 보기
