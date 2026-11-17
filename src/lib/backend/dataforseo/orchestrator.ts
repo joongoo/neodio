@@ -22,7 +22,7 @@ export class DataForSeoOrchestrator {
     return this.tasks.get(id);
   }
 
-  async submit(id: string): Promise<ProviderTaskRecord> {
+  async submit(id: string, leaseOwner?: string): Promise<ProviderTaskRecord> {
     const task = await this.requireTask(id);
     if (task.status !== "reserved") return task;
 
@@ -32,7 +32,17 @@ export class DataForSeoOrchestrator {
     const payload = [config.payload(task.querySnapshot, task.device, task.tag)];
     const requestArtifact = await this.artifacts.save(task, "request", `${JSON.stringify(payload, null, 2)}\n`, "application/json; charset=utf-8");
     await this.tasks.saveArtifact(requestArtifact);
-    let submitting = await this.tasks.update(task.id, "reserved", { status: "submitting", errorCode: null, errorMessage: null });
+    const submissionAttemptedAt = new Date().toISOString();
+    let submitting: ProviderTaskRecord;
+    if (leaseOwner) {
+      const claimed = await this.tasks.beginSubmission(task.id, leaseOwner, submissionAttemptedAt);
+      if (!claimed) throw new Error(`Provider task lease를 잃어 제출하지 않았습니다: ${task.id}`);
+      submitting = claimed;
+    } else {
+      submitting = await this.tasks.update(task.id, "reserved", {
+        status: "submitting", submissionAttemptedAt, errorCode: null, errorMessage: null,
+      });
+    }
 
     let response;
     try {
@@ -41,6 +51,8 @@ export class DataForSeoOrchestrator {
       const requestError = error instanceof DataForSeoRequestError ? error : null;
       return this.tasks.update(submitting.id, "submitting", {
         status: requestError?.submissionMayHaveSucceeded ? "submission_unknown" : "provider_failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
         errorCode: requestError?.kind ?? "unknown",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
@@ -58,6 +70,9 @@ export class DataForSeoOrchestrator {
         providerTaskId: accepted.id,
         actualCostUsd: Number(accepted.cost ?? 0),
         submittedAt,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        nextPollAt: submittedAt,
         errorCode: "post_response_artifact",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
@@ -67,6 +82,9 @@ export class DataForSeoOrchestrator {
       providerTaskId: accepted.id,
       actualCostUsd: Number(accepted.cost ?? 0),
       submittedAt,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      nextPollAt: submittedAt,
       errorCode: null,
       errorMessage: null,
     });

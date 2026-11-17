@@ -56,6 +56,28 @@ test("비활성화 상태에서는 artifact와 fetch를 건드리지 않는다",
   assert.equal((await store.get(task.id))?.status, "reserved");
 });
 
+test("lease owner가 아닌 worker는 Provider POST 직전에 차단된다", async () => {
+  const store = new MemoryProviderTaskStore();
+  const artifacts = new MemoryArtifactStore();
+  let fetchCalls = 0;
+  const client = new DataForSeoClient({
+    enabled: true,
+    login: "x",
+    password: "y",
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return Response.json({});
+    },
+  });
+  const orchestrator = new DataForSeoOrchestrator(store, artifacts, client, new MemoryObservationProjector());
+  const { task } = await orchestrator.reserve(input);
+  await store.claimReserved({ owner: "worker-a", limit: 1, maxInFlight: 1, leaseMs: 60_000 });
+
+  await assert.rejects(orchestrator.submit(task.id, "worker-b"), /lease를 잃어 제출하지 않았습니다/);
+  assert.equal(fetchCalls, 0);
+  assert.equal((await store.get(task.id))?.status, "reserved");
+});
+
 test("가짜 POST와 GET으로 제출·회수·정규화를 완료한다", async () => {
   const store = new MemoryProviderTaskStore();
   const artifacts = new MemoryArtifactStore();

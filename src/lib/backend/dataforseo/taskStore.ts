@@ -29,6 +29,10 @@ export interface ProviderTaskPatch {
   errorCode?: string | null;
   errorMessage?: string | null;
   normalizerVersion?: string | null;
+  submissionAttemptedAt?: string | null;
+  leaseOwner?: string | null;
+  leaseExpiresAt?: string | null;
+  nextPollAt?: string | null;
   submittedAt?: string | null;
   completedAt?: string | null;
 }
@@ -46,6 +50,7 @@ export interface ProviderTaskStore {
   reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
   reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
   claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]>;
+  beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null>;
   get(id: string): Promise<ProviderTaskRecord | null>;
   update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord>;
   saveArtifact(artifact: ProviderArtifactRecord): Promise<void>;
@@ -324,6 +329,17 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     });
   }
 
+  async beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null> {
+    const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
+      `UPDATE provider_tasks
+       SET status='submitting',submission_attempted_at=$3,updated_at=$3
+       WHERE id=$1 AND status='reserved' AND lease_owner=$2 AND lease_expires_at>$3
+       RETURNING *`,
+      [id, owner, attemptedAt],
+    );
+    return row ? rowToTask(row) : null;
+  }
+
   async get(id: string): Promise<ProviderTaskRecord | null> {
     const [row] = await (await getPromptStore()).query<Record<string, unknown>>("SELECT * FROM provider_tasks WHERE id=$1", [id]);
     return row ? rowToTask(row) : null;
@@ -337,13 +353,19 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     const now = new Date().toISOString();
     const rows = await store.query<Record<string, unknown>>(
       `UPDATE provider_tasks SET status=$2,provider_task_id=$3,actual_cost_usd=$4,error_code=$5,error_message=$6,
-         normalizer_version=$7,submitted_at=$8,completed_at=$9,updated_at=$10
-       WHERE id=$1 AND status = ANY($11) RETURNING *`,
+         normalizer_version=$7,submitted_at=$8,completed_at=$9,submission_attempted_at=$10,
+         lease_owner=$11,lease_expires_at=$12,next_poll_at=$13,updated_at=$14
+       WHERE id=$1 AND status = ANY($15) RETURNING *`,
       [id, patch.status, patch.providerTaskId ?? current.providerTaskId, patch.actualCostUsd ?? current.actualCostUsd,
         patch.errorCode === undefined ? current.errorCode : patch.errorCode,
         patch.errorMessage === undefined ? current.errorMessage : patch.errorMessage,
         patch.normalizerVersion ?? current.normalizerVersion, patch.submittedAt ?? current.submittedAt,
-        patch.completedAt ?? current.completedAt, now, expectedStatuses],
+        patch.completedAt ?? current.completedAt,
+        patch.submissionAttemptedAt === undefined ? current.submissionAttemptedAt : patch.submissionAttemptedAt,
+        patch.leaseOwner === undefined ? current.leaseOwner : patch.leaseOwner,
+        patch.leaseExpiresAt === undefined ? current.leaseExpiresAt : patch.leaseExpiresAt,
+        patch.nextPollAt === undefined ? current.nextPollAt : patch.nextPollAt,
+        now, expectedStatuses],
     );
     if (!rows[0]) throw new Error(`Provider task 상태 전이 충돌: ${id} (${current.status} → ${patch.status})`);
     return rowToTask(rows[0]);
@@ -421,6 +443,16 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
     });
   }
 
+  async beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null> {
+    const task = this.tasks.get(id);
+    if (!task || task.status !== "reserved" || task.leaseOwner !== owner || !task.leaseExpiresAt || task.leaseExpiresAt <= attemptedAt) {
+      return null;
+    }
+    const submitting: ProviderTaskRecord = { ...task, status: "submitting", submissionAttemptedAt: attemptedAt, updatedAt: attemptedAt };
+    this.tasks.set(id, submitting);
+    return submitting;
+  }
+
   async get(id: string): Promise<ProviderTaskRecord | null> { return this.tasks.get(id) ?? null; }
 
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {
@@ -434,6 +466,10 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
       errorCode: patch.errorCode === undefined ? current.errorCode : patch.errorCode,
       errorMessage: patch.errorMessage === undefined ? current.errorMessage : patch.errorMessage,
       normalizerVersion: patch.normalizerVersion === undefined ? current.normalizerVersion : patch.normalizerVersion,
+      submissionAttemptedAt: patch.submissionAttemptedAt === undefined ? current.submissionAttemptedAt : patch.submissionAttemptedAt,
+      leaseOwner: patch.leaseOwner === undefined ? current.leaseOwner : patch.leaseOwner,
+      leaseExpiresAt: patch.leaseExpiresAt === undefined ? current.leaseExpiresAt : patch.leaseExpiresAt,
+      nextPollAt: patch.nextPollAt === undefined ? current.nextPollAt : patch.nextPollAt,
       submittedAt: patch.submittedAt === undefined ? current.submittedAt : patch.submittedAt,
       completedAt: patch.completedAt === undefined ? current.completedAt : patch.completedAt,
       updatedAt: new Date().toISOString(),
