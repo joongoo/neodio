@@ -14,7 +14,7 @@
 
 수집 로그의 기본 목록은 개별 결과가 아닌 **수집 요청 한 건당 한 행**으로 변경한다. 요청을 클릭하면 별도 상세 페이지로 들어가고, 그 안에서 해당 요청의 개별 항목을 현재 수집 로그 테이블 형태로 확인한다. 기존 상단 요청 요약 카드를 추가하는 수준이 아니라 목록의 기본 단위를 변경하는 작업이다.
 
-참고: [AEMaaCS Cloud Manager의 파이프라인 실행 목록과 상세](https://experienceleague.adobe.com/en/docs/experience-manager-cloud-service/content/implementing/using-cloud-manager/cicd-pipelines/managing-pipelines). 실행 목록에서 특정 실행을 열고 실행 정보·단계별 상태·로그를 확인하는 정보 구조를 참고한다. Adobe의 화면 요소를 그대로 복제한다는 뜻은 아니다.
+이 상세 페이지에서는 polling을 5초에 1번 수준으로 해도 될 지 검토 필요.
 
 ### 요청 목록
 
