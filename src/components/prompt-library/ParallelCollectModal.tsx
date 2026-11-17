@@ -302,11 +302,8 @@ function chunks<T>(values: T[], size: number): T[][] {
 // Provider 제출과 결과 회수는 서버 worker가 이어가며, 진행 상태는 수집 로그에서 확인한다.
 function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps & { step: Extract<CollectStep, { kind: "serp-api" }>; brandId: string }) {
   const router = useRouter();
-  const started = useRef(false);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
     let stopped = false;
     const controller = new AbortController();
     setCancel(index, () => {
@@ -347,7 +344,10 @@ function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps &
         if (!stopped) patch(index, { phase: "error", current: null, note: error instanceof Error ? error.message : "SERP API 수집에 실패했습니다." });
       }
     })();
-    return () => controller.abort();
+    return () => {
+      stopped = true;
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return null;
