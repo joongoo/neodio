@@ -52,6 +52,7 @@ export function ParallelCollectModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const router = useRouter();
   const needsAgent = steps.some((s) => s.kind === "ai" || s.kind === "aio");
   const [gate, setGate] = useState<"checking" | "ready" | { problem: Problem; status: CollectorAgentStatus | null }>(needsAgent ? "checking" : "ready");
   const [states, setStates] = useState<PanelState[]>(() =>
@@ -89,6 +90,12 @@ export function ParallelCollectModal({
     if (needsAgent) void run();
   }, [needsAgent, run]);
 
+  const serpIndexes = steps.flatMap((step, index) => step.kind === "serp-api" ? [index] : []);
+  const legacyIndexes = steps.flatMap((step, index) => step.kind === "serp-api" ? [] : [index]);
+  const serpRegistering = serpIndexes.some((index) => states[index].phase === "running");
+  const serpFailed = serpIndexes.some((index) => states[index].phase === "error" || states[index].phase === "stopped");
+  const serpRegistered = serpIndexes.length > 0 && !serpRegistering && !serpFailed;
+  const legacyRunning = legacyIndexes.some((index) => states[index].phase === "running");
   const allFinished = states.every((s) => s.phase !== "running");
   useEffect(() => {
     if (gate === "ready" && allFinished && !doneNotified.current && states.some((s) => s.done > 0)) {
@@ -97,9 +104,9 @@ export function ParallelCollectModal({
     }
   }, [gate, allFinished, states, onDone]);
 
-  const running = gate === "ready" && !allFinished;
   const close = () => {
-    if (running && !window.confirm("수집 중입니다. 창을 닫아도 이 PC의 수집기는 계속 수집하지만 결과 자동 반영은 멈춥니다. 닫을까요?")) return;
+    if (serpRegistering && !window.confirm("SERP API 작업을 큐에 등록하고 있습니다. 지금 닫으면 아직 등록되지 않은 작업이 누락될 수 있습니다. 닫을까요?")) return;
+    if (!serpRegistering && legacyRunning && !window.confirm("수집 중입니다. 창을 닫아도 이 PC의 수집기는 계속 수집하지만 결과 자동 반영은 멈춥니다. 닫을까요?")) return;
     onClose();
   };
 
@@ -109,6 +116,31 @@ export function ParallelCollectModal({
         <h2 className="text-lg font-bold text-neutral-900">{gate === "ready" || gate === "checking" ? "선택 수집 진행" : "수집기 확인"}</h2>
         <ModalCloseButton onClose={close} />
       </div>
+
+      {serpIndexes.map((index) => (
+        <SerpApiRunner key={`serp-register-${index}`} step={steps[index] as Extract<CollectStep, { kind: "serp-api" }>} brandId={brandId} index={index} patch={patch} setCancel={setCancel} />
+      ))}
+
+      {serpIndexes.length > 0 && (
+        <div className={`mt-3 rounded-lg border px-3 py-3 text-sm ${serpFailed ? "border-amber-200 bg-amber-50 text-amber-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
+          <div className="flex items-center gap-2 font-medium">
+            {serpRegistering ? <Loader2 size={15} className="animate-spin" /> : serpFailed ? <TriangleAlert size={15} /> : <CircleCheck size={15} />}
+            {serpRegistering ? "SERP API 작업 큐 등록 중" : serpRegistered ? "SERP API 작업 큐 등록 완료" : "일부 작업을 등록하지 못했습니다"}
+          </div>
+          <p className="mt-1 text-xs opacity-80">
+            {serpRegistering
+              ? "등록이 끝나면 이 화면을 닫아도 서버에서 수집을 이어갑니다."
+              : serpRegistered
+                ? "이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
+                : "등록하지 못한 작업을 확인한 뒤 다시 시도해 주세요."}
+          </p>
+          {serpRegistered && (
+            <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => router.push("/collection-runs")}>
+              수집 로그 보기
+            </button>
+          )}
+        </div>
+      )}
 
       {gate === "checking" && (
         <div className="mt-6 flex justify-center">
@@ -123,13 +155,13 @@ export function ParallelCollectModal({
       {gate === "ready" && (
         <div className="mt-2 flex flex-col gap-3">
           <p className="text-sm text-neutral-500">
-            {allFinished ? "모든 수집이 끝났습니다." : "플랫폼별로 동시에 수집합니다. 한 플랫폼이 멈춰도 다른 플랫폼은 계속 진행됩니다."}
+            {legacyIndexes.length === 0
+              ? serpRegistering ? "SERP API 수집 작업을 등록하고 있습니다." : "SERP API 수집 작업을 등록했습니다."
+              : allFinished ? "모든 수집이 끝났습니다." : "레거시 수집기는 이 화면에서 진행되며, SERP API는 서버 작업 큐에서 처리됩니다."}
           </p>
-          {steps.map((step, index) => (
+          {steps.map((step, index) => step.kind === "serp-api" ? null : (
             <PanelShell key={index} state={states[index]} onCancel={() => cancels.current[index]()}>
-              {step.kind === "serp-api" ? (
-                <SerpApiRunner step={step} brandId={brandId} index={index} patch={patch} setCancel={setCancel} />
-              ) : step.kind === "ai" ? (
+              {step.kind === "ai" ? (
                 <AgentAiRunner step={step} orgName={orgName} index={index} patch={patch} setCancel={setCancel} />
               ) : step.kind === "aio" ? (
                 <AioRunner brandId={brandId} promptIds={step.promptIds} index={index} patch={patch} setCancel={setCancel} />
@@ -138,9 +170,9 @@ export function ParallelCollectModal({
               )}
             </PanelShell>
           ))}
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <Button variant="primary" onClick={allFinished ? onClose : close}>
-              {allFinished ? "확인" : "닫기"}
+              {allFinished ? legacyIndexes.length === 0 ? "계속 작업" : "확인" : "닫기"}
             </Button>
           </div>
         </div>
@@ -309,6 +341,7 @@ function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps &
         if (!stopped) patch(index, { phase: "error", current: null, note: error instanceof Error ? error.message : "SERP API 수집에 실패했습니다." });
       }
     })();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return null;
