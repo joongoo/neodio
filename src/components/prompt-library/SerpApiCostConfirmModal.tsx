@@ -7,7 +7,7 @@ import { countBySurface, type CollectRow } from "@/lib/collectSteps";
 import { SURFACE_LABEL, type PromptSurface } from "@/lib/promptSurfaces";
 import { estimateSerpApiCost, type SerpApiSurface } from "@/lib/dataforseoPricing";
 
-const usd = (value: number) => `$${value.toFixed(4)}`;
+const usd = (value: number) => value > 0 ? `$${value.toFixed(4)}` : "-";
 
 export function SerpApiCostConfirmModal({
   rows,
@@ -66,7 +66,7 @@ export function SerpApiCostConfirmModal({
               <span className="text-sm font-medium text-neutral-800">기존 수집 방식</span>
               <span className="text-xs text-neutral-500">{collectorSurfaces.map((surface) => SURFACE_LABEL[surface]).join(" · ")}</span>
             </span>
-            <span className="self-center text-sm font-semibold tabular-nums text-neutral-500">$0.0000</span>
+            <span className="self-center text-sm font-semibold tabular-nums text-neutral-500">{usd(0)}</span>
           </div>
         )}
       </div>

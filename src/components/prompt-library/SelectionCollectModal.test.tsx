@@ -34,5 +34,23 @@ test("confirmation shows estimated total SERP API cost in USD", () => {
   assert.ok(html.includes("SERP API 예상 총액"));
   assert.ok(html.includes("총 5회 조회"));
   assert.ok(html.includes("$0.0054"));
+  assert.ok(html.includes(">-</span>"));
+  assert.ok(!html.includes("$0.0000"));
   assert.ok(html.includes("확인 후 수집 시작"));
+});
+
+test("confirmation renders a zero total as a dash", () => {
+  const html = renderToStaticMarkup(
+    <SerpApiCostConfirmModal
+      rows={rows}
+      enabled={new Set(["naver-ai"])}
+      serpApiEnabled={new Set()}
+      aioDeviceCount={2}
+      onBack={() => {}}
+      onConfirm={() => {}}
+    />,
+  );
+  assert.ok(html.includes("SERP API 예상 총액"));
+  assert.ok(!html.includes("$0.0000"));
+  assert.match(html, /SERP API 예상 총액[\s\S]*?<strong[^>]*>-<\/strong>/);
 });
