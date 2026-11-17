@@ -33,9 +33,19 @@ export interface ProviderTaskPatch {
   completedAt?: string | null;
 }
 
+export interface ClaimReservedProviderTasksInput {
+  owner: string;
+  limit: number;
+  leaseMs: number;
+  maxInFlight: number;
+  organizationId?: string;
+  now?: string;
+}
+
 export interface ProviderTaskStore {
   reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
   reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
+  claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]>;
   get(id: string): Promise<ProviderTaskRecord | null>;
   update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord>;
   saveArtifact(artifact: ProviderArtifactRecord): Promise<void>;
@@ -44,6 +54,17 @@ export interface ProviderTaskStore {
 const ACTIVE_PROVIDER_STATUSES: ProviderTaskStatus[] = [
   "reserved",
   "submitting",
+  "queued",
+  "collecting",
+  "raw_saved",
+  "normalized",
+  "artifact_failed",
+  "projection_failed",
+];
+
+const IN_FLIGHT_PROVIDER_STATUSES: ProviderTaskStatus[] = [
+  "submitting",
+  "submission_unknown",
   "queued",
   "collecting",
   "raw_saved",
@@ -255,6 +276,54 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     });
   }
 
+  async claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]> {
+    if (!input.owner.trim()) throw new Error("worker owner가 필요합니다.");
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("선점 limit은 1 이상이어야 합니다.");
+    if (!Number.isInteger(input.maxInFlight) || input.maxInFlight < 1) throw new Error("전역 in-flight 상한은 1 이상이어야 합니다.");
+    if (!Number.isFinite(input.leaseMs) || input.leaseMs < 1_000) throw new Error("lease는 1초 이상이어야 합니다.");
+
+    const store = await getPromptStore();
+    return store.transaction(async () => {
+      const now = input.now ?? new Date().toISOString();
+      const leaseExpiresAt = new Date(Date.parse(now) + input.leaseMs).toISOString();
+      // 전역 슬롯 계산과 reserved 선점을 직렬화한다. row lock만으로는 서로 다른 task를 잡은 worker들이
+      // 동시에 같은 빈 슬롯 수를 보고 전역 상한을 초과할 수 있다.
+      await store.query("SELECT pg_advisory_xact_lock(hashtext('dataforseo-submit-capacity'))");
+      const [{ occupied }] = await store.query<{ occupied: number }>(
+        `SELECT count(*)::int AS occupied FROM provider_tasks
+         WHERE provider='dataforseo' AND (
+           status = ANY($1::text[])
+           OR (status='reserved' AND lease_expires_at IS NOT NULL AND lease_expires_at > $2)
+         )`,
+        [IN_FLIGHT_PROVIDER_STATUSES, now],
+      );
+      const available = Math.min(input.limit, Math.max(0, input.maxInFlight - occupied));
+      if (available === 0) return [];
+
+      const rows = await store.query<Record<string, unknown>>(
+        `WITH candidates AS (
+           SELECT p.id FROM provider_tasks p
+           WHERE p.provider='dataforseo' AND p.status='reserved'
+             AND (p.lease_expires_at IS NULL OR p.lease_expires_at <= $4)
+             AND ($5::text IS NULL OR p.organization_id=$5)
+             AND (p.collection_request_id IS NULL OR EXISTS (
+               SELECT 1 FROM collection_requests r
+               WHERE r.id=p.collection_request_id AND r.cancel_requested=false AND r.status IN ('queued','running')
+             ))
+           ORDER BY p.created_at,p.id
+           FOR UPDATE SKIP LOCKED
+           LIMIT $1
+         )
+         UPDATE provider_tasks p
+         SET lease_owner=$2,lease_expires_at=$3,updated_at=$4
+         FROM candidates c WHERE p.id=c.id
+         RETURNING p.*`,
+        [available, input.owner.trim(), leaseExpiresAt, now, input.organizationId ?? null],
+      );
+      return rows.map(rowToTask);
+    });
+  }
+
   async get(id: string): Promise<ProviderTaskRecord | null> {
     const [row] = await (await getPromptStore()).query<Record<string, unknown>>("SELECT * FROM provider_tasks WHERE id=$1", [id]);
     return row ? rowToTask(row) : null;
@@ -324,6 +393,32 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
     const result = [];
     for (const input of inputs) result.push(await this.reserve(input));
     return result;
+  }
+
+  async claimReserved(input: ClaimReservedProviderTasksInput): Promise<ProviderTaskRecord[]> {
+    if (!input.owner.trim()) throw new Error("worker owner가 필요합니다.");
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("선점 limit은 1 이상이어야 합니다.");
+    if (!Number.isInteger(input.maxInFlight) || input.maxInFlight < 1) throw new Error("전역 in-flight 상한은 1 이상이어야 합니다.");
+    if (!Number.isFinite(input.leaseMs) || input.leaseMs < 1_000) throw new Error("lease는 1초 이상이어야 합니다.");
+    const now = input.now ?? new Date().toISOString();
+    const occupied = [...this.tasks.values()].filter((task) =>
+      IN_FLIGHT_PROVIDER_STATUSES.includes(task.status)
+      || (task.status === "reserved" && !!task.leaseExpiresAt && task.leaseExpiresAt > now)
+    ).length;
+    const available = Math.min(input.limit, Math.max(0, input.maxInFlight - occupied));
+    if (available === 0) return [];
+    const leaseExpiresAt = new Date(Date.parse(now) + input.leaseMs).toISOString();
+    const candidates = [...this.tasks.values()]
+      .filter((task) => task.status === "reserved"
+        && (!task.leaseExpiresAt || task.leaseExpiresAt <= now)
+        && (!input.organizationId || task.organizationId === input.organizationId))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .slice(0, available);
+    return candidates.map((task) => {
+      const claimed = { ...task, leaseOwner: input.owner.trim(), leaseExpiresAt, updatedAt: now };
+      this.tasks.set(task.id, claimed);
+      return claimed;
+    });
   }
 
   async get(id: string): Promise<ProviderTaskRecord | null> { return this.tasks.get(id) ?? null; }
