@@ -39,7 +39,7 @@ const postgresTransaction: TransactionRunner = async <T>(work: () => Promise<T>)
 
 /**
  * 비용 승인이 끝난 요청과 최초 Provider task를 같은 트랜잭션에 저장한다.
- * 이 서비스는 아직 HTTP route에 연결하지 않는다. 대량 운영 연결 전 reserveMany bulk insert를 추가한다.
+ * 이 서비스는 아직 HTTP route에 연결하지 않는다. 요청 생성과 task bulk insert가 모두 성공해야 commit된다.
  */
 export class CollectionQueueService {
   constructor(
@@ -65,19 +65,18 @@ export class CollectionQueueService {
         estimatedCostUsd,
         retryOfRequestId: input.retryOfRequestId,
       });
-      const tasks: ProviderTaskRecord[] = [];
-      for (const taskInput of input.tasks) {
-        const reserved = await this.providerTasks.reserve({
+      const reserved = await this.providerTasks.reserveMany(
+        input.tasks.map((taskInput) => ({
           ...taskInput,
           organizationId: input.organizationId,
           brandId: input.brandId,
           collectionRequestId: request.id,
-        });
-        if (!reserved.created || reserved.task.collectionRequestId !== request.id) {
+        })),
+      );
+      if (reserved.some((item) => !item.created || item.task.collectionRequestId !== request.id)) {
           throw new Error("이미 예약된 Provider task가 포함되어 수집 요청을 만들지 않았습니다.");
-        }
-        tasks.push(reserved.task);
       }
+      const tasks: ProviderTaskRecord[] = reserved.map((item) => item.task);
       return { request, tasks };
     });
   }

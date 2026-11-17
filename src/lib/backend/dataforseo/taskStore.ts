@@ -35,6 +35,7 @@ export interface ProviderTaskPatch {
 
 export interface ProviderTaskStore {
   reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
+  reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
   get(id: string): Promise<ProviderTaskRecord | null>;
   update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord>;
   saveArtifact(artifact: ProviderArtifactRecord): Promise<void>;
@@ -191,6 +192,69 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     return { task: rowToTask(existing), created: false };
   }
 
+  async reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>> {
+    if (inputs.length === 0) return [];
+    const keys = inputs.map(dedupeKey);
+    if (new Set(keys).size !== keys.length) throw new Error("한 수집 요청에 중복된 Provider task가 포함되어 있습니다.");
+
+    const store = await getPromptStore();
+    return store.transaction(async () => {
+      const now = new Date().toISOString();
+      const rows = inputs.map((input, index) => {
+        const id = `ptask-${randomUUID()}`;
+        const config = DATAFORSEO_SURFACE_CONFIG[input.surface];
+        return {
+          id,
+          organization_id: input.organizationId,
+          brand_id: input.brandId ?? null,
+          prompt_id: input.promptId ?? null,
+          collection_request_id: input.collectionRequestId ?? null,
+          retry_of_task_id: input.retryOfTaskId ?? null,
+          surface: input.surface,
+          device: input.device,
+          market_id: input.marketId,
+          query_snapshot: input.query.trim(),
+          scheduled_window: input.scheduledWindow,
+          dedupe_key: keys[index],
+          endpoint: config.postPath,
+          tag: `neodio:${id}`,
+          estimated_cost_usd: config.estimatedCostUsd,
+          created_at: now,
+        };
+      });
+      const inserted = await store.query<{ id: string }>(
+        `INSERT INTO provider_tasks (
+           id,organization_id,brand_id,prompt_id,collection_request_id,retry_of_task_id,provider,surface,device,market_id,
+           query_snapshot,scheduled_window,dedupe_key,endpoint,tag,provider_task_id,status,attempt,
+           estimated_cost_usd,actual_cost_usd,error_code,error_message,normalizer_version,
+           created_at,updated_at,submitted_at,completed_at
+         )
+         SELECT id,organization_id,brand_id,prompt_id,collection_request_id,retry_of_task_id,'dataforseo',surface,device,market_id,
+           query_snapshot,scheduled_window,dedupe_key,endpoint,tag,NULL,'reserved',1,
+           estimated_cost_usd,0,NULL,NULL,NULL,created_at,created_at,NULL,NULL
+         FROM jsonb_to_recordset($1::jsonb) AS input(
+           id TEXT, organization_id TEXT, brand_id TEXT, prompt_id TEXT, collection_request_id TEXT, retry_of_task_id TEXT,
+           surface TEXT, device TEXT, market_id TEXT, query_snapshot TEXT, scheduled_window TEXT, dedupe_key TEXT,
+           endpoint TEXT, tag TEXT, estimated_cost_usd NUMERIC, created_at TEXT
+         )
+         ON CONFLICT(dedupe_key) DO NOTHING
+         RETURNING id`,
+        [JSON.stringify(rows)],
+      );
+      const stored = await store.query<Record<string, unknown>>(
+        "SELECT * FROM provider_tasks WHERE dedupe_key = ANY($1::text[])",
+        [keys],
+      );
+      const byKey = new Map(stored.map((row) => [row.dedupe_key as string, rowToTask(row)]));
+      const insertedIds = new Set(inserted.map((row) => row.id));
+      return keys.map((key) => {
+        const task = byKey.get(key);
+        if (!task) throw new Error("대량 예약한 Provider task를 조회하지 못했습니다.");
+        return { task, created: insertedIds.has(task.id) };
+      });
+    });
+  }
+
   async get(id: string): Promise<ProviderTaskRecord | null> {
     const [row] = await (await getPromptStore()).query<Record<string, unknown>>("SELECT * FROM provider_tasks WHERE id=$1", [id]);
     return row ? rowToTask(row) : null;
@@ -252,6 +316,14 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
     };
     this.tasks.set(id, task);
     return { task, created: true };
+  }
+
+  async reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>> {
+    const keys = inputs.map(dedupeKey);
+    if (new Set(keys).size !== keys.length) throw new Error("한 수집 요청에 중복된 Provider task가 포함되어 있습니다.");
+    const result = [];
+    for (const input of inputs) result.push(await this.reserve(input));
+    return result;
   }
 
   async get(id: string): Promise<ProviderTaskRecord | null> { return this.tasks.get(id) ?? null; }
