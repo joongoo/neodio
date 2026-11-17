@@ -33,3 +33,15 @@ test("rejects a collection request without tasks or with a negative cost", async
     /예상 비용/,
   );
 });
+
+test("lists recent request summaries only for the selected brand", async () => {
+  const store = new MemoryCollectionRequestStore();
+  await store.create({ organizationId: "org-1", brandId: "brand-1", requestKind: "manual", totalTaskCount: 3, estimatedCostUsd: 0.01 });
+  await store.create({ organizationId: "org-1", brandId: "brand-2", requestKind: "manual", totalTaskCount: 9, estimatedCostUsd: 0.02 });
+
+  const summaries = await store.listRecentSummaries("org-1", "brand-1");
+
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0]?.totalTaskCount, 3);
+  assert.equal(summaries[0]?.waitingCount, 3);
+});
