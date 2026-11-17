@@ -122,3 +122,16 @@ test("batch status lookup is read-only and preserves requested order", async () 
   assert.equal((await store.get(reserved[1].task.id))?.status, "queued");
   assert.equal((await store.get(reserved[1].task.id))?.leaseOwner, null);
 });
+
+test("activity summary separates running tasks from unresolved failures", async () => {
+  const store = new MemoryProviderTaskStore();
+  const reserved = await store.reserveMany(inputs(3));
+  await store.update(reserved[1].task.id, "reserved", { status: "submission_unknown" });
+  await store.update(reserved[2].task.id, "reserved", { status: "provider_failed" });
+  await store.reserve({ ...inputs(1)[0], promptId: "retry-prompt", retryOfTaskId: reserved[2].task.id, scheduledWindow: "retry:1" });
+
+  const summary = await store.getActivitySummary("org-1", "brand-1");
+
+  assert.equal(summary.runningCount, 2);
+  assert.equal(summary.attentionCount, 1);
+});

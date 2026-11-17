@@ -54,6 +54,11 @@ export interface ClaimRecoverableProviderTasksInput {
   now?: string;
 }
 
+export interface ProviderTaskActivitySummary {
+  runningCount: number;
+  attentionCount: number;
+}
+
 export interface ProviderTaskStore {
   reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }>;
   reserveMany(inputs: ReserveProviderTaskInput[]): Promise<Array<{ task: ProviderTaskRecord; created: boolean }>>;
@@ -62,6 +67,7 @@ export interface ProviderTaskStore {
   beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null>;
   get(id: string): Promise<ProviderTaskRecord | null>;
   getMany(ids: string[]): Promise<ProviderTaskRecord[]>;
+  getActivitySummary(organizationId: string, brandId: string): Promise<ProviderTaskActivitySummary>;
   update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord>;
   saveArtifact(artifact: ProviderArtifactRecord): Promise<void>;
 }
@@ -402,6 +408,21 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     });
   }
 
+  async getActivitySummary(organizationId: string, brandId: string): Promise<ProviderTaskActivitySummary> {
+    const [row] = await (await getPromptStore()).query<{ running_count: number; attention_count: number }>(
+      `SELECT
+         count(*) FILTER (WHERE p.status = ANY($3::text[]))::int AS running_count,
+         count(*) FILTER (
+           WHERE p.status = ANY($4::text[])
+             AND NOT EXISTS (SELECT 1 FROM provider_tasks retry WHERE retry.retry_of_task_id=p.id)
+         )::int AS attention_count
+       FROM provider_tasks p
+       WHERE p.provider='dataforseo' AND p.organization_id=$1 AND p.brand_id=$2`,
+      [organizationId, brandId, ACTIVE_PROVIDER_STATUSES, ["submission_unknown", "provider_failed", "parse_failed"]],
+    );
+    return { runningCount: Number(row?.running_count ?? 0), attentionCount: Number(row?.attention_count ?? 0) };
+  }
+
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {
     const store = await getPromptStore();
     const current = await this.get(id);
@@ -538,6 +559,16 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
       const task = this.tasks.get(id);
       return task ? [task] : [];
     });
+  }
+
+  async getActivitySummary(organizationId: string, brandId: string): Promise<ProviderTaskActivitySummary> {
+    const tasks = [...this.tasks.values()].filter((task) => task.organizationId === organizationId && task.brandId === brandId);
+    const retriedIds = new Set(tasks.map((task) => task.retryOfTaskId).filter((id): id is string => id !== null));
+    return {
+      runningCount: tasks.filter((task) => ACTIVE_PROVIDER_STATUSES.includes(task.status)).length,
+      attentionCount: tasks.filter((task) => ["submission_unknown", "provider_failed", "parse_failed"].includes(task.status)
+        && !retriedIds.has(task.id)).length,
+    };
   }
 
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {
