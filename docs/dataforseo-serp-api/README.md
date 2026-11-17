@@ -1,5 +1,7 @@
 # DataForSEO 수집 전환 실행 계획
 
+최신 잔여 작업과 요청 단위 수집 로그 개편은 [REMAINING-WORK.md](REMAINING-WORK.md)를 따른다.
+
 로컬 worker 실행과 mock 환경변수, 현재 후속 작업 순서는 [LOCAL-WORKER.md](LOCAL-WORKER.md)를 참고한다.
 
 > 상태: 구현 진행 중

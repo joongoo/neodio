@@ -421,6 +421,8 @@ Provider가 요청을 접수했는지 확인할 수 없습니다.
 
 ## 14. 구현 순서
 
+2026-11-17 추가 결정: 수집 로그는 요청당 한 행의 목록과 요청별 상세 페이지로 개편한다. 상세 안에 기존 개별 항목 테이블을 배치한다. 로컬 mock 검증 이후의 구체적인 후속 순서와 AEMaaCS 참고 지침은 [REMAINING-WORK.md](REMAINING-WORK.md)를 우선한다.
+
 1. 실제 DB의 `provider_tasks` 스키마를 데이터 보존형 전진 마이그레이션으로 보정한다.
 2. `collection_requests`와 task 연결을 추가한다.
 3. lease와 in-flight 제한을 갖는 submit worker를 구현한다.
