@@ -99,9 +99,18 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal(sessionItems.find(item => item.surface === 'google-ai-mode')!.status, "cancelled", "leaving after actual execution still cancels unfinished work");
       const fixtureId = await createMixedFailureFixture(sample.organization_id, sample.brand_id, fixtureKey);
       assert.equal(await createMixedFailureFixture(sample.organization_id, sample.brand_id, fixtureKey), fixtureId, "fixture is idempotent");
-      const mixedPage = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
+      let mixedPage = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
       assert.equal(mixedPage.rows.length, 9);
       assert.ok(mixedPage.rows.every(item => ["parse_failed", "provider_failed", "cancelled"].includes(item.status)));
+      const analysisFailed = mixedPage.rows.filter(item => item.status === "parse_failed");
+      for (const source of analysisFailed) await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `parse-block-${randomUUID()}`, null, [source.id]), LegacyRetryConflict);
+      const localAnalysisFailed = analysisFailed.find(item => item.executionKind === "legacy")!;
+      await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, fixtureId, `parse-direct-${randomUUID()}`, null, { action: "retry", itemIds: [localAnalysisFailed.id] }), LegacyRetryConflict);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed"))?.length, 3);
+      // Separate mixed-path submission-failure scenario; rollback-only test rows.
+      await store.query("UPDATE provider_tasks SET status='provider_failed' WHERE collection_request_id=$1 AND status='parse_failed'", [fixtureId]);
+      await store.query("UPDATE legacy_collection_items SET status='provider_failed' WHERE collection_request_id=$1 AND status='parse_failed'", [fixtureId]);
+      mixedPage = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
       const failures = mixedPage.rows.filter(isRetryFailure);
       assert.equal(failures.length, 8);
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed"))?.length, 8);
@@ -111,7 +120,7 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal(filteredFailures?.length, 3, "bulk selection matches all filtered pages, not just the displayed page");
       assert.ok(filteredFailures?.every(item => item.surface === "google-aio"));
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "cancelled", undefined, candidateFilter("surface=google-aio")))?.length, 0);
-      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("status=provider_failed")))?.length, 3);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("status=provider_failed")))?.length, 8);
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("status=cancelled")))?.length, 0);
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("q=no-such-fixture-prompt")))?.length, 0);
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("from=2100-01-01T00%3A00%3A00Z")))?.length, 0);
@@ -157,7 +166,7 @@ test("legacy registration is idempotent and links results to the approved reques
       const localOriginal = failures.find(item => item.executionKind === "legacy")!;
       await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, fixtureId, `legacy-bypass-${randomUUID()}`, null, { action: "retry", itemIds: [localOriginal.id] }), LegacyRetryConflict);
       const nextFailures = await listRetryCandidates(sample.organization_id, sample.brand_id, mixedRetry!.requestId!, "failed");
-      assert.equal(nextFailures?.length, 4, "failed items in the latest request remain eligible");
+      assert.equal(nextFailures?.length, 0, "analysis failures in the latest request do not become paid retries");
       const pending = await new CollectionQueueService().enqueueApproved({ organizationId: sample.organization_id, brandId: sample.brand_id,
         clientRequestId: `pending-${randomUUID()}`, requestKind: "manual", tasks: ["desktop", "mobile"].map(device => ({ query: sample.text, promptId: sample.prompt_id,
           surface: "google-aio" as const, device: device as "desktop" | "mobile", marketId: "market-kr", scheduledWindow: `pending:${randomUUID()}` })) });
@@ -272,16 +281,18 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('retry-attention','org','brand','b','dataforseo','google-aio','desktop','reserved','retry','failed-attention')`);
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='legacy-1'");
+    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"], "analysis failure is not a user action item");
+    await client.query("UPDATE legacy_items_test SET status='provider_failed' WHERE id='legacy-1'");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b", "a"], "local failures match the same attention filter");
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "local failure and unknown SERP counted, retried original excluded");
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
       VALUES ('gemini-failed','org','brand','a','gemini','desktop','parse_failed','gemini'),
         ('gemini-cancelled','org','brand','a','gemini','desktop','cancelled','cancelled')`);
-    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 3, "Gemini failures included, cancellations excluded");
+    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "Gemini analysis failures and cancellations excluded");
     const geminiFilter = "status=parse_failed,cancelled&surface=gemini";
-    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 1, cancelled: 1, selectable: 2 });
-    assert.equal((await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 2);
-    assert.equal((await listRetryCandidates("org", "brand", "a", "failed", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 1);
+    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1, selectable: 1 });
+    assert.equal((await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 1);
+    assert.equal((await listRetryCandidates("org", "brand", "a", "failed", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 0);
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('local-retry','org','brand','b','naver-ai','desktop','reserved','retry','legacy-1'),
         ('gemini-retry','org','brand','b','gemini','desktop','reserved','retry gemini','gemini-failed')`);
@@ -289,7 +300,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1, selectable: 1 }, "selection counts exclude retried originals");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"]);
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='gemini-retry'");
-    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "failed retry is counted instead of its original");
+    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 1, "analysis-failed retry is not a user action item");
     assert.equal((await getCollectionActivitySummary("foreign-org", "brand", db)).attentionCount, 0);
     assert.equal((await list("attention=1&page=99")).page, 1);
     await client.query("UPDATE provider_tasks SET status='submitting' WHERE id='t1'");

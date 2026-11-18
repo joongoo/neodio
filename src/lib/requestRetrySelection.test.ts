@@ -6,11 +6,11 @@ const item = (status: RetrySelectionItem["status"], executionKind: RetrySelectio
 
 test("failure selection covers both collection methods but excludes unknown submissions and recoverable artifacts", () => {
   for (const kind of ["legacy", "serp-api"] as const) {
-    for (const status of ["provider_failed", "parse_failed"] as const) {
+    for (const status of ["provider_failed"] as const) {
       assert.ok(isRetryFailure(item(status, kind)));
       assert.ok(isRetrySelectable(item(status, kind)));
     }
-    for (const status of ["completed", "submission_unknown", "artifact_failed", "projection_failed", "queued", "submitting", "normalized", "raw_saved"] as const) {
+    for (const status of ["parse_failed", "completed", "submission_unknown", "artifact_failed", "projection_failed", "queued", "submitting", "normalized", "raw_saved"] as const) {
       assert.equal(isRetryFailure(item(status, kind)), false);
       assert.equal(isRetrySelectable(item(status, kind)), false);
     }

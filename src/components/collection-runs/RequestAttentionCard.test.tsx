@@ -9,6 +9,8 @@ test("attention card shows task count and opens the exact attention request filt
   assert.ok(html.includes("확인 필요"));
   assert.ok(html.includes("로컬·Gemini·SERP API"));
   assert.ok(html.includes("취소 건은 제외"));
+  assert.ok(html.includes("분석 실패·취소 건은 제외"));
+  assert.ok(html.includes("제출 실패·제출 여부 불명확"));
   assert.ok(html.includes('href="/org/brand/collection-runs?attention=1"'));
   assert.match(html, /<strong[^>]*>4<span/);
   assert.ok(!html.includes('aria-current="page"'));

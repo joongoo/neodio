@@ -4,7 +4,7 @@ import { SERP_API_ESTIMATED_COST_USD, type SerpApiSurface } from "./dataforseoPr
 export type RetrySelectionItem = Pick<RequestItemRow, "id" | "executionKind" | "query" | "surface" | "device" | "status"> & { hasRetry?: boolean; retries?: RequestItemRow["retries"]; canManagePending?: boolean; estimatedCostUsd?: number };
 export type RetrySelectionGroup = "failed" | "cancelled";
 // Unknown submissions and saved artifacts must be reconciled, not paid for again.
-export const RETRY_FAILURE_STATUSES = ["provider_failed", "parse_failed"] as const;
+export const RETRY_FAILURE_STATUSES = ["provider_failed"] as const;
 export function isRetryFailure(item: RetrySelectionItem) {
   return (RETRY_FAILURE_STATUSES as readonly string[]).includes(item.status);
 }

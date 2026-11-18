@@ -15,6 +15,14 @@
 
 ## 최신 인수인계
 
+### 2026-11-18 — 분석 실패 재수집 제외 / 확인 필요·상태 문구 정렬
+
+- 사용자 확정: 실패 항목의 일반 재수집은 provider_failed만 허용합니다. parse_failed는 유료 신규 제출로 해결을 기대하기 어려우므로 분석 오류/원본 재처리 대상으로 구분하고 개별/전체 선택에서 제외합니다. 원본 재처리 기능 자체를 이번에 추가한 것은 아닙니다. cancelled·로컬 reserved/collecting·검증된 미제출 SERP의 기존 조작은 유지합니다.
+- RETRY_FAILURE_STATUSES, retry 후보 조회, requestItems 선택 가능 facet, unified retry POST 검증과 직접 legacyRetry 호출에 반영했습니다. 로컬 실패도 현재 parse_failed로 분류된 항목이면 동일하게 제외합니다.
+- COLLECTION_ATTENTION_STATUSES는 submission_unknown/provider_failed만 포함합니다. 사이드바/상단 카드와 attention=1 요청 필터는 기존 공유 집계를 통해 함께 변경됩니다. parse_failed의 이력·필터 결과·요청 실패 합계/일부 실패 상태는 보존합니다. 데이터나 과거 요청 상태를 소급 수정하지 않습니다.
+- 항목 StatusBadge는 REQUEST_STATUS_LABEL을 공유해 상태 드롭다운과 동일한 13개 상태 문구를 표시합니다. 세부 상태 없는 과거 이력만 기존 성공/실패 표시를 유지합니다.
+- 롤백 DB 테스트에서 분석 실패의 unified/legacy 직접 재요청 차단·선택 가능 건수 제외·확인 필요 제외를 검증했습니다. 기존 혼합 재시도 테스트는 테스트 transaction 안에서만 제출 실패로 재구성해 로컬/SERP 혼합 경로 검증을 유지합니다. 실제 fixture 데이터·외부 API는 변경하지 않습니다.
+
 ### 2026-11-18 — 수집기 미확인 대기 보존
 
 - ParallelCollectModal의 collector gate 실패(미연결/구버전/Chrome 없음)는 로컬 패널을 waiting으로 기록합니다. 상태 PATCH waiting은 reserved만 대상으로 하며 submitted_at을 새로 만들지 않고 completed_at도 NULL로 유지합니다. 정상 연결 재확인 후에는 runner를 시작할 수 있습니다. SERP 등록은 영향받지 않습니다.

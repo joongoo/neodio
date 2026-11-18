@@ -3,10 +3,20 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RequestProgressStages, RequestRefreshIndicator } from "./RequestDetailLive";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
-import { RequestSummary } from "./RequestLogViews";
-import { PendingRunDetail } from "./CollectionRunsClient";
+import { RequestSummary, REQUEST_STATUS_LABEL } from "./RequestLogViews";
+import { PendingRunDetail, StatusBadge } from "./CollectionRunsClient";
 import { toPendingRunListRow } from "@/lib/collectionRunList";
 import type { ProviderTaskRecord } from "@/lib/backend/dataforseo/types";
+import type { RunListRow } from "@/lib/collectionRunList";
+import { REQUEST_ITEM_STATUSES } from "@/lib/requestItemFilters";
+
+test("item table badges use the exact same detailed labels as status filters", () => {
+  for (const status of REQUEST_ITEM_STATUSES) {
+    const html = renderToStaticMarkup(<StatusBadge file={{ progressStatus: status, state: "failed" } as RunListRow} />);
+    assert.ok(html.includes(`>${REQUEST_STATUS_LABEL[status]}</span>`), status);
+    assert.ok(!html.includes(">실패</span>"));
+  }
+});
 
 test("older pending history links to request controls instead of direct-submit/delete actions", () => {
   const task = { id: "ptask-1", collectionRequestId: "creq-1", status: "reserved", surface: "google-aio" } as ProviderTaskRecord;

@@ -67,8 +67,8 @@ export async function listRequestItems(organizationId: string, brandId: string, 
       'facets',jsonb_build_object(
         'status',COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::int n FROM scoped WHERE ($5::text[] IS NULL OR surface=ANY($5)) GROUP BY status) s),'{}'::jsonb),
         'surface',COALESCE((SELECT jsonb_object_agg(surface,n) FROM (SELECT surface,count(*)::int n FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) GROUP BY surface) s),'{}'::jsonb),
-        'retry',(SELECT jsonb_build_object('failed',count(*) FILTER (WHERE p.status IN ('provider_failed','parse_failed'))::int,'cancelled',count(*) FILTER (WHERE p.status='cancelled')::int,
-          'selectable',count(*) FILTER (WHERE p.status IN ('provider_failed','parse_failed','cancelled') OR (p.execution_kind='legacy' AND p.status IN ('reserved','collecting')) OR (p.execution_kind='serp-api' AND p.status='reserved' AND EXISTS (SELECT 1 FROM provider_tasks pending WHERE pending.id=p.id AND pending.provider_task_id IS NULL AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $11))))::int) FROM filtered p WHERE ${WITHOUT_COLLECTION_RETRY_SQL})
+        'retry',(SELECT jsonb_build_object('failed',count(*) FILTER (WHERE p.status='provider_failed')::int,'cancelled',count(*) FILTER (WHERE p.status='cancelled')::int,
+          'selectable',count(*) FILTER (WHERE p.status IN ('provider_failed','cancelled') OR (p.execution_kind='legacy' AND p.status IN ('reserved','collecting')) OR (p.execution_kind='serp-api' AND p.status='reserved' AND EXISTS (SELECT 1 FROM provider_tasks pending WHERE pending.id=p.id AND pending.provider_task_id IS NULL AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $11))))::int) FROM filtered p WHERE ${WITHOUT_COLLECTION_RETRY_SQL})
       ),
       'rows',COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',t.id,'executionKind',t.execution_kind,'promptId',t.prompt_id,'query',t.query_snapshot,

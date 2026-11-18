@@ -22,6 +22,7 @@ export async function retryLegacyRequest(org: string, brand: string, originalId:
     if (selection && items.length !== selection.itemIds.length) throw new LegacyRetryConflict("선택 항목이 변경되었습니다. 새로고침 후 다시 선택해 주세요.");
     if (selection && selection.action !== "retry" && items.some(item => item.status !== "reserved")) throw new LegacyRetryConflict("수집 대기 항목만 시작하거나 취소할 수 있습니다.");
     if (!items.length) throw new LegacyRetryConflict("다시 시도할 미완료 로컬 항목이 없습니다.");
+    if (items.some(item => item.status === "parse_failed")) throw new LegacyRetryConflict("분석 실패는 재수집 대상이 아닙니다. 저장된 원본과 분석 오류를 확인해 주세요.");
     const existingRetry = await db.query("SELECT id FROM legacy_collection_items WHERE organization_id=$1 AND brand_id=$2 AND retry_of_task_id=ANY($3::text[]) LIMIT 1", [org, brand, items.map(item => item.id)]);
     if (existingRetry.length) throw new LegacyRetryConflict("이미 재수집이 요청된 항목입니다. 연결된 최신 요청에서 확인해 주세요.");
     const cutoff = Date.now() - 30_000;

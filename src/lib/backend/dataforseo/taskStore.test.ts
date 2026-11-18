@@ -134,4 +134,7 @@ test("activity summary separates running tasks from unresolved failures", async 
 
   assert.equal(summary.runningCount, 2);
   assert.equal(summary.attentionCount, 1);
+  const analysis = await store.reserve({ ...inputs(1)[0], promptId: "analysis-failed", scheduledWindow: "analysis:1" });
+  await store.update(analysis.task.id, "reserved", { status: "parse_failed" });
+  assert.equal((await store.getActivitySummary("org-1", "brand-1")).attentionCount, 1, "analysis failures are historical failures, not user action items");
 });
