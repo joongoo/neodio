@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getPromptStore } from "@/lib/backend/database";
 import { DATAFORSEO_SURFACE_CONFIG } from "./config";
+import { COLLECTION_ATTENTION_STATUSES } from "@/lib/collectionAttention";
 import type {
   DataForSeoDevice,
   DataForSeoSurface,
@@ -457,7 +458,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
          )::int AS attention_count
        FROM provider_tasks p
        WHERE p.provider='dataforseo' AND p.organization_id=$1 AND p.brand_id=$2`,
-      [organizationId, brandId, ACTIVE_PROVIDER_STATUSES, ["submission_unknown", "provider_failed", "parse_failed"]],
+      [organizationId, brandId, ACTIVE_PROVIDER_STATUSES, COLLECTION_ATTENTION_STATUSES],
     );
     return { runningCount: Number(row?.running_count ?? 0), attentionCount: Number(row?.attention_count ?? 0) };
   }
@@ -647,7 +648,7 @@ export class MemoryProviderTaskStore implements ProviderTaskStore {
     const retriedIds = new Set(tasks.map((task) => task.retryOfTaskId).filter((id): id is string => id !== null));
     return {
       runningCount: tasks.filter((task) => ACTIVE_PROVIDER_STATUSES.includes(task.status)).length,
-      attentionCount: tasks.filter((task) => ["submission_unknown", "provider_failed", "parse_failed"].includes(task.status)
+      attentionCount: tasks.filter((task) => COLLECTION_ATTENTION_STATUSES.includes(task.status)
         && !retriedIds.has(task.id)).length,
     };
   }

@@ -45,6 +45,7 @@ export function RequestFilters({ path, query, itemMode = false }: { path: string
     ? ["reserved", "submitting", "submission_unknown", "queued", "collecting", "completed", "provider_failed", "artifact_failed", "projection_failed", "parse_failed", "cancelled"]
     : ["queued", "running", "completed", "partially_failed", "needs_attention", "cancelled"];
   return <form action={path} className="flex flex-wrap items-center gap-3">
+    {!itemMode && query.get("attention") === "1" && <input type="hidden" name="attention" value="1" />}
     {query.has("view") && <input type="hidden" name="view" value={query.get("view")!} />}
     {query.has("back") && <input type="hidden" name="back" value={query.get("back")!} />}
     {itemMode ? <input type="hidden" name="q" value={query.get("q") ?? ""} /> : <input aria-label="검색어" name="q" defaultValue={query.get("q") ?? ""} placeholder="프롬프트·요청 검색" className={fieldClass} />}

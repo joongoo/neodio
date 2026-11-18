@@ -3,6 +3,8 @@ import { listRequestLogs, parseRequestLogOptions, RequestLogInputError } from "@
 import { formatKst } from "@/lib/backend/collectionRunsTypes";
 import { RequestFilters, RequestPageLinks, RequestStatusBadge, surfaceLabel, usd } from "./RequestLogViews";
 import { RequestRowLink } from "./RequestRowLink";
+import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
+import { RequestAttentionCard } from "./RequestAttentionCard";
 
 export async function RequestLogList({ base, organizationId, brandId, query }: { base: string; organizationId: string; brandId: string; query: URLSearchParams }) {
   const path = `${base}/collection-runs`;
@@ -13,9 +15,13 @@ export async function RequestLogList({ base, organizationId, brandId, query }: {
     if (!(error instanceof RequestLogInputError)) throw error;
     return <div role="alert" className="mx-auto max-w-6xl p-6">{error.message} <Link className="underline" href={path}>필터 초기화</Link></div>;
   }
-  const data = await listRequestLogs(organizationId, brandId, options);
+  const [data, activity] = await Promise.all([
+    listRequestLogs(organizationId, brandId, options),
+    new PostgresProviderTaskStore().getActivitySummary(organizationId, brandId),
+  ]);
     return <section className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-xl font-bold text-neutral-900">수집 로그</h1><p className="mt-1 text-sm text-neutral-500">수집 요청별 진행 상황과 결과를 확인합니다.</p></div><Link href={`${path}?view=items`} className="inline-flex rounded-md bg-neutral-100 px-3.5 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-200">이전 개별 수집 이력</Link></header>
+      <RequestAttentionCard count={activity.attentionCount} path={path} active={options.attention} />
       <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-800">수집 요청에 연결된 실행을 표시합니다. 요청 연결 정보가 없는 과거 버전의 실행은 이전 개별 수집 이력에서 확인할 수 있습니다.</p>
       <div className="rounded-xl border border-neutral-200 bg-white p-4">
       <RequestFilters path={path} query={query} />

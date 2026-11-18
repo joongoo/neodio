@@ -123,7 +123,7 @@ export function Sidebar({
 
   const collectionBadges = [
     initialCollectionActivity.attentionCount > 0
-      ? { label: `확인 ${initialCollectionActivity.attentionCount > 99 ? "99+" : initialCollectionActivity.attentionCount}`, className: "bg-orange-100 text-orange-700" }
+      ? { label: `확인 필요 ${initialCollectionActivity.attentionCount > 99 ? "99+" : initialCollectionActivity.attentionCount}`, className: "bg-orange-100 text-orange-700" }
       : null,
     initialCollectionActivity.runningCount > 0
       ? { label: `진행 ${initialCollectionActivity.runningCount > 99 ? "99+" : initialCollectionActivity.runningCount}`, className: "bg-blue-100 text-blue-700" }
@@ -183,12 +183,12 @@ function NavRow({
       )}
     >
       {Icon && <Icon size={16} className={active ? "text-slate-800" : "text-slate-500"} />}
-      <span className="flex-1">{label}</span>
-      {badges?.map((badge) => (
-        <span key={badge.label} className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>
+      <span className="flex-1 whitespace-nowrap">{label}</span>
+      {!!badges?.length && <span className="flex max-w-[120px] flex-wrap justify-end gap-1">{badges.map((badge) => (
+        <span key={badge.label} className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>
           {badge.label}
         </span>
-      ))}
+      ))}</span>}
     </a>
   );
 }

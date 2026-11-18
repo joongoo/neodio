@@ -13,12 +13,13 @@ import { createMixedFailureFixture } from "./mixedFailureFixture";
 import { isRetryFailure } from "@/lib/requestRetrySelection";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
-  for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "from=no", "from=2026-11-18T00:00:00"]) {
+  for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "attention=bad", "from=no", "from=2026-11-18T00:00:00"]) {
     assert.throws(() => parseRequestLogOptions(new URLSearchParams(query)), Error, query);
   }
   assert.equal(parseRequestLogOptions(new URLSearchParams({ from: "2026-11-18T09:00:00+09:00" })).from, "2026-11-18T00:00:00.000Z");
   assert.throws(() => parseRequestItemOptions(new URLSearchParams("status=invalid")));
   assert.equal(parseRequestItemOptions(new URLSearchParams("status=reserved")).status, "reserved");
+  assert.equal(parseRequestLogOptions(new URLSearchParams("attention=1")).attention, true);
 });
 
 test("legacy registration is idempotent and links results to the approved request", { skip: !process.env.POSTGRES_URL && !process.env.POSTGRES_URL_NON_POOLING }, async () => {
@@ -168,6 +169,16 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal(mixed?.rows.length, 3);
     assert.equal(mixed?.rows.find(row => row.id === "legacy-1")?.executionKind, "legacy");
     assert.equal(mixed?.rows.find(row => row.id === "legacy-1")?.result?.filename, "legacy.json");
+    await client.query("UPDATE provider_tasks SET provider='dataforseo'");
+    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"], "unknown submissions match attention shortcut");
+    await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot)
+      VALUES ('failed-attention','org','brand','a','dataforseo','google-aio','desktop','provider_failed','failed')`);
+    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b", "a"], "failed requests also match, not just needs_attention status");
+    await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
+      VALUES ('retry-attention','org','brand','b','dataforseo','google-aio','desktop','reserved','retry','failed-attention')`);
+    await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='legacy-1'");
+    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"], "retried originals and local failures do not match the badge");
+    assert.equal((await list("attention=1&page=99")).page, 1);
   } finally {
     await client.query("ROLLBACK");
     client.release();
