@@ -364,13 +364,14 @@ export function ImportPromptsModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onImport: (rows: ImportedPromptRow[]) => void;
+  onImport: (rows: ImportedPromptRow[]) => Promise<void>;
   /** 중복 검사 대상 — 이미 라이브러리에 있는 프롬프트 문장 전체. */
   existingPrompts: string[];
 }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ImportedPromptRow[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleFile(file: File | undefined) {
@@ -405,21 +406,30 @@ export function ImportPromptsModal({
     });
   }
 
-  function submit() {
-    if (parsed.length === 0) return;
-    onImport(parsed);
-    setFileName(null);
-    setParsed([]);
-    setDuplicateCount(0);
+  async function submit() {
+    if (parsed.length === 0 || importing) return;
+    setImporting(true);
     setError(null);
-    onClose();
+    try {
+      const existing = new Set(existingPrompts.map(normalizePrompt));
+      await onImport(parsed.filter(row => !existing.has(normalizePrompt(row.prompt))));
+      setFileName(null);
+      setParsed([]);
+      setDuplicateCount(0);
+      setError(null);
+      onClose();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "가져오기에 실패했습니다.");
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={() => { if (!importing) onClose(); }}>
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-neutral-900">CSV로 프롬프트 가져오기</h2>
-        <ModalCloseButton onClose={onClose} />
+        <ModalCloseButton disabled={importing} onClose={() => { if (!importing) onClose(); }} />
       </div>
       <p className="mt-2 text-xs text-neutral-500">
         필수 컬럼: <code className="rounded bg-neutral-100 px-1">prompt</code> · 선택:{" "}
@@ -434,6 +444,7 @@ export function ImportPromptsModal({
         </span>
         <input
           type="file"
+          disabled={importing}
           accept=".csv"
           className="hidden"
           onChange={(e) => handleFile(e.target.files?.[0])}
@@ -468,11 +479,11 @@ export function ImportPromptsModal({
           템플릿 다운로드
         </Button>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" disabled={importing} onClick={onClose}>
             취소
           </Button>
-          <Button variant="primary" disabled={parsed.length === 0} onClick={submit}>
-            가져오기
+          <Button variant="primary" disabled={parsed.length === 0 || importing} onClick={submit}>
+            {importing ? "가져오는 중…" : "가져오기"}
           </Button>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { EditOnly, useCanEdit } from "@/components/auth/PermissionsProvider";
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles } from "lucide-react";
+import { Download, Upload, Plus, Pencil, Trash2, Settings, Sparkles, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +28,8 @@ import { ParallelCollectModal } from "./ParallelCollectModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
+import { importPromptCsv } from "@/lib/importPromptCsv";
+import { deleteLibraryRows } from "@/lib/deleteLibraryRows";
 import { downloadCsv } from "@/lib/csv";
 
 const ORIGIN_LABEL: Record<PromptLibraryRow["origin"], string> = {
@@ -68,6 +70,9 @@ export function PromptLibraryClient({
   const [category, setCategory] = useState("전체");
   const [topic, setTopic] = useState("전체");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<{ ids: Set<string>; completed: number } | null>(null);
+  const deleteLock = useRef(false);
+  const [deleteNotice, setDeleteNotice] = useState<{ error: boolean; message: string } | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [addOpen, setAddOpen] = useState(false);
@@ -114,20 +119,11 @@ export function PromptLibraryClient({
     );
   }
 
-  // CSV로 가져온 행도 실제로 .tmp에 저장한다 — 이전엔 로컬 state에만 남아서
-  // 새로고침하면 통째로 사라졌다.
+  // 작은 묶음을 순서대로 저장하고, 완료된 묶음은 즉시 화면에 반영한다.
   async function importCsv(imported: ImportedPromptRow[]) {
-    const results = await Promise.all(
-      imported.map((r) =>
-        fetch("/api/tracked-topics", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: r.prompt, category: r.category, topic: r.topic, origin: "csv_import" }),
-        }).then((res) => res.json())
-      )
-    );
-    const newRows = results.filter((r) => r.ok).map((r) => r.row as PromptLibraryRow);
-    setRows((prev) => [...new Map([...prev, ...newRows].map(row => [row.id, row])).values()]);
+    await importPromptCsv(imported, (newRows) => {
+      setRows((prev) => [...new Map([...prev, ...newRows].map(row => [row.id, row])).values()]);
+    });
   }
 
   function toggleSelected(id: string) {
@@ -139,20 +135,31 @@ export function PromptLibraryClient({
     });
   }
 
-  // 추적/수동 추가/CSV로 들어온 프롬프트(id가 "tracked-"로 시작)는 실제
-  // .tmp 파일을 지운다. mock 시드 행(pl-*)은 지울 파일이 없는 대신 "삭제된
-  // id 목록"에 기록한다 — 이전엔 이 기록이 없어서 새로고침하면 시드 데이터가
-  // 그대로 부활했다. 둘 다 서버 API를 호출해 실제로 영구 반영한다.
-  function deleteRows(ids: Set<string>) {
-    setRows((prev) => prev.filter((r) => !ids.has(r.id)));
-    ids.forEach((id) => {
-      fetch(`/api/tracked-topics?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
-    });
+  async function deleteRows(ids: Set<string>) {
+    if (deleteLock.current || ids.size === 0) return;
+    deleteLock.current = true;
+    setDeleting({ ids: new Set(ids), completed: 0 });
+    setDeleteNotice(null);
+    let completed = 0;
+    try {
+      await deleteLibraryRows([...ids], (id, count) => {
+        completed = count;
+        setRows(prev => prev.filter(row => row.id !== id));
+        setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
+        setDeleting(prev => prev ? { ...prev, completed: count } : null);
+      });
+      setDeleteNotice({ error: false, message: `${completed}개 프롬프트 삭제가 완료됐습니다.` });
+      setPage(1);
+    } catch (error) {
+      setDeleteNotice({ error: true, message: `${ids.size}개 중 ${completed}개 삭제 완료. ${error instanceof Error ? error.message : "삭제 중 오류가 발생했습니다."} 남은 항목은 유지됩니다. 다시 시도해 주세요.` });
+    } finally {
+      deleteLock.current = false;
+      setDeleting(null);
+    }
   }
 
   function deleteSelected() {
     deleteRows(selected);
-    setSelected(new Set());
   }
 
   const optionalColumns = [
@@ -243,13 +250,14 @@ export function PromptLibraryClient({
             <button
               type="button"
               aria-label="삭제"
+              disabled={!!deleting}
               onClick={(e) => {
                 e.stopPropagation();
                 deleteRows(new Set([r.id]));
               }}
-              className="text-neutral-400 hover:text-red-600 cursor-pointer"
+              className="text-neutral-400 hover:text-red-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Trash2 size={14} />
+              {deleting?.ids.has(r.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             </button>
           </EditOnly>
         </div>
@@ -419,8 +427,9 @@ export function PromptLibraryClient({
               </Button>
             </EditOnly>
             <EditOnly>
-              <Button variant="secondary" onClick={deleteSelected}>
-                선택 삭제 ({selected.size})
+              <Button variant="secondary" disabled={!!deleting} onClick={deleteSelected}
+                icon={deleting ? <Loader2 size={14} className="animate-spin" /> : undefined}>
+                {deleting ? `삭제 중 (${deleting.completed}/${deleting.ids.size})` : `선택 삭제 (${selected.size})`}
               </Button>
             </EditOnly>
           </>
@@ -434,6 +443,13 @@ export function PromptLibraryClient({
           <Settings size={16} />
         </button>
       </div>
+
+      {(deleting || deleteNotice) && (
+        <div role="status" aria-live="polite" className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm ${deleteNotice?.error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>
+          {deleting && <Loader2 size={16} className="animate-spin" />}
+          {deleting ? `삭제 중… ${deleting.completed}/${deleting.ids.size}개 완료` : deleteNotice?.message}
+        </div>
+      )}
 
       <div className="w-full rounded-xl border border-neutral-200 bg-white">
         <DataTable columns={columns} rows={pageRows} getRowId={(r) => r.id} />

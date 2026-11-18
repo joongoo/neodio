@@ -38,13 +38,14 @@ export function Modal({ open, onClose, children }: ModalProps) {
   );
 }
 
-export function ModalCloseButton({ onClose }: { onClose: () => void }) {
+export function ModalCloseButton({ onClose, disabled = false }: { onClose: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClose}
+      disabled={disabled}
       aria-label="닫기"
-      className="grid size-8 shrink-0 place-items-center rounded-md text-neutral-500 hover:bg-neutral-100 cursor-pointer"
+      className="grid size-8 shrink-0 place-items-center rounded-md text-neutral-500 hover:bg-neutral-100 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
     >
       <X size={16} />
     </button>

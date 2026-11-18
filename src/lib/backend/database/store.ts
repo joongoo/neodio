@@ -195,8 +195,11 @@ export class PromptStore {
     const existing = await this.one<{ id: string }>("SELECT id FROM categories WHERE organization_id=$1 AND normalized_name=$2", [orgId, key]);
     if (existing) return existing.id;
     const categoryId = id("category");
-    await this.run("INSERT INTO categories VALUES ($1,$2,$3,$4,$5,$6)", [categoryId, orgId, name.trim(), key, now(), now()]);
-    return categoryId;
+    const saved = await this.one<{ id: string }>(
+      `INSERT INTO categories VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT(organization_id,normalized_name) DO UPDATE SET normalized_name=excluded.normalized_name
+       RETURNING id`, [categoryId, orgId, name.trim(), key, now(), now()]);
+    return saved!.id;
   }
 
   private async topic(orgId: string, name: string, categoryId: string | null): Promise<string> {
@@ -205,8 +208,12 @@ export class PromptStore {
       [orgId, categoryId, normalize(name)]);
     if (existing) return existing.id;
     const topicId = id("topic");
-    await this.run("INSERT INTO topics VALUES ($1,$2,$3,$4,$5,$6,$7)", [topicId, orgId, categoryId, name.trim(), normalize(name), now(), now()]);
-    return topicId;
+    const saved = await this.one<{ id: string }>(
+      `INSERT INTO topics VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT(organization_id,(coalesce(category_id,'')),normalized_name)
+       DO UPDATE SET normalized_name=excluded.normalized_name RETURNING id`,
+      [topicId, orgId, categoryId, name.trim(), normalize(name), now(), now()]);
+    return saved!.id;
   }
 
   async getPrompt(orgId: string, promptId: string): Promise<PromptRecord | undefined> {
@@ -389,12 +396,12 @@ export class PromptStore {
       if (options.surfaces) await this.setTrackingSurfaces(orgId, trackingId, options.surfaces);
       else if (!existing) await this.setTrackingSurfaces(orgId, trackingId, AI_ANSWER_SURFACES);
       else await this.syncAioKeyword(trackingId); // 다시 켠 추적이면 AIO 수집 대상도 함께 되살린다
-      const rows = await this.library(orgId, options.brandId);
+      const rows = await this.library(orgId, options.brandId, trackingId);
       return rows.find(row => row.id === trackingId)!;
     });
   }
 
-  async library(orgId: string, brandId?: string): Promise<PromptLibraryRow[]> {
+  async library(orgId: string, brandId?: string, trackingId?: string): Promise<PromptLibraryRow[]> {
     const rows = await this.query(`SELECT tr.id,tr.prompt_id AS "promptId",p.text AS prompt,tr.origin,
       coalesce(c.name,'') AS category,coalesce(t.name,'—') AS topic,p.updated_at AS "lastModifiedAt",
       a.display_name AS "lastModifiedBy",tr.added_at AS "addedAt",aa.display_name AS "addedBy",
@@ -403,8 +410,9 @@ export class PromptStore {
       FROM prompt_tracking tr JOIN prompts p ON p.id=tr.prompt_id
       LEFT JOIN topics t ON t.id=p.topic_id LEFT JOIN categories c ON c.id=coalesce(t.category_id,p.uncategorized_category_id)
       LEFT JOIN actors a ON a.id=p.updated_by LEFT JOIN actors aa ON aa.id=tr.added_by
-      WHERE tr.organization_id=$1 AND tr.status='active' AND ($2::text IS NULL OR tr.brand_id=$2) ORDER BY tr.added_at DESC,tr.id`,
-      [orgId, brandId ?? null]);
+      WHERE tr.organization_id=$1 AND tr.status='active' AND ($2::text IS NULL OR tr.brand_id=$2)
+      AND ($3::text IS NULL OR tr.id=$3) ORDER BY tr.added_at DESC,tr.id`,
+      [orgId, brandId ?? null, trackingId ?? null]);
     return rows.map(row => ({ ...row, surfaces: normalizeSurfaces((row as { surfaces?: unknown }).surfaces) })) as unknown as PromptLibraryRow[];
   }
 
@@ -577,7 +585,7 @@ export class PromptStore {
           });
         }
       }
-      const rows = await this.library(orgId);
+      const rows = await this.library(orgId, undefined, trackingId);
       return rows.find(row => row.id === trackingId) ?? null;
     });
   }

@@ -7,6 +7,17 @@ const handles: TestStoreHandle[] = [];
 async function database() { const handle = await createTestStore(); handles.push(handle); return handle.store; }
 afterEach(async () => { for (const handle of handles.splice(0)) await dropTestStore(handle); });
 const options = { brandId: "brand-a", origin: "manual" as const };
+
+test("concurrent imports share newly created categories and topics", async () => {
+  const store = await database();
+  await store.ensureOrg("org");
+  const rows = await Promise.all(Array.from({ length: 20 }, (_, i) =>
+    store.track("org", { text: `CSV concurrent ${i}`, category: "Shared category", topic: "Shared topic" }, options)));
+  assert.equal(new Set(rows.map(row => row.id)).size, 20);
+  assert.equal((await store.query("SELECT id FROM categories WHERE organization_id='org'")).length, 1);
+  assert.equal((await store.query("SELECT id FROM topics WHERE organization_id='org'")).length, 1);
+  assert.equal((await store.library("org", "brand-a", rows[0].id)).length, 1);
+});
 const brands: BrandSeed[] = [
   { id: "brand-a", organizationId: "org", name: "Acme", domain: "acme.test", isOwnBrand: true, status: "active", category: "", aliases: [] },
   { id: "brand-b", organizationId: "org", name: "Other", domain: "other.test", isOwnBrand: false, status: "active", category: "", aliases: [] },
