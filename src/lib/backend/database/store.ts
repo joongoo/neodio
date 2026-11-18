@@ -703,11 +703,17 @@ export class PromptStore {
     });
   }
 
-  async runs(orgId: string): Promise<CollectedRunFile[]> {
+  async runs(orgId: string, options: { unlinkedOnly?: boolean } = {}): Promise<CollectedRunFile[]> {
     const rows = await this.query<Record<string, unknown>>(`SELECT r.*,p.topic_id,t.name AS topic,c.name AS category FROM prompt_runs r
       JOIN prompts p ON p.id=r.prompt_id LEFT JOIN topics t ON t.id=p.topic_id
       LEFT JOIN categories c ON c.id=coalesce(t.category_id,p.uncategorized_category_id)
-      WHERE r.organization_id=$1 ORDER BY r.run_at DESC`, [orgId]);
+      WHERE r.organization_id=$1
+      ${options.unlinkedOnly ? `AND NOT EXISTS (
+        SELECT 1 FROM collection_execution_items i
+        WHERE i.organization_id=r.organization_id AND i.collection_request_id IS NOT NULL
+          AND (i.id=r.provider_task_id OR i.run_id=r.id)
+      )` : ""}
+      ORDER BY r.run_at DESC`, [orgId]);
     return rows.map(row => {
       const run = row.original_json as PromptRunSeed;
       return { dir: row.source_dir as string, filename: row.source_filename as string,

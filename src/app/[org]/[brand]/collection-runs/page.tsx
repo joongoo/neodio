@@ -28,12 +28,13 @@ export default async function CollectionRunsPage({
     const query = new URLSearchParams(Object.entries(params).flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []));
     return <RequestLogList base={tenant.base} organizationId={tenant.orgId} brandId={tenant.brandId} query={query} />;
   }
-  const [runFiles, brandsData, realCategories, activeProviderTasks] = await Promise.all([
-    listCollectedRuns(tenant.orgId),
+  const [runFiles, brandsData, realCategories, providerTasks] = await Promise.all([
+    listCollectedRuns(tenant.orgId, { unlinkedOnly: true }),
     db.brandsManagement.get(tenant.orgId),
     listCategories(tenant.orgId),
     tenant.brandId ? new PostgresProviderTaskStore().listActive(tenant.orgId, tenant.brandId) : [],
   ]);
+  const activeProviderTasks = providerTasks.filter((task) => !task.collectionRequestId);
   // 기본 조직은 예전처럼 시드 브랜드로 언급을 판정하고, 다른 조직은 그 조직의
   // 자사 브랜드 + 기타 브랜드(브랜드 설정)로 판정한다.
   const brands =

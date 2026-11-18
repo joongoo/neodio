@@ -10,7 +10,6 @@ import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { Button } from "@/components/ui/Button";
-import { CollectionRunForm } from "@/components/collection-runs/CollectionRunForm";
 import { Pagination } from "@/components/ui/Pagination";
 import { formatKst } from "@/lib/backend/collectionRunsTypes";
 import type { CollectedRunDetail } from "@/lib/backend/collectionRuns";
@@ -309,20 +308,18 @@ export function CollectionRunsClient({
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <div>
-        <h1 className="text-2xl font-semibold text-neutral-900">수집 로그</h1>
+        <h1 className="text-2xl font-semibold text-neutral-900">이전 개별 수집 이력</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          설치형 수집기, SERP API, LLM API가 저장한 실행을 함께 나열합니다. SERP API로 수집한 실행은 엔진명에 별도로 표시됩니다.
+          수집 요청에 연결되지 않은 과거 실행만 표시합니다. 신규 수집 요청과 결과는 이 이력에 추가되지 않으며, 수집 요청 목록에서 확인할 수 있습니다.
         </p>
       </div>
-
-      <EditOnly><CollectionRunForm /></EditOnly>
 
       <div className="h-px w-full bg-neutral-200" />
 
 
       {stats.total === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
-          아직 수집된 실행이 없습니다.<EditOnly> 위에서 키워드를 입력해 수집을 시작해 보세요.</EditOnly>
+          이전 개별 수집 이력이 없습니다. 신규 수집 요청과 결과는 수집 요청 목록에서 확인해 주세요.
         </p>
       ) : (
         <>
