@@ -11,6 +11,7 @@ import { retryLegacyRequest, LegacyRetryConflict } from "./legacyRetry";
 import { retrySelectedItems } from "./retrySelection";
 import { createMixedFailureFixture } from "./mixedFailureFixture";
 import { isRetryFailure } from "@/lib/requestRetrySelection";
+import { getCollectionActivitySummary } from "./collectionActivity";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "attention=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -188,7 +189,20 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('retry-attention','org','brand','b','dataforseo','google-aio','desktop','reserved','retry','failed-attention')`);
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='legacy-1'");
-    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"], "retried originals and local failures do not match the badge");
+    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b", "a"], "local failures match the same attention filter");
+    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "local failure and unknown SERP counted, retried original excluded");
+    await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
+      VALUES ('gemini-failed','org','brand','a','gemini','desktop','parse_failed','gemini'),
+        ('gemini-cancelled','org','brand','a','gemini','desktop','cancelled','cancelled')`);
+    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 3, "Gemini failures included, cancellations excluded");
+    await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot,retry_of_task_id)
+      VALUES ('local-retry','org','brand','b','naver-ai','desktop','reserved','retry','legacy-1'),
+        ('gemini-retry','org','brand','b','gemini','desktop','reserved','retry gemini','gemini-failed')`);
+    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 1, "local and Gemini retried originals excluded");
+    assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"]);
+    await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='gemini-retry'");
+    assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "failed retry is counted instead of its original");
+    assert.equal((await getCollectionActivitySummary("foreign-org", "brand", db)).attentionCount, 0);
     assert.equal((await list("attention=1&page=99")).page, 1);
     await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('foreign-retry','other','other-brand','hidden','dataforseo','google-aio','desktop','reserved','hidden','t1')`);

@@ -2,6 +2,7 @@ import { getPromptStore } from "@/lib/backend/database";
 import { PROMPT_SURFACES } from "@/lib/promptSurfaces";
 import type { CollectionRequestDisplayStatus } from "@/lib/collectionRequestProgress";
 import { COLLECTION_ATTENTION_STATUSES } from "@/lib/collectionAttention";
+import { WITHOUT_COLLECTION_RETRY_SQL } from "./collectionActivity";
 
 export class RequestLogInputError extends Error {}
 
@@ -76,10 +77,10 @@ export async function listRequestLogs(
         AND ($3::text IS NULL OR r.created_at >= $3)
         AND ($4::text IS NULL OR r.created_at < $4)
         AND (NOT $11::boolean OR EXISTS (
-          SELECT 1 FROM provider_tasks p WHERE p.collection_request_id=r.id
-            AND p.organization_id=r.organization_id AND p.brand_id=r.brand_id AND p.provider='dataforseo'
+          SELECT 1 FROM collection_execution_items p WHERE p.collection_request_id=r.id
+            AND p.organization_id=r.organization_id AND p.brand_id=r.brand_id
             AND p.status=ANY($12::text[])
-            AND NOT EXISTS (SELECT 1 FROM provider_tasks retry WHERE retry.retry_of_task_id=p.id)
+            AND ${WITHOUT_COLLECTION_RETRY_SQL}
         ))
     ), aggregates AS (
       SELECT r.id, count(t.id)::int AS total,

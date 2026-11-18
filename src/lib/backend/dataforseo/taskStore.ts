@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { getPromptStore } from "@/lib/backend/database";
 import { DATAFORSEO_SURFACE_CONFIG } from "./config";
 import { COLLECTION_ATTENTION_STATUSES } from "@/lib/collectionAttention";
+import { getCollectionActivitySummary } from "./collectionActivity";
 import type {
   DataForSeoDevice,
   DataForSeoSurface,
@@ -449,18 +450,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async getActivitySummary(organizationId: string, brandId: string): Promise<ProviderTaskActivitySummary> {
-    const [row] = await (await getPromptStore()).query<{ running_count: number; attention_count: number }>(
-      `SELECT
-         count(*) FILTER (WHERE p.status = ANY($3::text[]))::int AS running_count,
-         count(*) FILTER (
-           WHERE p.status = ANY($4::text[])
-             AND NOT EXISTS (SELECT 1 FROM provider_tasks retry WHERE retry.retry_of_task_id=p.id)
-         )::int AS attention_count
-       FROM provider_tasks p
-       WHERE p.provider='dataforseo' AND p.organization_id=$1 AND p.brand_id=$2`,
-      [organizationId, brandId, ACTIVE_PROVIDER_STATUSES, COLLECTION_ATTENTION_STATUSES],
-    );
-    return { runningCount: Number(row?.running_count ?? 0), attentionCount: Number(row?.attention_count ?? 0) };
+    return getCollectionActivitySummary(organizationId, brandId);
   }
 
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {

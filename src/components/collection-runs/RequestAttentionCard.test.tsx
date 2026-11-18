@@ -7,6 +7,8 @@ import { RequestFilters } from "./RequestLogViews";
 test("attention card shows task count and opens the exact attention request filter", () => {
   const html = renderToStaticMarkup(<RequestAttentionCard count={4} path="/org/brand/collection-runs" active={false} />);
   assert.ok(html.includes("확인 필요"));
+  assert.ok(html.includes("로컬·Gemini·SERP API"));
+  assert.ok(html.includes("취소 건은 제외"));
   assert.ok(html.includes('href="/org/brand/collection-runs?attention=1"'));
   assert.match(html, /<strong[^>]*>4<span/);
   assert.ok(!html.includes('aria-current="page"'));
