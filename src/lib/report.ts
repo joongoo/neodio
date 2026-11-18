@@ -2,6 +2,7 @@
 // 서버·클라이언트가 함께 쓰는 순수 모듈: 타입, 섹션 정의, 자동 인사이트.
 import type { CollectionQualityRow, ConsistencySummary } from "@/lib/db";
 import type { PlacementSummary } from "@/lib/placement";
+import type { ChangeConfidence } from "@/lib/changeConfidence";
 
 export type ReportRange = "1w" | "2w" | "4w";
 
@@ -14,6 +15,8 @@ export interface ReportKpi {
   trendUnit: "%" | "%p";
   sparkline: { week: string; value: number }[];
   caption?: string;
+  /** 변화 신뢰도(D2). 없으면 기존 표시 그대로. 스냅샷에 저장된 구버전에는 없다. */
+  confidence?: ChangeConfidence;
 }
 
 export interface ReportTopic {
@@ -67,8 +70,12 @@ export interface ReportSectionState {
 }
 export type ReportSections = Record<ReportSectionKey, ReportSectionState>;
 
-const trendText = (kpi: ReportKpi, unit: string) =>
-  kpi.trend.direction === "flat" ? "직전 기간과 같아요" : `직전 기간보다 ${kpi.trend.percent}${unit} ${kpi.trend.direction === "up" ? "올랐어요" : "내렸어요"}`;
+const trendText = (kpi: ReportKpi, unit: string) => {
+  // 변화 신뢰도(D2)가 계산돼 있으면 표본 크기로 설명되는 변화는 올랐다/내렸다고 단정하지 않는다.
+  if (kpi.confidence?.label === "insufficient") return "표본이 적어 직전 기간과 비교하기 어려워요";
+  if (kpi.confidence?.label === "noise" && kpi.trend.direction !== "flat") return "직전 기간과 큰 차이가 없어요(표본 크기로 설명되는 변화)";
+  return kpi.trend.direction === "flat" ? "직전 기간과 같아요" : `직전 기간보다 ${kpi.trend.percent}${unit} ${kpi.trend.direction === "up" ? "올랐어요" : "내렸어요"}`;
+};
 
 /** 스냅샷에서 핵심 인사이트 초안을 만든다(담당자가 고치거나 지울 수 있다). 근거가 부족한 문장은 만들지 않는다. */
 export function buildInsights(s: ReportSnapshot): string[] {

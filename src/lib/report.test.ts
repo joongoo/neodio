@@ -45,3 +45,18 @@ test("실행 제안 초안과 섹션 기본값", () => {
   assert.ok(sections.summary.commentary.startsWith("• ") && sections.actions.commentary.includes("GEO 컨설팅"));
   assert.equal(sections.appendix.commentary, "");
 });
+
+test("변화 신뢰도: 표본 부족·노이즈면 올랐다고 단정하지 않고, 유의하면 기존 문구 그대로", () => {
+  const withConf = (label: "insufficient" | "noise" | "significant"): ReportKpi => ({
+    ...kpi(24.9, "up", 3),
+    confidence: { label, diffPoints: 3, ci: { low: -2, high: 8 }, previous: { rate: 20, n: 40 }, current: { rate: 23, n: 40 }, showPercent: label !== "insufficient", note: "" },
+  });
+  const line = (label: "insufficient" | "noise" | "significant") => buildInsights(snapshot({ kpis: { score: withConf(label), mention: kpi(5), citation: kpi(5) } }))[0];
+  assert.match(line("insufficient"), /표본이 적어 직전 기간과 비교하기 어려워요/);
+  assert.doesNotMatch(line("insufficient"), /올랐어요/);
+  assert.match(line("noise"), /큰 차이가 없어요/);
+  assert.doesNotMatch(line("noise"), /올랐어요/);
+  assert.match(line("significant"), /3% 올랐어요/);
+  // confidence가 없는 예전 스냅샷은 그대로
+  assert.match(buildInsights(snapshot())[0], /3% 올랐어요/);
+});

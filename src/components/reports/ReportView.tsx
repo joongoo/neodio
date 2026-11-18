@@ -13,14 +13,17 @@ const fmtDate = (iso: string) => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" });
 };
 
-function KpiBox({ label, kpi, hint }: { label: string; kpi: ReportKpi; hint: string }) {
-  const arrow = kpi.trend.direction === "up" ? "▲" : kpi.trend.direction === "down" ? "▼" : "–";
-  const color = kpi.trend.direction === "up" ? "text-emerald-600" : kpi.trend.direction === "down" ? "text-red-600" : "text-neutral-500";
+export function KpiBox({ label, kpi, hint }: { label: string; kpi: ReportKpi; hint: string }) {
+  // 변화 신뢰도(D2): 표본이 적거나 우연 범위인 변화는 색과 화살표로 단정하지 않는다.
+  const weak = kpi.confidence?.label === "insufficient" || (kpi.confidence?.label === "noise" && kpi.trend.direction !== "flat");
+  const arrow = weak ? "–" : kpi.trend.direction === "up" ? "▲" : kpi.trend.direction === "down" ? "▼" : "–";
+  const color = weak ? "text-neutral-500" : kpi.trend.direction === "up" ? "text-emerald-600" : kpi.trend.direction === "down" ? "text-red-600" : "text-neutral-500";
+  const trendLabel = kpi.confidence?.label === "insufficient" ? "표본 적음 · 비교 보류" : weak ? "큰 차이 없음(우연 범위)" : kpi.trend.direction === "flat" ? "변화 없음" : `${kpi.trend.percent}${kpi.trendUnit}`;
   return (
     <div className="rounded-lg border border-neutral-200 p-4 break-inside-avoid">
       <p className="text-xs text-neutral-500">{label}</p>
       <p className="mt-1 text-3xl font-semibold text-neutral-900">{kpi.value.toFixed(kpi.decimals ?? 1)}{kpi.suffix ?? ""}</p>
-      <p className={`mt-1 text-xs font-medium ${color}`}>{arrow} {kpi.trend.direction === "flat" ? "변화 없음" : `${kpi.trend.percent}${kpi.trendUnit}`} <span className="font-normal text-neutral-400">직전 기간 대비</span></p>
+      <p className={`mt-1 text-xs font-medium ${color}`}>{arrow} {trendLabel} <span className="font-normal text-neutral-400">직전 기간 대비</span></p>
       <p className="mt-2 text-[11px] leading-snug text-neutral-400">{hint}</p>
     </div>
   );
