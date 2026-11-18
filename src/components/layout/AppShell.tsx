@@ -13,7 +13,7 @@ import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
 // (/{조직}/{브랜드})를 앞에 붙인다 — 조직 무관 화면에서는 마지막으로 본 조직·브랜드.
 export async function AppShell({ children }: { children: ReactNode }) {
   const tenant = await getCurrentTenant();
-  const showDataForSeoPoc = process.env.DATAFORSEO_STAGE_A_ENABLED === "true" && (!isAuthEnabled() || (!!tenant.principal && isStaff(tenant.principal)));
+  const showDataForSeoPoc = (!isAuthEnabled() || (!!tenant.principal && isStaff(tenant.principal)));
   const collectionActivity = tenant.brandId
     ? await new PostgresProviderTaskStore().getActivitySummary(tenant.orgId, tenant.brandId)
     : { runningCount: 0, attentionCount: 0 };

@@ -19,7 +19,6 @@ export type DataForSeoQueueSender = typeof send;
 
 export function isDataForSeoQueueRuntimeReady(env: Record<string, string | undefined> = process.env): boolean {
   if (env.DATAFORSEO_EXECUTOR === "local" || env.DATAFORSEO_MOCK === "true") return false;
-  if (env.DATAFORSEO_QUEUE_ENABLED !== "true" || env.DATAFORSEO_ENABLED !== "true") return false;
   if (!env.DATAFORSEO_LOGIN || !env.DATAFORSEO_PASSWORD) return false;
   if (env.VERCEL && !env.BLOB_READ_WRITE_TOKEN && !(env.BLOB_STORE_ID && env.VERCEL_OIDC_TOKEN)) return false;
   return true;

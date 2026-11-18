@@ -12,7 +12,7 @@
 
 ## 현재 구현 상태 (2026-11-12)
 
-- 완료: 기본 비활성화 네트워크 차단(`DATAFORSEO_ENABLED=true` 전에는 fetch 0회)
+- 완료: API 인증정보 검증 및 사용자 선택·비용 확인 후 수집 실행
 - 완료: Provider task·artifact 스키마, 중복 방지 키, 제출/회수 상태 머신
 - 완료: Google AIO·Google AI Mode 구조화 결과 및 Naver HTML 정규화
 - 완료: 기존 `prompt_runs`와 Google AIO `aio_observations` 투영, AI 미노출 outcome 분리
@@ -25,7 +25,7 @@
 - 미완료: 화면을 닫아도 회수를 계속하는 durable recovery worker, 운영 비용/상태 화면
 - 미완료: 실제 API 병행 검증과 표면별 전환 승인
 
-현재 선택 수집에서 SERP API를 켜고 비용 확인 후 시작하면 task를 예약한 뒤 DataForSEO POST를 실행하고, 15초 간격으로 결과를 회수해 기존 `prompt_runs`와 Google AIO `aio_observations`에 반영한다. 기능 플래그 기본값은 계속 꺼져 있으며 `DATAFORSEO_ENABLED=true`와 자격 증명이 모두 있어야 Provider 호출이 시작된다.
+현재 선택 수집에서 SERP API를 켜고 비용 확인 후 시작하면 task를 예약한 뒤 DataForSEO POST를 실행하고, 15초 간격으로 결과를 회수해 기존 `prompt_runs`와 Google AIO `aio_observations`에 반영한다. Provider calls require configured API credentials.
 
 ### 인수인계: 2026-11-12 실제 실행 차단 오류
 
@@ -47,7 +47,7 @@ POST /api/dataforseo/tasks/reserve 500
 
 ## 다음 스텝
 
-다음 작업은 **소량 실제 검증 후 화면 수명과 무관한 recovery worker와 비용 안전장치를 운영 수준으로 만드는 것**이다. `DATAFORSEO_ENABLED` 기본값은 `false`로 유지하며, 실제 호출은 사용자가 화면에서 비용을 확인하고 수집 시작을 누른 요청에만 허용한다.
+다음 작업은 **소량 실제 검증 후 화면 수명과 무관한 recovery worker와 비용 안전장치를 운영 수준으로 만드는 것**이다. 실제 호출은 사용자가 화면에서 비용을 확인하고 수집 시작을 누른 요청에만 허용한다.
 
 1. 표면별 실제 1건 검증을 수행한다.
    - Google AIO, Google AI Mode, Naver AIO를 각각 고정 질의 1건으로 실행한다.

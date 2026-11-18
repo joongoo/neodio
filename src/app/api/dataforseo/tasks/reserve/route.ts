@@ -19,8 +19,7 @@ const MAX_PROMPTS = 200;
 
 type RequestedPrompt = { promptId?: string; query: string };
 
-// This route intentionally reserves local DB tasks only. Provider POST remains behind
-// the separate DATAFORSEO_ENABLED gate and is not invoked from prompt-library selection.
+// Reserve user-approved tasks in the DB and wake the worker for Provider submission.
 export async function POST(request: NextRequest) {
   const denied = await guardApi("write");
   if (denied) return denied;

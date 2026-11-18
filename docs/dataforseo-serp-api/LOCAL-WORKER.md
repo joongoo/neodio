@@ -20,9 +20,9 @@ worker는 5초마다 처리할 작업을 확인한다. 한 번만 실행하려�
 
 `DATAFORSEO_MOCK=true`는 API 자격 증명 없이 동작하며 외부 Provider 요청을 하지 않는다. 세 엔진 모두 `[MOCK 테스트 데이터]` 답변과 example.com 출처를 저장하고 실제 비용은 0으로 기록한다. 화면의 예상 비용은 기존 단가 계산을 유지한다. 목 데이터도 실제 제품 테이블에 저장되므로 별도 개발 DB와 테스트 브랜드를 사용한다. mock task ID에는 `mock-` 접두어가 붙으며 모드가 다른 task의 결과 회수는 거부한다. 모드 변경 전에 진행 중인 작업을 마치고 웹과 worker를 함께 재시작한다.
 
-실제 호출은 `DATAFORSEO_MOCK=false`, `DATAFORSEO_ENABLED=true`, `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`가 필요하다. 이때 worker가 DB의 승인된 대기 작업을 제출하면 비용이 발생한다. worker는 시작할 때 MOCK/LIVE를 출력한다. mock은 Vercel 및 production 환경에서 사용할 수 없다.
+실제 호출은 `DATAFORSEO_MOCK=false`, `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`가 필요하다. 이때 worker가 DB의 승인된 대기 작업을 제출하면 비용이 발생한다. worker는 시작할 때 MOCK/LIVE를 출력한다. mock은 Vercel 및 production 환경에서 사용할 수 없다.
 
-운영에서는 `DATAFORSEO_EXECUTOR=vercel`, `DATAFORSEO_MOCK=false`, `DATAFORSEO_QUEUE_ENABLED=true`로 설정한다. 로컬 환경변수만으로 Vercel의 인증·메시지 전달·지연 재전달은 검증할 수 없으므로 Preview 배포에서 별도로 확인한다.
+운영에서는 `DATAFORSEO_EXECUTOR=vercel`, `DATAFORSEO_MOCK=false`로 설정한다. 로컬 환경변수만으로 Vercel의 인증·메시지 전달·지연 재전달은 검증할 수 없으므로 Preview 배포에서 별도로 확인한다.
 
 ## 작업 흐름과 다음 단계
 

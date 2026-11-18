@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { LocalArtifactStore, MemoryArtifactStore } from "./artifacts";
-import { DataForSeoClient, DataForSeoDisabledError } from "./client";
+import { DataForSeoClient, DataForSeoRequestError } from "./client";
 import { DataForSeoOrchestrator } from "./orchestrator";
 import { MemoryObservationProjector } from "./projector";
 import { MemoryProviderTaskStore } from "./taskStore";
@@ -43,14 +43,14 @@ test("로컬 artifact 저장소는 원본과 checksum 메타데이터를 보존�
   }
 });
 
-test("비활성화 상태에서는 artifact와 fetch를 건드리지 않는다", async () => {
+test("missing credentials block artifacts and fetch", async () => {
   const store = new MemoryProviderTaskStore();
   const artifacts = new MemoryArtifactStore();
   let fetchCalls = 0;
-  const client = new DataForSeoClient({ enabled: false, login: "x", password: "y", fetchImpl: async () => { fetchCalls += 1; return Response.json({}); } });
+  const client = new DataForSeoClient({ login: "", password: "y", fetchImpl: async () => { fetchCalls += 1; return Response.json({}); } });
   const orchestrator = new DataForSeoOrchestrator(store, artifacts, client, new MemoryObservationProjector());
   const { task } = await orchestrator.reserve(input);
-  await assert.rejects(orchestrator.submit(task.id), DataForSeoDisabledError);
+  await assert.rejects(orchestrator.submit(task.id), DataForSeoRequestError);
   assert.equal(fetchCalls, 0);
   assert.equal(artifacts.bodies.size, 0);
   assert.equal((await store.get(task.id))?.status, "reserved");
@@ -61,7 +61,6 @@ test("lease owner가 아닌 worker는 Provider POST 직전에 차단된다", asy
   const artifacts = new MemoryArtifactStore();
   let fetchCalls = 0;
   const client = new DataForSeoClient({
-    enabled: true,
     login: "x",
     password: "y",
     fetchImpl: async () => {
@@ -90,7 +89,7 @@ test("가짜 POST와 GET으로 제출·회수·정규화를 완료한다", async
   ];
   let fetchCalls = 0;
   const client = new DataForSeoClient({
-    enabled: true, login: "x", password: "y",
+    login: "x", password: "y",
     fetchImpl: async () => { const value = responses[fetchCalls++]; return Response.json(value); },
   });
   const projector = new MemoryObservationProjector();
@@ -116,7 +115,7 @@ test("recovery lease를 검증하고 처리 중 결과의 다음 조회를 예�
     { status_code: 20000, tasks: [{ id: "provider-pending", status_code: 20100, status_message: "Task In Queue" }] },
   ];
   const client = new DataForSeoClient({
-    enabled: true, login: "x", password: "y",
+    login: "x", password: "y",
     fetchImpl: async () => Response.json(responses[fetchCalls++]),
   });
   const orchestrator = new DataForSeoOrchestrator(store, new MemoryArtifactStore(), client, new MemoryObservationProjector());

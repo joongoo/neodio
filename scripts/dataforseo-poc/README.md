@@ -19,7 +19,6 @@ Stage A 화면은 `/dataforseo-poc`이다. 화면에서 요청 내용 검토를 
 로컬 환경에 다음 환경변수를 설정하고 앱을 실행한다.
 
 ```text
-DATAFORSEO_STAGE_A_ENABLED=true
 DATAFORSEO_LOGIN=...
 DATAFORSEO_PASSWORD=...
 ```

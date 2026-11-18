@@ -20,9 +20,6 @@ export async function GET(request: NextRequest) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (process.env.DATAFORSEO_ENABLED !== "true") {
-    return NextResponse.json({ error: "DATAFORSEO_ENABLED is not true" }, { status: 503 });
-  }
   if (!process.env.DATAFORSEO_LOGIN || !process.env.DATAFORSEO_PASSWORD) {
     return NextResponse.json({ error: "DataForSEO credentials are not configured" }, { status: 503 });
   }

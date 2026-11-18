@@ -35,7 +35,6 @@ function credentials() {
 export function stageAReadiness() {
   const auth = credentials();
   return {
-    enabled: process.env.DATAFORSEO_STAGE_A_ENABLED === "true",
     credentialsReady: Boolean(auth.login && auth.password),
     executionLocked: existsSync(EXECUTION_LOCK),
     localOnly: true,
@@ -94,7 +93,6 @@ export function publicStageAPlan() {
 
 export async function startStageA(query) {
   const readiness = stageAReadiness();
-  if (!readiness.enabled) throw new Error("DATAFORSEO_STAGE_A_ENABLED=true 설정 후 실행할 수 있습니다.");
   if (!readiness.credentialsReady) throw new Error("DataForSEO API 인증정보가 설정되지 않았습니다.");
   if (process.env.VERCEL) throw new Error("Stage A 원본 파일 보존을 위해 로컬 개발 환경에서만 실행할 수 있습니다.");
   if (STAGE_A_PLAN.tasks.length !== 2 || STAGE_A_PLAN.estimatedMaxCostUsd > STAGE_A_PLAN.stageBudgetUsd) {

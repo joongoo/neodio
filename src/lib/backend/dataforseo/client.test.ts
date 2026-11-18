@@ -1,23 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DataForSeoClient, DataForSeoDisabledError } from "./client";
+import { DataForSeoClient, DataForSeoRequestError } from "./client";
 
-test("운영 플래그가 꺼져 있으면 fetch를 호출하기 전에 차단한다", async () => {
+test("missing credentials block fetch", async () => {
   let calls = 0;
   const client = new DataForSeoClient({
-    enabled: false,
-    login: "login",
+    login: "",
     password: "password",
     fetchImpl: async () => { calls += 1; return Response.json({}); },
   });
-  await assert.rejects(client.postTasks("/test", [{ keyword: "x" }]), DataForSeoDisabledError);
+  await assert.rejects(client.postTasks("/test", [{ keyword: "x" }]), DataForSeoRequestError);
   assert.equal(calls, 0);
 });
 
 test("주입한 fetch로 task 1건만 제출한다", async () => {
   let body = "";
   const client = new DataForSeoClient({
-    enabled: true,
     login: "login",
     password: "password",
     fetchImpl: async (_input, init) => {

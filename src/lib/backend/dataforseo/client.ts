@@ -3,13 +3,6 @@ import type { DataForSeoApiResponse, DataForSeoApiTask } from "./types";
 const API_ORIGIN = "https://api.dataforseo.com";
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
-export class DataForSeoDisabledError extends Error {
-  constructor() {
-    super("DataForSEO 운영 호출이 비활성화되어 있습니다. DATAFORSEO_ENABLED=true가 필요합니다.");
-    this.name = "DataForSeoDisabledError";
-  }
-}
-
 export class DataForSeoRequestError extends Error {
   constructor(
     message: string,
@@ -24,7 +17,6 @@ export class DataForSeoRequestError extends Error {
 export interface DataForSeoClientOptions {
   login?: string;
   password?: string;
-  enabled?: boolean;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   maxResponseBytes?: number;
@@ -33,7 +25,6 @@ export interface DataForSeoClientOptions {
 export class DataForSeoClient {
   private readonly login: string;
   private readonly password: string;
-  private readonly enabled: boolean;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
@@ -41,14 +32,12 @@ export class DataForSeoClient {
   constructor(options: DataForSeoClientOptions = {}) {
     this.login = options.login ?? process.env.DATAFORSEO_LOGIN ?? "";
     this.password = options.password ?? process.env.DATAFORSEO_PASSWORD ?? "";
-    this.enabled = options.enabled ?? process.env.DATAFORSEO_ENABLED === "true";
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   }
 
   assertReady(): void {
-    if (!this.enabled) throw new DataForSeoDisabledError();
     if (!this.login || !this.password) {
       throw new DataForSeoRequestError("DATAFORSEO_LOGIN과 DATAFORSEO_PASSWORD가 필요합니다.", "configuration");
     }

@@ -22,7 +22,7 @@ type Run = {
   results?: { surface: string; aiAnswerStatus: string; answer: string | null; citations: { url: string }[] }[];
 };
 
-export function DataForSeoPocClient({ plan, enabled, credentialsReady, executionLocked, initialRun }: { plan: Plan; enabled: boolean; credentialsReady: boolean; executionLocked: boolean; initialRun: Run | null }) {
+export function DataForSeoPocClient({ plan, credentialsReady, executionLocked, initialRun }: { plan: Plan; credentialsReady: boolean; executionLocked: boolean; initialRun: Run | null }) {
   const [query, setQuery] = useState(plan.query);
   const [reviewing, setReviewing] = useState(false);
   const [run, setRun] = useState<Run | null>(initialRun);
@@ -74,9 +74,8 @@ export function DataForSeoPocClient({ plan, enabled, credentialsReady, execution
         </ul>
         <label className="mt-5 block text-sm font-medium text-neutral-800" htmlFor="stage-a-query">테스트 질의</label>
         <textarea id="stage-a-query" value={query} onChange={(event) => setQuery(event.target.value)} disabled={busy} maxLength={700} className="mt-2 min-h-24 w-full rounded-lg border border-neutral-300 p-3 text-sm" />
-        {!enabled || !credentialsReady ? (
+        {!credentialsReady ? (
           <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            {!enabled ? "DATAFORSEO_STAGE_A_ENABLED=true 설정이 필요합니다. " : ""}
             {!credentialsReady ? "DATAFORSEO_LOGIN·DATAFORSEO_PASSWORD 설정이 필요합니다." : ""}
           </p>
         ) : null}
@@ -88,7 +87,7 @@ export function DataForSeoPocClient({ plan, enabled, credentialsReady, execution
 
         <div className="mt-5 flex flex-wrap gap-2">
           {!reviewing ? (
-            <button type="button" onClick={() => setReviewing(true)} disabled={executionLocked || !enabled || !credentialsReady || busy || !query.trim()} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">요청 내용 검토</button>
+            <button type="button" onClick={() => setReviewing(true)} disabled={executionLocked || !credentialsReady || busy || !query.trim()} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">요청 내용 검토</button>
           ) : (
             <>
               <button type="button" onClick={submit} disabled={busy} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">확인 후 2건 제출</button>

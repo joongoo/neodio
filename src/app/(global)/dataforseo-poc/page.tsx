@@ -13,5 +13,5 @@ export default async function DataForSeoPocPage() {
   }
   const readiness = stageAReadiness();
   const initialRun = await getLatestStageARun();
-  return <DataForSeoPocClient plan={publicStageAPlan()} enabled={readiness.enabled} credentialsReady={readiness.credentialsReady} executionLocked={readiness.executionLocked} initialRun={initialRun} />;
+  return <DataForSeoPocClient plan={publicStageAPlan()} credentialsReady={readiness.credentialsReady} executionLocked={readiness.executionLocked} initialRun={initialRun} />;
 }
