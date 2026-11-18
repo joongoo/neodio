@@ -40,6 +40,7 @@ import { copyWindowsRuntime } from "./runtimeFiles";
 declare const __COLLECTOR_ORIGINS__: string[] | undefined;
 const BUILT_IN_ORIGINS: string[] = typeof __COLLECTOR_ORIGINS__ !== "undefined" ? __COLLECTOR_ORIGINS__ : [];
 const DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"];
+const PREVIEW_ORIGINS = ["https://neodio-dev.vercel.app"];
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** 배포본이면 app/ 옆에 번들된 수집 스크립트가 있다. 개발 중엔 저장소의 scripts/. */
@@ -113,7 +114,7 @@ function readConfig(): Config {
 }
 
 function allowedOrigins(): Set<string> {
-  return new Set([...BUILT_IN_ORIGINS, ...DEV_ORIGINS, ...readConfig().allowedOrigins].map((o) => o.replace(/\/+$/, "")));
+  return new Set([...BUILT_IN_ORIGINS, ...DEV_ORIGINS, ...PREVIEW_ORIGINS, ...readConfig().allowedOrigins].map((o) => o.replace(/\/+$/, "")));
 }
 
 function argValues(name: string): string[] {
