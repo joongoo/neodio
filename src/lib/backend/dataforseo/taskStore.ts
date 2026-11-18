@@ -179,8 +179,9 @@ function rowToTask(row: Record<string, unknown>): ProviderTaskRecord {
 }
 
 export class PostgresProviderTaskStore implements ProviderTaskStore {
+  constructor(private readonly database: typeof getPromptStore = getPromptStore) {}
   async listActive(organizationId: string, brandId: string, options: { manualOnly?: boolean } = {}): Promise<ProviderTaskRecord[]> {
-    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+    const rows = await (await this.database()).query<Record<string, unknown>>(
       `SELECT * FROM provider_tasks
        WHERE organization_id=$1 AND brand_id=$2
          AND ($3::boolean = false OR scheduled_window LIKE 'manual:%')
@@ -193,7 +194,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async deleteReserved(id: string, organizationId: string, brandId: string): Promise<boolean> {
-    const rows = await (await getPromptStore()).query<{ id: string }>(
+    const rows = await (await this.database()).query<{ id: string }>(
       `DELETE FROM provider_tasks
        WHERE id=$1 AND organization_id=$2 AND brand_id=$3
          AND status='reserved' AND provider_task_id IS NULL
@@ -204,7 +205,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async reserveActive(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
-    const store = await getPromptStore();
+    const store = await this.database();
     return store.transaction(async () => {
       // 요청 ID가 달라도 같은 프롬프트·엔진·기기의 활성 작업은 하나만 둔다.
       // advisory lock으로 동시에 들어온 두 예약 요청도 같은 기존 작업을 보게 한다.
@@ -223,7 +224,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async reserve(input: ReserveProviderTaskInput): Promise<{ task: ProviderTaskRecord; created: boolean }> {
-    const store = await getPromptStore();
+    const store = await this.database();
     const key = dedupeKey(input);
     const id = `ptask-${randomUUID()}`;
     const now = new Date().toISOString();
@@ -251,7 +252,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     const keys = inputs.map(dedupeKey);
     if (new Set(keys).size !== keys.length) throw new Error("한 수집 요청에 중복된 Provider task가 포함되어 있습니다.");
 
-    const store = await getPromptStore();
+    const store = await this.database();
     return store.transaction(async () => {
       const now = new Date().toISOString();
       const rows = inputs.map((input, index) => {
@@ -311,7 +312,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
 
   async attachToCollectionRequest(ids: string[], collectionRequestId: string): Promise<ProviderTaskRecord[]> {
     if (ids.length === 0) return [];
-    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+    const rows = await (await this.database()).query<Record<string, unknown>>(
       `UPDATE provider_tasks SET collection_request_id=$2,updated_at=$3
        WHERE id = ANY($1::text[]) AND collection_request_id IS NULL
        RETURNING *`,
@@ -326,7 +327,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     if (!Number.isFinite(input.staleAfterMs) || input.staleAfterMs < 60_000) throw new Error("stale 기준은 1분 이상이어야 합니다.");
     const now = input.now ?? new Date().toISOString();
     const cutoff = new Date(Date.parse(now) - input.staleAfterMs).toISOString();
-    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+    const rows = await (await this.database()).query<Record<string, unknown>>(
       `WITH stale AS (
          SELECT id FROM provider_tasks
          WHERE status='submitting'
@@ -351,7 +352,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
     if (!Number.isInteger(input.maxInFlight) || input.maxInFlight < 1) throw new Error("전역 in-flight 상한은 1 이상이어야 합니다.");
     if (!Number.isFinite(input.leaseMs) || input.leaseMs < 1_000) throw new Error("lease는 1초 이상이어야 합니다.");
 
-    const store = await getPromptStore();
+    const store = await this.database();
     return store.transaction(async () => {
       const now = input.now ?? new Date().toISOString();
       const leaseExpiresAt = new Date(Date.parse(now) + input.leaseMs).toISOString();
@@ -400,7 +401,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
 
     const now = input.now ?? new Date().toISOString();
     const leaseExpiresAt = new Date(Date.parse(now) + input.leaseMs).toISOString();
-    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+    const rows = await (await this.database()).query<Record<string, unknown>>(
       `WITH candidates AS (
          SELECT id FROM provider_tasks
          WHERE provider='dataforseo' AND status = ANY($1::text[])
@@ -421,7 +422,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null> {
-    const [row] = await (await getPromptStore()).query<Record<string, unknown>>(
+    const [row] = await (await this.database()).query<Record<string, unknown>>(
       `UPDATE provider_tasks
        SET status='submitting',submission_attempted_at=$3,updated_at=$3
        WHERE id=$1 AND status='reserved' AND lease_owner=$2 AND lease_expires_at>$3
@@ -432,13 +433,13 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async get(id: string): Promise<ProviderTaskRecord | null> {
-    const [row] = await (await getPromptStore()).query<Record<string, unknown>>("SELECT * FROM provider_tasks WHERE id=$1", [id]);
+    const [row] = await (await this.database()).query<Record<string, unknown>>("SELECT * FROM provider_tasks WHERE id=$1", [id]);
     return row ? rowToTask(row) : null;
   }
 
   async getMany(ids: string[]): Promise<ProviderTaskRecord[]> {
     if (ids.length === 0) return [];
-    const rows = await (await getPromptStore()).query<Record<string, unknown>>(
+    const rows = await (await this.database()).query<Record<string, unknown>>(
       "SELECT * FROM provider_tasks WHERE id = ANY($1::text[])",
       [ids],
     );
@@ -450,11 +451,11 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async getActivitySummary(organizationId: string, brandId: string): Promise<ProviderTaskActivitySummary> {
-    return getCollectionActivitySummary(organizationId, brandId);
+    return getCollectionActivitySummary(organizationId, brandId, await this.database());
   }
 
   async update(id: string, expected: ProviderTaskStatus | ProviderTaskStatus[], patch: ProviderTaskPatch): Promise<ProviderTaskRecord> {
-    const store = await getPromptStore();
+    const store = await this.database();
     const current = await this.get(id);
     if (!current) throw new Error(`Provider task를 찾을 수 없습니다: ${id}`);
     const expectedStatuses = Array.isArray(expected) ? expected : [expected];
@@ -480,7 +481,7 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async saveArtifact(artifact: ProviderArtifactRecord): Promise<void> {
-    await (await getPromptStore()).query(
+    await (await this.database()).query(
       `INSERT INTO provider_artifacts (id,provider_task_id,kind,object_key,content_type,encoding,byte_size,checksum_sha256,created_at,expires_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        ON CONFLICT(provider_task_id,kind) DO UPDATE SET object_key=excluded.object_key,content_type=excluded.content_type,

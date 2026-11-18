@@ -1,8 +1,8 @@
 import { getPromptStore } from "@/lib/backend/database";
 import { LegacyRetryConflict } from "./legacyRetry";
 
-export async function managePendingSerpItems(org: string, brand: string, requestId: string, ids: string[], action: "wake" | "cancel") {
-  const db = await getPromptStore();
+export async function managePendingSerpItems(org: string, brand: string, requestId: string, ids: string[], action: "wake" | "cancel", database?: Awaited<ReturnType<typeof getPromptStore>>) {
+  const db = database ?? await getPromptStore();
   return db.transaction(async () => {
     const [request] = await db.query<{ client_request_id: string | null; cancel_requested: boolean; status: string }>(
       "SELECT client_request_id,cancel_requested,status FROM collection_requests WHERE id=$1 AND organization_id=$2 AND brand_id=$3 FOR UPDATE", [requestId, org, brand]);

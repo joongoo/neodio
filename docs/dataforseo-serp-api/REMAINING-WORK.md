@@ -15,6 +15,15 @@
 
 ## 최신 인수인계
 
+### 2026-11-18 — 실제 PostgreSQL 선점·취소 경합 / 예산 제한 보류
+
+- 이전 worker 중단 모의 테스트 작업은 `9c182c7`로 커밋했습니다. 사용자 요청: 예산 제한 기능은 당장 필요 없으므로 현재 구현 순서와 출시 필수 잔여 범위에서 제외합니다. 아래 과거 계획의 예산 제한 기재보다 본 결정을 우선합니다.
+- `npm run test:dataforseo:queue-db`: 로컬 host만 허용하고 무작위 dfs_queue_test_<UUID> 스키마에 public 테이블의 빈 구조를 복제합니다. 서로 다른 단일 연결 Pool/PromptStore를 사용하며 schema init/seed/실데이터/Provider API 호출은 없습니다. 종료 시 검증된 테스트 스키마만 삭제합니다.
+- 실제 PostgresProviderTaskStore SQL로 전역 상한 1에 대한 동시 선점, worker 선점 transaction이 먼저인 일괄 취소(실제 Lock 대기 확인 후 전체 거부), 취소 transaction이 먼저인 worker SKIP LOCKED 및 commit 후 미선점, 만료 lease 재선점과 이전 owner beginSubmission 차단을 확인했습니다. 취소 후 task 레코드 수는 유지됩니다.
+- 격리 DB 주입을 위해 PostgresProviderTaskStore 생성자에 기본값 getPromptStore인 선택적 loader를, managePendingSerpItems에 선택적 PromptStore를 추가했습니다. 기본 운영 호출과 SQL/상태 정책은 그대로입니다. 인위적인 SQL 복사본이 아닌 실제 서비스 메서드를 호출합니다.
+- 검증 범위는 실제 로컬 PostgreSQL의 row/advisory lock 및 독립 연결입니다. 빈 복제 테이블은 FK 등 전체 운영 스키마 제약을 검증하지 않으며 실제 OS kill/재시작, 네트워크 단절, Vercel Preview 전달·인증·지연 실행은 아직 별도입니다.
+- 다음 단위: 로컬 mock worker의 실제 강제 종료·재시작 E2E, 이후 Preview 인증/큐 전달·지연 실행. stale 경보 및 실행 계층 DB 초기화·artifact adapter 설정 점검은 유지하고 예산 제한은 보류합니다.
+
 ### 2026-11-18 — worker 중단 상태 / 중복 wake 회귀 테스트
 
 - 이전 직접 제출·삭제 경로 종료 작업은 `29c9c4e`로 커밋했습니다. ‘조치 필요’ 문구 변경과 ‘더 이상 수집하지 않음’은 제안일 뿐 이번 범위에 포함하지 않았습니다.
