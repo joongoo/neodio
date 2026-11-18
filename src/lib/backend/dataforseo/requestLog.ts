@@ -58,6 +58,7 @@ export async function listRequestLogs(
   brandId: string,
   options: ReturnType<typeof parseRequestLogOptions>,
   database?: RequestLogDatabase,
+  requestId?: string,
 ): Promise<RequestLogPage> {
   const db = database ?? await getPromptStore();
   const direction = options.sort === "oldest" ? "ASC" : "DESC";
@@ -66,6 +67,7 @@ export async function listRequestLogs(
       SELECT r.*, u.name AS requester_name FROM collection_requests r
       LEFT JOIN neodio_users u ON u.id=r.requested_by
       WHERE r.organization_id=$1 AND r.brand_id=$2
+        AND ($10::text IS NULL OR r.id=$10)
         AND ($3::text IS NULL OR r.created_at >= $3)
         AND ($4::text IS NULL OR r.created_at < $4)
     ), aggregates AS (
@@ -116,6 +118,11 @@ export async function listRequestLogs(
       ) ORDER BY p.created_at ${direction},p.id ${direction}) FROM paged p),'[]'::jsonb)) AS payload
     FROM bounds b
   `,
-  [organizationId, brandId, options.from, options.to, options.q, options.status, options.surface, options.size, options.page]);
+  [organizationId, brandId, options.from, options.to, options.q, options.status, options.surface, options.size, options.page, requestId ?? null]);
   return result.payload;
+}
+
+export async function getRequestLog(organizationId: string, brandId: string, requestId: string, database?: RequestLogDatabase): Promise<RequestLogRow | null> {
+  const page = await listRequestLogs(organizationId, brandId, parseRequestLogOptions(new URLSearchParams()), database, requestId);
+  return page.rows[0] ?? null;
 }

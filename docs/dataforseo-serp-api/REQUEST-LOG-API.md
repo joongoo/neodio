@@ -47,6 +47,8 @@
 
 ## 2. 요청 요약·상세 항목
 
+2026-11-18 구현 완료: 요청 요약·항목 API. 기존 원문 조회의 요청 소속 검사 보완과 레거시 실행 항목은 다음 화면 연결 단계에서 처리한다. 항목 API의 기간 필터는 task 생성 시각을 기준으로 한다.
+
 `GET /api/collection-requests/{requestId}` → `{ request }` (목록 row와 같은 요약 필드).
 
 `GET /api/collection-requests/{requestId}/items?page=1&size=25&q=...&status=...&surface=...&sort=oldest` → `{ rows, filteredTotal, page, pageSize, pageCount }`.
