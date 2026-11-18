@@ -31,7 +31,7 @@ export async function retryLegacyRequest(org: string, brand: string, originalId:
       return { requestId: originalId, steps: [], count: items.length };
     }
     if (items.some(item => item.surface === "google-aio" && !item.promptId)) throw new LegacyRetryConflict("구글 AIO의 원본 프롬프트 연결을 찾을 수 없습니다.");
-    const retry = await registerLegacyRequest(org, brand, clientId, actor, items.map(item => ({ ...item, promptId: item.promptId ?? undefined })), originalId);
+    const retry = await registerLegacyRequest(org, brand, clientId, actor, items.map(item => ({ ...item, promptId: item.promptId ?? undefined, retryOfTaskId: item.id })), originalId);
     await db.query(`UPDATE legacy_collection_items SET status='cancelled',completed_at=$2,error_message='사용자가 새 요청에서 다시 시도했습니다.'
       WHERE collection_request_id=$1 AND status IN ('reserved','collecting') AND id::text=ANY($3::text[])`, [originalId, new Date().toISOString(), items.map(item => item.id)]);
     return { requestId: retry.requestId, steps: legacyRetrySteps(items, clientId), count: items.length };

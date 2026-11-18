@@ -73,8 +73,9 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, selectedStart!.requestId))?.retryOfRequestId, selectedRequest.requestId);
       selectedRows = (await listRequestItems(sample.organization_id, sample.brand_id, selectedRequest.requestId, parseRequestItemOptions(new URLSearchParams())))!.rows;
       assert.equal(selectedRows.find(row => row.id === selectedIds[1])?.status, "cancelled");
-      const fixtureId = await createMixedFailureFixture(sample.organization_id, sample.brand_id);
-      assert.equal(await createMixedFailureFixture(sample.organization_id, sample.brand_id), fixtureId, "fixture is idempotent");
+      const fixtureKey = `test-${randomUUID()}`;
+      const fixtureId = await createMixedFailureFixture(sample.organization_id, sample.brand_id, fixtureKey);
+      assert.equal(await createMixedFailureFixture(sample.organization_id, sample.brand_id, fixtureKey), fixtureId, "fixture is idempotent");
       const mixedPage = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
       assert.equal(mixedPage.rows.length, 9);
       assert.ok(mixedPage.rows.every(item => ["parse_failed", "provider_failed", "cancelled"].includes(item.status)));
@@ -93,7 +94,17 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal(mixedRetry?.steps.filter(step => step.kind !== "serp-api").length, 4);
       const retryPage = (await listRequestItems(sample.organization_id, sample.brand_id, mixedRetry!.requestId!, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
       assert.equal(retryPage.rows.length, 8);
-      assert.equal(retryPage.rows.filter(item => item.retryOfTaskId).length, 4);
+      assert.equal(retryPage.rows.filter(item => item.retryOfTaskId).length, 8);
+      const originals = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
+      for (const source of originals.rows.filter(isRetryFailure)) {
+        assert.equal(source.retries.length, 1, "both local and SERP originals link to their exact retry");
+        assert.equal(source.retries[0].requestId, mixedRetry!.requestId);
+        assert.equal(source.status, failures.find(item => item.id === source.id)!.status, "original failure remains unchanged");
+      }
+      assert.equal(originals.rows.find(item => item.surface === "gemini")!.retries.length, 0, "unselected item has no retry link");
+      const childRequests = await listRequestLogs(sample.organization_id, sample.brand_id, parseRequestLogOptions(new URLSearchParams()), undefined, undefined, fixtureId);
+      assert.ok(childRequests.rows.some(child => child.id === mixedRetry!.requestId));
+      assert.equal((await listRequestLogs("foreign-org", sample.brand_id, parseRequestLogOptions(new URLSearchParams()), undefined, undefined, fixtureId)).rows.length, 0);
       assert.ok(retryPage.rows.some(item => item.surface === "google-aio" && item.device === "mobile"), "exact original device retained");
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, mixedRetry!.requestId!))?.counts.total, 8);
       await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, mixedClientId, null, failures.map(item => item.id)), LegacyRetryConflict);
@@ -179,6 +190,9 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='legacy-1'");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"], "retried originals and local failures do not match the badge");
     assert.equal((await list("attention=1&page=99")).page, 1);
+    await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
+      VALUES ('foreign-retry','other','other-brand','hidden','dataforseo','google-aio','desktop','reserved','hidden','t1')`);
+    assert.equal((await items("a"))?.rows.find(item => item.id === "t1")?.retries.length, 0, "item links never expose another tenant's retry request");
   } finally {
     await client.query("ROLLBACK");
     client.release();

@@ -30,6 +30,7 @@ export interface RequestItemRow {
   errorCode: string | null;
   errorMessage: string | null;
   retryOfTaskId: string | null;
+  retries: { requestId: string; taskId: string; status: ProviderTaskStatus }[];
   result: null | { runId: string; dir: string; filename: string; outcome: string | null; answerLength: number; citationCount: number; category: string | null; topic: string | null };
 }
 
@@ -64,6 +65,10 @@ export async function listRequestItems(organizationId: string, brandId: string, 
         'submissionAttemptedAt',t.submission_attempted_at,'submittedAt',t.submitted_at,'completedAt',t.completed_at,
         'estimatedCostUsd',COALESCE(t.estimated_cost_usd,0)::float8,'actualCostUsd',COALESCE(t.actual_cost_usd,0)::float8,
         'errorCode',t.error_code,'errorMessage',t.error_message,'retryOfTaskId',t.retry_of_task_id,
+        'retries',COALESCE((SELECT jsonb_agg(jsonb_build_object('requestId',retry.collection_request_id,'taskId',retry.id,'status',retry.status) ORDER BY retry.created_at DESC,retry.id DESC)
+          FROM collection_execution_items retry JOIN collection_requests rr ON rr.id=retry.collection_request_id
+          WHERE retry.retry_of_task_id=t.id AND retry.execution_kind=t.execution_kind
+            AND retry.organization_id=$1 AND retry.brand_id=$2 AND rr.organization_id=$1 AND rr.brand_id=$2),'[]'::jsonb),
         'result',CASE WHEN run.id IS NULL THEN NULL ELSE jsonb_build_object(
           'runId',run.id,'dir',run.source_dir,'filename',run.source_filename,'outcome',run.observation_outcome,
           'answerLength',char_length(run.raw_response),

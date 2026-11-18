@@ -56,7 +56,7 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
       <div className="mt-6 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => setAction(null)}>이전</Button><Button disabled={busy} onClick={start}>{busy ? "처리 중…" : action === "cancel" ? "취소 확인" : "확인 후 수집 시작"}</Button></div>
     </Modal>
     {retry?.notice && <p role="alert" className="text-xs text-amber-700">{retry.notice}</p>}
-    {retry && <ParallelCollectModal steps={retry.steps} brandId={brandId} orgName={orgName} downloadPlatforms={downloadPlatforms} serverCollector={serverCollector}
+    {retry && <ParallelCollectModal steps={retry.steps} brandId={brandId} orgName={orgName} downloadPlatforms={downloadPlatforms} serverCollector={serverCollector} collectionLogHref={`${base}/collection-runs/${encodeURIComponent(retry.requestId)}`}
       onDone={() => router.refresh()} onClose={() => { const id = retry.requestId; setRetry(null); router.push(`${base}/collection-runs/${encodeURIComponent(id)}`); }} />}
   </EditOnly>;
 }

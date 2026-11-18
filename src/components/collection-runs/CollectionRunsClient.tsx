@@ -17,6 +17,8 @@ import type { CollectedRunDetail } from "@/lib/backend/collectionRuns";
 import { engineLabel, RUN_PAGE_SIZES, type RunListPage, type RunListRow } from "@/lib/collectionRunList";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
+import Link from "next/link";
+import { REQUEST_STATUS_LABEL } from "./RequestLogViews";
 
 function StatusBadge({ file }: { file: RunListRow }) {
   if (file.progressStatus === "cancelled") return <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-bold text-neutral-600">취소됨</span>;
@@ -64,7 +66,7 @@ export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColu
       key: "status",
       label: "상태",
       width: "w-[110px]",
-      render: (file) => <StatusBadge file={file} />,
+      render: (file) => <div className="space-y-1"><StatusBadge file={file} />{file.retryRequests?.map((retry, index) => <Link key={retry.href} href={retry.href} onClick={event => event.stopPropagation()} className="block text-[11px] text-slate-700 underline" title={`재수집 요청 상세 · ${REQUEST_STATUS_LABEL[retry.status] ?? retry.status}`}>재수집 요청됨{index > 0 ? ` ${index + 1}` : ""} · {REQUEST_STATUS_LABEL[retry.status] ?? retry.status}</Link>)}</div>,
     },
     {
       key: "length",

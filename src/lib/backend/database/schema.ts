@@ -259,13 +259,17 @@ CREATE TABLE IF NOT EXISTS legacy_collection_items (
 );
 CREATE INDEX IF NOT EXISTS legacy_collection_request ON legacy_collection_items(collection_request_id);
 ALTER TABLE legacy_collection_items ADD COLUMN IF NOT EXISTS last_seen_at TEXT;
+ALTER TABLE legacy_collection_items ADD COLUMN IF NOT EXISTS retry_of_task_id TEXT REFERENCES legacy_collection_items(id);
+CREATE INDEX IF NOT EXISTS legacy_collection_retry_of ON legacy_collection_items(retry_of_task_id);
+CREATE INDEX IF NOT EXISTS provider_tasks_retry_of ON provider_tasks(retry_of_task_id);
+CREATE INDEX IF NOT EXISTS collection_requests_retry_of ON collection_requests(retry_of_request_id);
 CREATE OR REPLACE VIEW collection_execution_items AS
   SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,
     created_at,submitted_at,completed_at,submission_attempted_at,estimated_cost_usd,actual_cost_usd,error_code,error_message,retry_of_task_id,
     'serp-api'::text AS execution_kind,NULL::text AS run_id FROM provider_tasks
   UNION ALL
   SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,
-    created_at,submitted_at,completed_at,submitted_at,0::numeric,0::numeric,NULL::text,error_message,NULL::text,
+    created_at,submitted_at,completed_at,submitted_at,0::numeric,0::numeric,NULL::text,error_message,retry_of_task_id,
     'legacy'::text,run_id FROM legacy_collection_items;
 CREATE INDEX IF NOT EXISTS provider_tasks_collection_request ON provider_tasks(collection_request_id,created_at);
 CREATE INDEX IF NOT EXISTS provider_tasks_queue_due ON provider_tasks(provider,status,next_poll_at,lease_expires_at);

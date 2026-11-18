@@ -52,6 +52,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
       answerLength: result?.answerLength ?? null, citationCount: result?.citationCount ?? null,
       state: terminalFailure ? "failed" : item.status === "completed" ? "success" : "pending",
       progressStatus: item.status, requestId, taskId: item.id, errorMessage: item.errorMessage,
+      retryRequests: item.retries.map(retry => ({ href: `${base}/collection-runs/${encodeURIComponent(retry.requestId)}`, status: retry.status })),
     };
   });
   return <>

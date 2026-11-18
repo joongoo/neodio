@@ -5,10 +5,10 @@ import { PostgresCollectionRequestStore } from "./collectionRequestStore";
 import type { DataForSeoSurface } from "./types";
 
 /** Terminal rows only, atomically committed: no worker can submit the fixture. */
-export async function createMixedFailureFixture(org: string, brand: string) {
+export async function createMixedFailureFixture(org: string, brand: string, fixtureKey = "v1") {
   const db = await getPromptStore();
   return db.transaction(async () => {
-    const clientId = `fixture-mixed-failures-v1:${brand}`;
+    const clientId = `fixture-mixed-failures-${fixtureKey}:${brand}`;
     const requests = new PostgresCollectionRequestStore();
     await requests.lockClientRequest(org, clientId);
     const existing = await requests.getByClientRequestId(org, clientId);

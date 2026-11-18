@@ -46,6 +46,7 @@ export function ParallelCollectModal({
   onClose,
   onDone,
   serverCollector = false,
+  collectionLogHref,
 }: {
   steps: CollectStep[];
   orgName: string;
@@ -54,6 +55,7 @@ export function ParallelCollectModal({
   onClose: () => void;
   onDone: () => void;
   serverCollector?: boolean;
+  collectionLogHref?: string;
 }) {
   const router = useRouter();
   const tenantBase = useTenantBase();
@@ -187,7 +189,7 @@ export function ParallelCollectModal({
           </p>
           {serpFailureNotes.map((note) => <p key={note} className="mt-1 text-xs font-medium">{note}</p>)}
           {serpRegistered && (
-            <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => { if (close()) router.push(`${tenantBase}/collection-runs`); }}>
+            <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => { if (close()) router.push(collectionLogHref ?? `${tenantBase}/collection-runs`); }}>
               수집 로그 보기
             </button>
           )}

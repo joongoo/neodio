@@ -23,6 +23,7 @@ export interface RunListRow {
   requestId?: string;
   taskId?: string;
   errorMessage?: string | null;
+  retryRequests?: { href: string; status: ProviderTaskStatus }[];
 }
 
 const ENGINE_LABEL: Record<string, string> = {
