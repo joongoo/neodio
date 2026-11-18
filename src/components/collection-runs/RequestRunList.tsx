@@ -10,9 +10,10 @@ import { useCanEdit } from "@/components/auth/PermissionsProvider";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { isRetrySelectable, reconcileRetrySelection, retryGroupSelected, mergeRetrySelection, type RetrySelectionItem, type RetrySelectionGroup } from "@/lib/requestRetrySelection";
 
-export function RequestRunList({ items, requestId, brandId, total, categories, search, orgName, base, serverCollector, downloadPlatforms }: {
+export function RequestRunList({ items, requestId, brandId, total, categories, search, orgName, base, serverCollector, downloadPlatforms, loading = false }: {
   items: RequestItemPage; requestId: string; brandId: string; total: number; categories: string[]; search: string;
   orgName: string; base: string; serverCollector: boolean; downloadPlatforms: CollectorPlatform[];
+  loading?: boolean;
 }) {
   const router = useRouter(), pathname = usePathname(), params = useSearchParams();
   const [searchText, setSearchText] = useState(search);
@@ -30,7 +31,8 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
     if (groupsSelected[group]) { setSelected(mergeRetrySelection(effectiveSelected, groupCandidates[group], false)); return; }
     setSelecting(true); setSelectionError(null);
     try {
-      const response = await fetch(`/api/collection-requests/${encodeURIComponent(requestId)}/retry?group=${group}`, { cache: "no-store" });
+      const selectionQuery = new URLSearchParams(params.toString()); selectionQuery.set("group", group);
+      const response = await fetch(`/api/collection-requests/${encodeURIComponent(requestId)}/retry?${selectionQuery}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "선택 항목을 조회하지 못했습니다.");
       const candidates = data.items as RetrySelectionItem[];
@@ -45,9 +47,9 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   function navigate(changes: Record<string, string>) {
     if (timer.current) clearTimeout(timer.current);
-    const next = new URLSearchParams(params.toString());
+    const next = new URLSearchParams(window.location.search);
     Object.entries(changes).forEach(([key, value]) => next.set(key, value));
-    router.push(`${pathname}?${next}`);
+    window.history.pushState(null, "", `${pathname}?${next}`);
   }
   const rows: RunListRow[] = items.rows.map(item => {
     const result = item.result;
@@ -66,7 +68,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
   const columns = runColumns(setAnalyzing);
   if (canEdit) columns.unshift({
     key: "select", width: "w-[45px]",
-    label: <input type="checkbox" aria-label="현재 페이지 수집 항목 전체 선택" disabled={!selectable.length || selecting}
+    label: <input type="checkbox" aria-label="현재 페이지 수집 항목 전체 선택" disabled={!selectable.length || selecting || loading}
       checked={selectable.length > 0 && selectable.every(item => effectiveSelected.has(item.id))}
       onChange={event => setSelected(current => mergeRetrySelection(reconcileRetrySelection(current, items.rows), selectable, event.target.checked))} />,
     render: row => {
@@ -75,16 +77,16 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
       const allowed = isRetrySelectable(item), retried = item.retries.length > 0;
       if (!allowed && !retried) return null;
       return <input type="checkbox" aria-label={`${row.query} 선택`} title={retried ? "이미 재수집이 요청되었습니다. 연결된 최신 요청에서 확인해 주세요." : undefined}
-        disabled={!allowed || selecting} checked={allowed && effectiveSelected.has(row.key)} onClick={event => event.stopPropagation()}
+        disabled={!allowed || selecting || loading} checked={allowed && effectiveSelected.has(row.key)} onClick={event => event.stopPropagation()}
         onChange={event => setSelected(current => mergeRetrySelection(reconcileRetrySelection(current, items.rows), [item], event.target.checked))} />;
     },
   });
   return <>
     <CollectionRunList actions={canEdit && <>
-      <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={chosen} selecting={selecting} onSelectGroup={selectGroup} groupsSelected={groupsSelected} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
+      <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={loading ? [] : chosen} selecting={selecting || loading} onSelectGroup={selectGroup} groupsSelected={groupsSelected} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
       {selectionError && <p role="alert" className="text-xs text-red-600">{selectionError}</p>}
-      <p className="text-xs text-neutral-500">실패·취소 전체 선택은 모든 페이지에 누적 적용되며, 같은 버튼으로 해당 그룹만 해제합니다. 미제출 SERP 작업만 선택하면 기존 큐 실행 요청·대기 취소가 가능합니다. 이미 재수집된 원본·제출 여부 확인 필요·저장 결과 복구 대상은 제외합니다.</p>
-    </>} listPage={{ ...items, rows }} total={total} searchValue={searchText} onSearchChange={value => {
+      <p className="text-xs text-neutral-500">실패·취소 전체 선택은 현재 필터에 맞는 모든 페이지에 적용됩니다. 필터 변경 시 선택을 초기화합니다. 미제출 SERP만 선택하면 기존 큐 실행 요청·대기 취소가 가능합니다. 이미 재수집된 원본은 제외합니다.</p>
+    </>} loading={loading} listPage={{ ...items, rows }} total={total} searchValue={searchText} onSearchChange={value => {
       setSearchText(value);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => navigate({ q: value.trim(), page: "1" }), 350);

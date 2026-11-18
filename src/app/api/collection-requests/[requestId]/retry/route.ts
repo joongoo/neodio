@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/backend/auth/session";
 import { retrySelectedItems, listRetryCandidates } from "@/lib/backend/dataforseo/retrySelection";
 import { LegacyRetryConflict } from "@/lib/backend/dataforseo/legacyRetry";
 import { publishDataForSeoWake } from "@/lib/backend/dataforseo/queueWake";
+import { parseRequestItemOptions } from "@/lib/backend/dataforseo/requestItems";
+import { RequestLogInputError } from "@/lib/backend/dataforseo/requestLog";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -15,7 +17,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const tenant = await getCurrentTenant(), id = (await params).requestId;
   const group = request.nextUrl.searchParams.get("group") ?? "failed";
   if (group !== "failed" && group !== "cancelled") return NextResponse.json({ error: "선택 그룹이 올바르지 않습니다." }, { status: 400 });
-  const items = await listRetryCandidates(tenant.orgId, tenant.brandId, id, group);
+  let filters;
+  try { filters = parseRequestItemOptions(request.nextUrl.searchParams); }
+  catch (error) { if (error instanceof RequestLogInputError) return NextResponse.json({ error: error.message }, { status: 400 }); throw error; }
+  const items = await listRetryCandidates(tenant.orgId, tenant.brandId, id, group, undefined, filters);
   if (!items) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
   if (items.length > 2000) return NextResponse.json({ error: "한 번에 최대 2,000건까지 선택할 수 있습니다. 개별 선택해 주세요." }, { status: 400 });
   return NextResponse.json({ items }, { headers: { "Cache-Control": "private, no-store" } });

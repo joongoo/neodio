@@ -90,6 +90,16 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal(failures.length, 8);
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed"))?.length, 8);
       assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "cancelled"))?.length, 1);
+      const candidateFilter = (query: string) => parseRequestItemOptions(new URLSearchParams(query));
+      const filteredFailures = await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("surface=google-aio&page=99&size=10"));
+      assert.equal(filteredFailures?.length, 3, "bulk selection matches all filtered pages, not just the displayed page");
+      assert.ok(filteredFailures?.every(item => item.surface === "google-aio"));
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "cancelled", undefined, candidateFilter("surface=google-aio")))?.length, 0);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("status=provider_failed")))?.length, 3);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("status=cancelled")))?.length, 0);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("q=no-such-fixture-prompt")))?.length, 0);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed", undefined, candidateFilter("from=2100-01-01T00%3A00%3A00Z")))?.length, 0);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "cancelled", undefined, candidateFilter("surface=gemini&status=cancelled")))?.length, 1);
       assert.equal(await listRetryCandidates("foreign-org", sample.brand_id, fixtureId, "failed"), null);
       const formItems = await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("q=&status=&surface=&sort=oldest&size=25")));
       assert.equal(formItems?.filteredTotal, 9, "detail form's empty filters return all items");

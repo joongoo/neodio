@@ -7,15 +7,20 @@ import { WITHOUT_COLLECTION_RETRY_SQL } from "./collectionActivity";
 import type { RequestLogDatabase } from "./requestLog";
 import type { CollectStep } from "@/lib/collectSteps";
 import type { DataForSeoDevice, DataForSeoSurface } from "./types";
+import type { parseRequestItemOptions } from "./requestItems";
 
-export async function listRetryCandidates(org: string, brand: string, requestId: string, group: RetrySelectionGroup, database?: RequestLogDatabase) {
+export async function listRetryCandidates(org: string, brand: string, requestId: string, group: RetrySelectionGroup, database?: RequestLogDatabase, filters?: ReturnType<typeof parseRequestItemOptions>) {
   const db = database ?? await getPromptStore();
   const [request] = await db.query("SELECT id FROM collection_requests WHERE id=$1 AND organization_id=$2 AND brand_id=$3", [requestId, org, brand]);
   if (!request) return null;
   return db.query<RetrySelectionItem>(`SELECT p.id,p.execution_kind AS "executionKind",p.query_snapshot AS query,p.surface,p.device,p.status,false AS "hasRetry"
     FROM collection_execution_items p WHERE p.collection_request_id=$1 AND p.organization_id=$2 AND p.brand_id=$3
-      AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL} ORDER BY p.created_at,p.id LIMIT 2001`,
-  [requestId, org, brand, group === "cancelled" ? ["cancelled"] : RETRY_FAILURE_STATUSES]);
+      AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL}
+      AND ($5::text IS NULL OR p.status=$5) AND ($6::text IS NULL OR p.surface=$6)
+      AND ($7='' OR strpos(lower(p.query_snapshot),lower($7))>0)
+      AND ($8::text IS NULL OR p.created_at >= $8) AND ($9::text IS NULL OR p.created_at < $9)
+      ORDER BY p.created_at,p.id LIMIT 2001`,
+  [requestId, org, brand, group === "cancelled" ? ["cancelled"] : RETRY_FAILURE_STATUSES, filters?.status ?? null, filters?.surface ?? null, filters?.q ?? "", filters?.from ?? null, filters?.to ?? null]);
 }
 
 export async function retrySelectedItems(org: string, brand: string, originalId: string, clientId: string, actor: string | null, ids: string[]) {

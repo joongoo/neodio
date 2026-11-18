@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { createRequestDetailPoller, hasActiveRequestTasks, type RequestDetailSnapshot, type RequestRefreshState } from "@/lib/requestDetailProgress";
 import { Clock3, Loader2, Pause, CircleCheck } from "lucide-react";
 import { RequestSummary } from "./RequestLogViews";
 import { RequestRunList } from "./RequestRunList";
+import { RequestDetailFilters } from "./RequestDetailFilters";
 
 export function RequestRefreshIndicator({ state }: { state: RequestRefreshState }) {
   const time = (timestamp: number) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(timestamp);
@@ -30,21 +32,30 @@ export function RequestProgressStages({ request, refreshState }: Pick<RequestDet
 
 class ProgressReadError extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
-export function RequestDetailLive({ initial, query, listProps, children }: {
+export function RequestDetailLive({ initial, query: initialQuery, listProps, children }: {
   initial: RequestDetailSnapshot; query: string;
   listProps: Omit<ComponentProps<typeof RequestRunList>, "items" | "total">; children: ReactNode;
 }) {
+  const params = useSearchParams(), pathname = usePathname();
+  const query = params.toString();
   const key = `${initial.request.id}?${query}`;
+  const previousKey = useRef(key);
   const [live, setLive] = useState<{ key: string; baseline: RequestDetailSnapshot; snapshot: RequestDetailSnapshot } | null>(null);
   const [error, setError] = useState<{ key: string; baseline: RequestDetailSnapshot; message: string; stopped: boolean } | null>(null);
   const [refresh, setRefresh] = useState<{ baseline: RequestDetailSnapshot; key: string; state: RequestRefreshState } | null>(null);
-  const snapshot = live?.key === key && live.baseline === initial ? live.snapshot : initial;
+  const liveMatches = live?.key === key && live.baseline === initial;
+  const snapshot = liveMatches ? live.snapshot : initial;
+  const loading = !liveMatches && query !== initialQuery;
+  const filterKey = JSON.stringify(["status", "surface", "q", "from", "to"].map(name => params.get(name) ?? ""));
   const active = hasActiveRequestTasks(snapshot.request);
   const currentError = error?.key === key && error.baseline === initial ? error : null;
   const refreshState: RequestRefreshState = refresh?.key === key && refresh.baseline === initial ? refresh.state : { phase: active ? "waiting" : "stopped", secondsUntilRefresh: active ? 5 : null, nextRefreshAt: null, lastUpdatedAt: null };
   // Restart only for a new server snapshot/query, not for each polling response.
   useEffect(() => {
+    const immediate = query !== initialQuery || previousKey.current !== key;
+    previousKey.current = key;
     const poller = createRequestDetailPoller<RequestDetailSnapshot>({
+      immediate,
       initiallyActive: hasActiveRequestTasks(initial.request), initiallyVisible: document.visibilityState === "visible",
       read: async signal => {
         const response = await fetch(`/api/collection-requests/${encodeURIComponent(initial.request.id)}/progress?${query}`, { signal, cache: "no-store" });
@@ -61,7 +72,13 @@ export function RequestDetailLive({ initial, query, listProps, children }: {
     const visibility = () => poller.setVisible(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", visibility);
     return () => { document.removeEventListener("visibilitychange", visibility); poller.dispose(); };
-  }, [initial, query, key]);
+  }, [initial, initialQuery, query, key]);
+
+  function changeFilters(changes: Record<string, string>) {
+    const next = new URLSearchParams(query);
+    Object.entries(changes).forEach(([name, value]) => { if (value) next.set(name, value); else next.delete(name); });
+    window.history.pushState(null, "", `${pathname}?${next}`);
+  }
 
   return <>
     <RequestSummary request={snapshot.request} />
@@ -69,6 +86,7 @@ export function RequestDetailLive({ initial, query, listProps, children }: {
     <p className="text-xs text-neutral-500">{currentError?.stopped ? "현황 조회를 중지했습니다. 접근 권한과 요청 상태를 확인한 뒤 새로고침하세요." : active ? "이 상세 화면을 보고 있는 동안 5초 간격으로 내부 상태를 확인합니다. 다른 탭으로 이동하면 일시 중지합니다." : "활성 작업이 없어 자동 갱신을 중지했습니다. 최신 상태가 필요하면 페이지를 새로고침하세요."} 외부 수집 API를 조회하거나 작업을 다시 제출하지 않습니다.</p>
     {currentError && <p role="alert" className="text-xs text-amber-700">{currentError.message}</p>}
     {children}
-    <RequestRunList {...listProps} items={snapshot.items} total={snapshot.request.counts.total} />
+    <RequestDetailFilters query={query} onChange={changeFilters} />
+    <RequestRunList key={filterKey} {...listProps} search={params.get("q") ?? ""} loading={loading} items={snapshot.items} total={snapshot.request.counts.total} />
   </>;
 }

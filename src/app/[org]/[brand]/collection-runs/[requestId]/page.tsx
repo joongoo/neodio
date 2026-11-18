@@ -4,7 +4,6 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getRequestLog, listRequestLogs, parseRequestLogOptions, RequestLogInputError } from "@/lib/backend/dataforseo/requestLog";
 import { RequestRelations } from "@/components/collection-runs/RequestRelations";
 import { listRequestItems, parseRequestItemOptions } from "@/lib/backend/dataforseo/requestItems";
-import { RequestFilters } from "@/components/collection-runs/RequestLogViews";
 import { RequestDetailLive } from "@/components/collection-runs/RequestDetailLive";
 import { listCategories } from "@/lib/backend/categoryStore";
 import { collectorDownloadsConfigured, collectionUsesLocalAgent } from "@/lib/backend/collectionMode";
@@ -48,7 +47,6 @@ export default async function RequestLogDetailPage({ params, searchParams }: {
     <header><h1 className="text-2xl font-semibold text-neutral-900">수집 요청 상세</h1><p className="mt-1 break-all text-xs text-neutral-500">{request.id}</p></header>
     <RequestDetailLive key={requestId} initial={{ request, items }} query={query.toString()} listProps={{ requestId, brandId: tenant.brandId, categories: categories.map(c => c.name), search: options.q, orgName: tenant.org.name, base: tenant.base, serverCollector: !collectionUsesLocalAgent(), downloadPlatforms: collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : [] }}>
     <RequestRelations parent={parent} retries={retries.rows} total={retries.filteredTotal} page={retries.page} pageCount={retries.pageCount} path={path} query={query.toString()} listPath={listPath} itemCount={request.counts.total} />
-    <div className="rounded-xl border border-neutral-200 bg-white p-4"><RequestFilters path={path} query={query} itemMode /></div>
     </RequestDetailLive>
     <Link className="text-sm underline" href={`${listPath}?view=items`}>이전 개별 수집 이력</Link>
   </section>;

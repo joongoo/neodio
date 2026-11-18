@@ -239,16 +239,17 @@ function RunDetail({ file }: { file: RunListRow }) {
   );
 }
 
-export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, brandId, onChanged, onPageChange, onPageSizeChange, actions }: {
+export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, brandId, onChanged, onPageChange, onPageSizeChange, actions, loading = false }: {
   listPage: RunListPage; total: number; searchValue: string; onSearchChange: (value: string) => void;
   columns: DataTableColumn<RunListRow>[]; brandId: string; onChanged: () => void;
   onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void;
   actions?: ReactNode;
+  loading?: boolean;
 }) {
   return <TablePanel title="수집 실행 목록" description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
     count={listPage.filteredTotal} total={total} searchValue={searchValue} onSearchChange={onSearchChange} searchPlaceholder="키워드/엔진/카테고리 검색">
     {actions && <div className="mb-4 space-y-2">{actions}</div>}
-    {listPage.filteredTotal === 0 ? <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p> : <>
+    {loading ? <p role="status" className="p-6 text-center text-sm text-neutral-500">목록을 불러오는 중…</p> : listPage.filteredTotal === 0 ? <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p> : <>
       <DataTable columns={columns} rows={listPage.rows} getRowId={file => file.key} renderExpanded={file =>
         file.dir === "legacy-task"
           ? <p className="text-xs text-neutral-600">{file.errorMessage ?? "로컬 수집기가 처리 중입니다. 결과가 반영되면 원문을 확인할 수 있습니다."}</p>

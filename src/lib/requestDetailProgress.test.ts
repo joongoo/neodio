@@ -107,3 +107,20 @@ test("visual feedback pauses on hidden tabs and ignores updates after disposal",
   poller.setVisible(false); assert.equal(states.at(-1)?.phase, "paused"); assert.equal(clock.pending.size, 0);
   poller.dispose(); const count = states.length; poller.setVisible(true); await flush(); assert.equal(states.length, count);
 });
+
+test("CSR filter changes read once immediately even for finished requests", async () => {
+  const clock = timers(); let reads = 0;
+  const poller = createRequestDetailPoller({ ...clock, immediate: true, initiallyActive: false, initiallyVisible: true,
+    read: async () => { reads++; return false; }, onData: () => {}, onError: () => assert.fail("unexpected error"), isActive: value => value });
+  assert.equal(reads, 1); await flush(); assert.equal(clock.pending.size, 0);
+  poller.dispose();
+});
+
+test("hidden CSR queries wait for visibility before their one-time read", async () => {
+  const clock = timers(); let reads = 0;
+  const poller = createRequestDetailPoller({ ...clock, immediate: true, initiallyActive: false, initiallyVisible: false,
+    read: async () => { reads++; return false; }, onData: () => {}, onError: () => {}, isActive: value => value });
+  assert.equal(reads, 0); assert.equal(clock.pending.size, 0);
+  poller.setVisible(true); assert.equal(reads, 1); await flush();
+  assert.equal(clock.pending.size, 0); poller.dispose();
+});

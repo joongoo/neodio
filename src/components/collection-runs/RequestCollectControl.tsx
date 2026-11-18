@@ -38,7 +38,7 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
   const hasLocal = selected.some(item => item.executionKind === "legacy");
   const validAction = action === "wake" ? pendingSerp : action === "cancel" ? waiting : action === "retry" ? !hasPendingSerp : false;
   async function start() {
-    if (!action || !validAction || !selected.length || busy) return;
+    if (!action || !validAction || !selected.length || busy || selecting) return;
     setBusy(true); setError(null);
     try {
       const endpoint = pendingSerp ? "pending" : action === "cancel" ? "retry-legacy" : "retry";
@@ -58,7 +58,7 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
         <RequestSelectionButtons selectedCount={selected.length} locked={selecting || busy || !!retry} groupsSelected={groupsSelected} onSelectGroup={onSelectGroup} onClearSelection={onClearSelection} />
         <span className="mr-auto text-xs text-neutral-500">{selected.length}건 선택 · 로컬 / SERP API · 엔진 고정</span>
         <Button disabled={!selected.length || busy || selecting || !!retry || (hasPendingSerp && !pendingSerp)} onClick={() => { setError(null); setAction(pendingSerp ? "wake" : "retry"); }}>{pendingSerp ? "선택 대기 실행 요청" : "수집하기"}</Button>
-        <Button variant="secondary" disabled={!waiting || busy || !!retry} onClick={() => setAction("cancel")}>선택 대기 취소</Button>
+        <Button variant="secondary" disabled={!waiting || busy || selecting || !!retry} onClick={() => setAction("cancel")}>선택 대기 취소</Button>
       {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
       {hasPendingSerp && !pendingSerp && <p className="text-xs text-amber-700">대기 SERP 작업은 실패·취소·로컬 항목과 구분해서 선택해 주세요.</p>}
       {notice && <p role="status" className="text-xs text-neutral-600">{notice}</p>}
@@ -72,7 +72,7 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
       {action !== "cancel" && selected.some(item => item.surface === "gemini") && <p className="mt-2 text-xs text-neutral-500">Gemini API 비용은 별도로 발생할 수 있습니다.</p>}
       {error && <p role="alert" className="mt-3 text-xs text-red-600">{error}</p>}
       {(!selected.length || !validAction) && <p role="alert" className="mt-3 text-xs text-amber-700">선택 작업의 상태가 변경되었습니다. 돌아가서 다시 선택해 주세요.</p>}
-      <div className="mt-6 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => setAction(null)}>이전</Button><Button disabled={busy || !selected.length || !validAction} onClick={start}>{busy ? "처리 중…" : action === "cancel" ? "취소 확인" : action === "wake" ? "확인 후 실행 요청" : "확인 후 수집 시작"}</Button></div>
+      <div className="mt-6 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => setAction(null)}>이전</Button><Button disabled={busy || selecting || !selected.length || !validAction} onClick={start}>{busy ? "처리 중…" : action === "cancel" ? "취소 확인" : action === "wake" ? "확인 후 실행 요청" : "확인 후 수집 시작"}</Button></div>
     </Modal>
     {retry?.notice && <p role="alert" className="text-xs text-amber-700">{retry.notice}</p>}
     {retry && <ParallelCollectModal steps={retry.steps} brandId={brandId} orgName={orgName} downloadPlatforms={downloadPlatforms} serverCollector={serverCollector} collectionLogHref={`${base}/collection-runs/${encodeURIComponent(retry.requestId)}`}

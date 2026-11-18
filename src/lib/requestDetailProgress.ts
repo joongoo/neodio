@@ -17,14 +17,16 @@ export function hasActiveRequestTasks(request: RequestLogRow) {
 /** Read-only scheduler. Hidden/disposed responses cannot update the screen. */
 export function createRequestDetailPoller<T>({ read, onData, onError, isActive, initiallyActive, initiallyVisible, isFatal = () => false,
   schedule = (fn, ms) => setTimeout(fn, ms), unschedule = timer => clearTimeout(timer),
-  onStateChange, now = () => Date.now(),
+  onStateChange, now = () => Date.now(), immediate = false,
 }: {
   read: (signal: AbortSignal) => Promise<T>; onData: (data: T) => void; onError: (error: unknown) => void;
   isActive: (data: T) => boolean; initiallyActive: boolean; initiallyVisible: boolean; isFatal?: (error: unknown) => boolean;
   schedule?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>; unschedule?: (timer: ReturnType<typeof setTimeout>) => void;
   onStateChange?: (state: RequestRefreshState) => void; now?: () => number;
+  immediate?: boolean;
 }) {
   let active = initiallyActive, visible = initiallyVisible, disposed = false;
+  let needsRead = immediate;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   let countdown: ReturnType<typeof setTimeout> | undefined;
@@ -39,40 +41,40 @@ export function createRequestDetailPoller<T>({ read, onData, onError, isActive, 
   function next() {
     clearTimer();
     if (disposed) return;
-    if (!active) { notify("stopped"); return; }
+    if (!active && !needsRead) { notify("stopped"); return; }
     if (!visible) { notify("paused"); return; }
     const nextAt = now() + REQUEST_DETAIL_POLL_MS;
     notify("waiting", nextAt);
     if (onStateChange) {
-      const tick = () => { countdown = undefined; if (disposed || !active || !visible) return; notify("waiting", nextAt); if (now() < nextAt) countdown = schedule(tick, 1000); };
+      const tick = () => { countdown = undefined; if (disposed || (!active && !needsRead) || !visible) return; notify("waiting", nextAt); if (now() < nextAt) countdown = schedule(tick, 1000); };
       countdown = schedule(tick, 1000);
     }
     timer = schedule(() => { clearTimer(); void poll(); }, REQUEST_DETAIL_POLL_MS);
   }
   async function poll() {
-    if (disposed || !active || !visible || controller) return;
+    if (disposed || (!active && !needsRead) || !visible || controller) return;
     const current = new AbortController(); controller = current;
     notify("refreshing");
     const timeout = schedule(() => current.abort(), 15_000);
     try {
       const data = await read(current.signal);
       if (!disposed && visible && controller === current && !current.signal.aborted) {
-        active = isActive(data); lastUpdatedAt = now(); onData(data);
+        active = isActive(data); needsRead = false; lastUpdatedAt = now(); onData(data);
       }
     } catch (error) {
-      if (!disposed && visible && controller === current) { if (isFatal(error)) active = false; onError(error); }
+      if (!disposed && visible && controller === current) { if (isFatal(error)) { active = false; needsRead = false; } onError(error); }
     } finally {
       unschedule(timeout);
       if (controller === current) { controller = undefined; next(); }
     }
   }
-  next();
+  if (immediate && visible) void poll(); else next();
   return {
     setVisible(value: boolean) {
       if (disposed || visible === value) return;
       visible = value; clearTimer();
-      if (!visible) { controller?.abort(); controller = undefined; notify(active ? "paused" : "stopped"); }
-      else if (active) void poll();
+      if (!visible) { controller?.abort(); controller = undefined; notify(active || needsRead ? "paused" : "stopped"); }
+      else if (active || needsRead) void poll();
       else notify("stopped");
     },
     dispose() { disposed = true; clearTimer(); controller?.abort(); controller = undefined; },
