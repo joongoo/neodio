@@ -8,7 +8,7 @@ import { getPromptStore } from "@/lib/backend/database";
 import { registerLegacyRequest, linkLegacyRun } from "./legacyRequest";
 import type { PromptRunSeed } from "@/lib/db/types";
 import { retryLegacyRequest, LegacyRetryConflict } from "./legacyRetry";
-import { retrySelectedItems } from "./retrySelection";
+import { retrySelectedItems, listRetryCandidates } from "./retrySelection";
 import { createMixedFailureFixture } from "./mixedFailureFixture";
 import { isRetryFailure } from "@/lib/requestRetrySelection";
 import { getCollectionActivitySummary } from "./collectionActivity";
@@ -21,6 +21,10 @@ test("request filters reject invalid inputs and normalize time zones", () => {
   assert.throws(() => parseRequestItemOptions(new URLSearchParams("status=invalid")));
   assert.equal(parseRequestItemOptions(new URLSearchParams("status=reserved")).status, "reserved");
   assert.equal(parseRequestLogOptions(new URLSearchParams("attention=1")).attention, true);
+  const formQuery = new URLSearchParams("q=&status=&surface=&sort=oldest&size=25");
+  assert.equal(parseRequestLogOptions(formQuery).status, null);
+  assert.equal(parseRequestLogOptions(formQuery).surface, null);
+  assert.equal(parseRequestItemOptions(formQuery).surface, null);
 });
 
 test("legacy registration is idempotent and links results to the approved request", { skip: !process.env.POSTGRES_URL && !process.env.POSTGRES_URL_NON_POOLING }, async () => {
@@ -82,6 +86,13 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.ok(mixedPage.rows.every(item => ["parse_failed", "provider_failed", "cancelled"].includes(item.status)));
       const failures = mixedPage.rows.filter(isRetryFailure);
       assert.equal(failures.length, 8);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed"))?.length, 8);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "cancelled"))?.length, 1);
+      assert.equal(await listRetryCandidates("foreign-org", sample.brand_id, fixtureId, "failed"), null);
+      const formItems = await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("q=&status=&surface=&sort=oldest&size=25")));
+      assert.equal(formItems?.filteredTotal, 9, "detail form's empty filters return all items");
+      assert.equal((await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("q=&status=parse_failed&surface=gemini&sort=oldest&size=25"))))?.filteredTotal, 0);
+      assert.equal((await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("q=&status=cancelled&surface=gemini&sort=oldest&size=25"))))?.filteredTotal, 1);
       const unsafe = failures.find(item => item.executionKind === "serp-api")!;
       await store.query("UPDATE provider_tasks SET status='submission_unknown' WHERE id=$1", [unsafe.id]);
       await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `unsafe-${randomUUID()}`, null, [unsafe.id]), LegacyRetryConflict, "unknown submission cannot be paid for again");
@@ -110,6 +121,15 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, mixedRetry!.requestId!))?.counts.total, 8);
       await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, mixedClientId, null, failures.map(item => item.id)), LegacyRetryConflict);
       await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `overlap-${randomUUID()}`, null, failures.map(item => item.id)), LegacyRetryConflict);
+      await store.query("UPDATE provider_tasks SET status='completed' WHERE collection_request_id=$1", [mixedRetry!.requestId]);
+      await store.query("UPDATE legacy_collection_items SET status='parse_failed' WHERE collection_request_id=$1", [mixedRetry!.requestId]);
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "failed"))?.length, 0, "originals remain excluded even after retry completes or fails");
+      assert.equal((await listRetryCandidates(sample.organization_id, sample.brand_id, fixtureId, "cancelled"))?.length, 1, "unselected cancelled item remains eligible");
+      await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `again-${randomUUID()}`, null, failures.map(item => item.id)), LegacyRetryConflict);
+      const localOriginal = failures.find(item => item.executionKind === "legacy")!;
+      await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, fixtureId, `legacy-bypass-${randomUUID()}`, null, { action: "retry", itemIds: [localOriginal.id] }), LegacyRetryConflict);
+      const nextFailures = await listRetryCandidates(sample.organization_id, sample.brand_id, mixedRetry!.requestId!, "failed");
+      assert.equal(nextFailures?.length, 4, "failed items in the latest request remain eligible");
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }
@@ -151,6 +171,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal(page.rows[0].actualCostUsd, 0.3);
     assert.equal(page.rows[0].completedAt, "2026-11-18T05:00:00.000Z");
     assert.deepEqual((await list()).rows.map(row => row.id), ["b", "a"]);
+    assert.deepEqual((await list("q=&status=&surface=&sort=newest&size=25")).rows.map(row => row.id), ["b", "a"], "list form empty filters match no filters");
     assert.equal((await list("status=needs_attention")).rows[0].id, "b");
     assert.equal((await list("q=%27%20OR%201%3D1--")).filteredTotal, 0);
     assert.equal((await list("to=2026-11-18T02%3A00%3A00Z")).filteredTotal, 1);

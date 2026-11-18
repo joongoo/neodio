@@ -16,11 +16,11 @@ export function parseRequestLogOptions(params: URLSearchParams) {
   const page = integer("page", 1);
   const size = integer("size", 25);
   if (![10, 25, 50].includes(size)) throw new RequestLogInputError("size는 10, 25, 50 중 하나여야 합니다.");
-  const status = params.get("status");
+  const status = params.get("status")?.trim() || null;
   const attention = params.get("attention");
   if (attention !== null && attention !== "1") throw new RequestLogInputError("attention 값이 올바르지 않습니다.");
   if (status && !["queued", "running", "completed", "partially_failed", "needs_attention", "cancelled"].includes(status)) throw new RequestLogInputError("status 값이 올바르지 않습니다.");
-  const surface = params.get("surface");
+  const surface = params.get("surface")?.trim() || null;
   if (surface && !(PROMPT_SURFACES as readonly string[]).includes(surface)) throw new RequestLogInputError("surface 값이 올바르지 않습니다.");
   const sort = params.get("sort") ?? "newest";
   if (!["newest", "oldest"].includes(sort)) throw new RequestLogInputError("sort 값이 올바르지 않습니다.");

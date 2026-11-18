@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isRetryFailure, isRetrySelectable, retrySelectionCost, type RetrySelectionItem } from "./requestRetrySelection";
+import { isRetryFailure, isRetrySelectable, retrySelectionCost, reconcileRetrySelection, retryGroupSelected, mergeRetrySelection, type RetrySelectionItem } from "./requestRetrySelection";
 
 const item = (status: RetrySelectionItem["status"], executionKind: RetrySelectionItem["executionKind"] = "serp-api"): RetrySelectionItem => ({ id: "task", query: "query", surface: "google-aio", device: "mobile", status, executionKind });
 
@@ -29,4 +29,34 @@ test("retry estimate counts selected device rows once and excludes local collect
   assert.equal(retrySelectionCost([mobile, desktop]), 0.0024);
   assert.equal(retrySelectionCost([mobile, desktop, { ...mobile, surface: "google-ai-mode" }, { ...mobile, surface: "naver-aio" }, item("parse_failed", "legacy")]).toFixed(4), "0.0042");
   assert.equal(retrySelectionCost([item("parse_failed", "legacy")]), 0);
+});
+
+test("failed and cancelled bulk groups accumulate and toggle independently", () => {
+  const failed = [{ ...item("provider_failed"), id: "failed" }], cancelled = [{ ...item("cancelled"), id: "cancelled" }];
+  let selected = mergeRetrySelection(new Map(), failed, true);
+  assert.ok(retryGroupSelected(selected, failed)); assert.equal(retryGroupSelected(selected, cancelled), false);
+  selected = mergeRetrySelection(selected, cancelled, true);
+  assert.deepEqual([...selected.keys()], ["failed", "cancelled"]);
+  assert.ok(retryGroupSelected(selected, failed)); assert.ok(retryGroupSelected(selected, cancelled));
+  selected = mergeRetrySelection(selected, failed, false);
+  assert.deepEqual([...selected.keys()], ["cancelled"]);
+  assert.equal(retryGroupSelected(selected, failed), false); assert.ok(retryGroupSelected(selected, cancelled));
+  assert.equal(retryGroupSelected(new Map(), []), false);
+});
+
+test("resubmitted originals are unselectable regardless of retry status", () => {
+  for (const kind of ["legacy", "serp-api"] as const) {
+    assert.equal(isRetrySelectable({ ...item("parse_failed", kind), hasRetry: true }), false);
+    for (const status of ["reserved", "completed", "parse_failed", "cancelled"] as const) {
+      assert.equal(isRetrySelectable({ ...item("parse_failed", kind), retries: [{ requestId: "retry", taskId: "retry-task", status }] }), false);
+    }
+  }
+});
+
+test("live row changes remove stale selected entries while preserving other pages", () => {
+  const failed = item("parse_failed"), other = { ...item("cancelled"), id: "other-page" };
+  const selected = new Map([[failed.id, failed], [other.id, other]]);
+  const next = reconcileRetrySelection(selected, [{ ...failed, hasRetry: true }]);
+  assert.deepEqual([...next.keys()], ["other-page"]);
+  assert.equal(mergeRetrySelection(next, [{ ...failed, hasRetry: true }], true).has(failed.id), false);
 });

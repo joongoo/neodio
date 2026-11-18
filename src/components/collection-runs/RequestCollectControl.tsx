@@ -7,12 +7,23 @@ import { EditOnly } from "@/components/auth/PermissionsProvider";
 import { ParallelCollectModal } from "@/components/prompt-library/ParallelCollectModal";
 import type { CollectStep } from "@/lib/collectSteps";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
-import { retrySelectionCost, type RetrySelectionItem } from "@/lib/requestRetrySelection";
+import { retrySelectionCost, type RetrySelectionItem, type RetrySelectionGroup } from "@/lib/requestRetrySelection";
 import { Modal } from "@/components/ui/Modal";
 
-export function RequestCollectControl({ requestId, brandId, orgName, base, downloadPlatforms, serverCollector, selected, onChanged, onSelectFailures, selecting }: {
+export function RequestSelectionButtons({ selectedCount, locked, groupsSelected, onSelectGroup, onClearSelection }: {
+  selectedCount: number; locked: boolean; groupsSelected: Record<RetrySelectionGroup, boolean>;
+  onSelectGroup: (group: RetrySelectionGroup) => void; onClearSelection: () => void;
+}) {
+  return <>
+    {(["failed", "cancelled"] as const).map(group => <Button key={group} variant={groupsSelected[group] ? "primary" : "secondary"} aria-pressed={groupsSelected[group]} disabled={locked} onClick={() => onSelectGroup(group)}>{group === "failed" ? "실패 항목 전체 선택" : "취소 항목 전체 선택"}</Button>)}
+    <Button variant="ghost" disabled={locked || selectedCount === 0} onClick={onClearSelection}>전체 선택 해제</Button>
+  </>;
+}
+
+export function RequestCollectControl({ requestId, brandId, orgName, base, downloadPlatforms, serverCollector, selected, onChanged, onSelectGroup, onClearSelection, groupsSelected, selecting }: {
   requestId: string; brandId: string; orgName: string; base: string; downloadPlatforms: CollectorPlatform[]; serverCollector: boolean;
-  selected: RetrySelectionItem[]; onChanged: () => void; onSelectFailures: () => void; selecting: boolean;
+  selected: RetrySelectionItem[]; onChanged: () => void; onSelectGroup: (group: RetrySelectionGroup) => void; onClearSelection: () => void;
+  groupsSelected: Record<RetrySelectionGroup, boolean>; selecting: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -33,13 +44,13 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
       if (!response.ok) throw new Error(data.error ?? "재시도 요청을 등록하지 못했습니다.");
       setAction(null);
       if (action === "cancel") { onChanged(); router.refresh(); }
-      else setRetry(data);
+      else { onChanged(); setRetry(data); router.refresh(); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "재시도를 시작하지 못했습니다."); }
     finally { setBusy(false); }
   }
   return <EditOnly>
     <div className="flex flex-wrap items-center gap-2">
-        <Button variant="secondary" disabled={selecting || busy || !!retry} onClick={onSelectFailures}>{selecting ? "선택 중…" : "실패 항목 전체 선택"}</Button>
+        <RequestSelectionButtons selectedCount={selected.length} locked={selecting || busy || !!retry} groupsSelected={groupsSelected} onSelectGroup={onSelectGroup} onClearSelection={onClearSelection} />
         <span className="mr-auto text-xs text-neutral-500">{selected.length}건 선택 · 로컬 / SERP API · 엔진 고정</span>
         <Button disabled={!selected.length || busy || selecting || !!retry} onClick={() => { setError(null); setAction("retry"); }}>수집하기</Button>
         <Button variant="secondary" disabled={!waiting || busy || !!retry} onClick={() => setAction("cancel")}>선택 대기 취소</Button>

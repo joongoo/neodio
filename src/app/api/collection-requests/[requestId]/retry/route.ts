@@ -2,26 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { guardApi } from "@/lib/backend/auth/guard";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getCurrentUser } from "@/lib/backend/auth/session";
-import { getPromptStore } from "@/lib/backend/database";
-import { retrySelectedItems } from "@/lib/backend/dataforseo/retrySelection";
+import { retrySelectedItems, listRetryCandidates } from "@/lib/backend/dataforseo/retrySelection";
 import { LegacyRetryConflict } from "@/lib/backend/dataforseo/legacyRetry";
 import { publishDataForSeoWake } from "@/lib/backend/dataforseo/queueWake";
-import { RETRY_FAILURE_STATUSES } from "@/lib/requestRetrySelection";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
   const denied = await guardApi("write");
   if (denied) return denied;
   const tenant = await getCurrentTenant(), id = (await params).requestId;
-  const db = await getPromptStore();
-  const [request] = await db.query("SELECT id FROM collection_requests WHERE id=$1 AND organization_id=$2 AND brand_id=$3", [id, tenant.orgId, tenant.brandId]);
-  if (!request) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
-  const items = await db.query(`SELECT id,execution_kind AS "executionKind",query_snapshot AS query,surface,device,status FROM collection_execution_items
-    WHERE collection_request_id=$1 AND organization_id=$2 AND brand_id=$3 AND status=ANY($4::text[]) ORDER BY created_at,id LIMIT 2001`, [id, tenant.orgId, tenant.brandId, RETRY_FAILURE_STATUSES]);
+  const group = request.nextUrl.searchParams.get("group") ?? "failed";
+  if (group !== "failed" && group !== "cancelled") return NextResponse.json({ error: "선택 그룹이 올바르지 않습니다." }, { status: 400 });
+  const items = await listRetryCandidates(tenant.orgId, tenant.brandId, id, group);
+  if (!items) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
   if (items.length > 2000) return NextResponse.json({ error: "한 번에 최대 2,000건까지 선택할 수 있습니다. 개별 선택해 주세요." }, { status: 400 });
-  return NextResponse.json({ items });
+  return NextResponse.json({ items }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
