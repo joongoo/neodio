@@ -83,7 +83,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
     <CollectionRunList actions={canEdit && <>
       <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={chosen} selecting={selecting} onSelectGroup={selectGroup} groupsSelected={groupsSelected} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
       {selectionError && <p role="alert" className="text-xs text-red-600">{selectionError}</p>}
-      <p className="text-xs text-neutral-500">실패·취소 전체 선택은 필터와 관계없이 모든 페이지에 누적 적용됩니다. 버튼을 다시 누르면 해당 그룹만 해제합니다. 이미 재수집된 원본·제출 여부 확인 필요·저장 결과 복구 대상은 제외합니다.</p>
+      <p className="text-xs text-neutral-500">실패·취소 전체 선택은 모든 페이지에 누적 적용되며, 같은 버튼으로 해당 그룹만 해제합니다. 미제출 SERP 작업만 선택하면 기존 큐 실행 요청·대기 취소가 가능합니다. 이미 재수집된 원본·제출 여부 확인 필요·저장 결과 복구 대상은 제외합니다.</p>
     </>} listPage={{ ...items, rows }} total={total} searchValue={searchText} onSearchChange={value => {
       setSearchText(value);
       if (timer.current) clearTimeout(timer.current);

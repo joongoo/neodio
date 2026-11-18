@@ -12,6 +12,8 @@ import { retrySelectedItems, listRetryCandidates } from "./retrySelection";
 import { createMixedFailureFixture } from "./mixedFailureFixture";
 import { isRetryFailure } from "@/lib/requestRetrySelection";
 import { getCollectionActivitySummary } from "./collectionActivity";
+import { managePendingSerpItems } from "./pendingSelection";
+import { CollectionQueueService } from "./collectionQueue";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "attention=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -130,6 +132,33 @@ test("legacy registration is idempotent and links results to the approved reques
       await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, fixtureId, `legacy-bypass-${randomUUID()}`, null, { action: "retry", itemIds: [localOriginal.id] }), LegacyRetryConflict);
       const nextFailures = await listRetryCandidates(sample.organization_id, sample.brand_id, mixedRetry!.requestId!, "failed");
       assert.equal(nextFailures?.length, 4, "failed items in the latest request remain eligible");
+      const pending = await new CollectionQueueService().enqueueApproved({ organizationId: sample.organization_id, brandId: sample.brand_id,
+        clientRequestId: `pending-${randomUUID()}`, requestKind: "manual", tasks: ["desktop", "mobile"].map(device => ({ query: sample.text, promptId: sample.prompt_id,
+          surface: "google-aio" as const, device: device as "desktop" | "mobile", marketId: "market-kr", scheduledWindow: `pending:${randomUUID()}` })) });
+      const pendingIds = pending.tasks.map(task => task.id);
+      const pendingAction = (action: "wake" | "cancel", ids = pendingIds) => managePendingSerpItems(sample.organization_id, sample.brand_id, pending.request.id, ids, action);
+      assert.equal((await pendingAction("wake"))?.count, 2);
+      let pendingPage = (await listRequestItems(sample.organization_id, sample.brand_id, pending.request.id, parseRequestItemOptions(new URLSearchParams())))!;
+      assert.ok(pendingPage.rows.every(item => item.status === "reserved" && item.canManagePending), "wake does not create or submit provider tasks");
+      assert.equal(await managePendingSerpItems("other-org", sample.brand_id, pending.request.id, pendingIds, "cancel"), null);
+      await assert.rejects(pendingAction("cancel", [pendingIds[0], localOriginal.id]), LegacyRetryConflict);
+      await store.query("UPDATE provider_tasks SET lease_owner='worker',lease_expires_at=$2 WHERE id=$1", [pendingIds[1], new Date(Date.now() + 60_000).toISOString()]);
+      await assert.rejects(pendingAction("cancel"), LegacyRetryConflict, "worker-claimed task cannot be cancelled");
+      pendingPage = (await listRequestItems(sample.organization_id, sample.brand_id, pending.request.id, parseRequestItemOptions(new URLSearchParams())))!;
+      assert.equal(pendingPage.rows.find(item => item.id === pendingIds[1])?.canManagePending, false);
+      assert.ok(pendingPage.rows.every(item => item.status === "reserved"), "partial batch cancellation rolls back");
+      await store.query("UPDATE provider_tasks SET lease_owner=NULL,lease_expires_at=NULL,submission_attempted_at=$2 WHERE id=$1", [pendingIds[1], new Date().toISOString()]);
+      await assert.rejects(pendingAction("cancel"), LegacyRetryConflict, "uncertain prior submission cannot be cancelled");
+      await store.query("UPDATE provider_tasks SET submission_attempted_at=NULL,provider_task_id='existing',status='queued' WHERE id=$1", [pendingIds[1]]);
+      await assert.rejects(pendingAction("cancel"), LegacyRetryConflict);
+      await store.query("UPDATE provider_tasks SET provider_task_id=NULL,status='reserved' WHERE id=$1", [pendingIds[1]]);
+      assert.equal((await pendingAction("cancel", [pendingIds[0]]))?.count, 1);
+      const pendingSummary = (await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))!;
+      assert.equal(pendingSummary.counts.total, 2); assert.equal(pendingSummary.counts.cancelled, 1); assert.equal(pendingSummary.counts.waiting, 1);
+      await assert.rejects(pendingAction("wake", [pendingIds[0]]), LegacyRetryConflict);
+      await store.query("UPDATE collection_requests SET cancel_requested=true WHERE id=$1", [pending.request.id]);
+      await assert.rejects(pendingAction("wake", [pendingIds[1]]), LegacyRetryConflict);
+      assert.equal((await pendingAction("cancel", [pendingIds[1]]))?.count, 1);
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }

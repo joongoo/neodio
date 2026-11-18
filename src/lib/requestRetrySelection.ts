@@ -1,7 +1,7 @@
 import type { RequestItemRow } from "@/lib/backend/dataforseo/requestItems";
 import { SERP_API_ESTIMATED_COST_USD, type SerpApiSurface } from "./dataforseoPricing";
 
-export type RetrySelectionItem = Pick<RequestItemRow, "id" | "executionKind" | "query" | "surface" | "device" | "status"> & { hasRetry?: boolean; retries?: RequestItemRow["retries"] };
+export type RetrySelectionItem = Pick<RequestItemRow, "id" | "executionKind" | "query" | "surface" | "device" | "status"> & { hasRetry?: boolean; retries?: RequestItemRow["retries"]; canManagePending?: boolean; estimatedCostUsd?: number };
 export type RetrySelectionGroup = "failed" | "cancelled";
 // Unknown submissions and saved artifacts must be reconciled, not paid for again.
 export const RETRY_FAILURE_STATUSES = ["provider_failed", "parse_failed"] as const;
@@ -10,7 +10,15 @@ export function isRetryFailure(item: RetrySelectionItem) {
 }
 export function isRetrySelectable(item: RetrySelectionItem) {
   if (item.hasRetry || item.retries?.length) return false;
-  return isRetryFailure(item) || item.status === "cancelled" || (item.executionKind === "legacy" && ["reserved", "collecting"].includes(item.status));
+  return isRetryFailure(item) || item.status === "cancelled" || (item.executionKind === "legacy" && ["reserved", "collecting"].includes(item.status)) || (item.executionKind === "serp-api" && item.status === "reserved" && item.canManagePending === true);
+}
+
+export function isPendingSerpSelection(items: RetrySelectionItem[]) {
+  return items.length > 0 && items.every(item => item.executionKind === "serp-api" && item.status === "reserved" && item.canManagePending === true && isRetrySelectable(item));
+}
+
+export function pendingSelectionCost(items: RetrySelectionItem[]) {
+  return items.reduce((sum, item) => sum + (item.estimatedCostUsd ?? SERP_API_ESTIMATED_COST_USD[item.surface as SerpApiSurface]), 0);
 }
 
 export function reconcileRetrySelection(selected: ReadonlyMap<string, RetrySelectionItem>, visible: RetrySelectionItem[]) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isRetryFailure, isRetrySelectable, retrySelectionCost, reconcileRetrySelection, retryGroupSelected, mergeRetrySelection, type RetrySelectionItem } from "./requestRetrySelection";
+import { isRetryFailure, isRetrySelectable, retrySelectionCost, reconcileRetrySelection, retryGroupSelected, mergeRetrySelection, isPendingSerpSelection, pendingSelectionCost, type RetrySelectionItem } from "./requestRetrySelection";
 
 const item = (status: RetrySelectionItem["status"], executionKind: RetrySelectionItem["executionKind"] = "serp-api"): RetrySelectionItem => ({ id: "task", query: "query", surface: "google-aio", device: "mobile", status, executionKind });
 
@@ -59,4 +59,15 @@ test("live row changes remove stale selected entries while preserving other page
   const next = reconcileRetrySelection(selected, [{ ...failed, hasRetry: true }]);
   assert.deepEqual([...next.keys()], ["other-page"]);
   assert.equal(mergeRetrySelection(next, [{ ...failed, hasRetry: true }], true).has(failed.id), false);
+});
+
+test("only verified unclaimed SERP reservations form a pending action selection", () => {
+  const pending = { ...item("reserved"), canManagePending: true, estimatedCostUsd: 0.0009 };
+  assert.ok(isRetrySelectable(pending)); assert.ok(isPendingSerpSelection([pending]));
+  assert.equal(pendingSelectionCost([pending]), 0.0009, "existing reservation estimate is preserved");
+  assert.equal(isPendingSerpSelection([]), false);
+  assert.equal(isPendingSerpSelection([pending, item("parse_failed")]), false);
+  assert.equal(isPendingSerpSelection([pending, item("reserved", "legacy")]), false);
+  assert.equal(isRetrySelectable({ ...pending, canManagePending: false }), false);
+  assert.equal(isRetrySelectable({ ...pending, hasRetry: true }), false);
 });

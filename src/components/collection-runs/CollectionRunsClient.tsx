@@ -172,7 +172,8 @@ function PendingRunDetail({ file, brandId, onChanged }: { file: RunListRow; bran
       <p className={`text-xs ${reserved ? "text-amber-700" : "text-blue-700"}`}>
         {PROVIDER_PROGRESS_LABEL[file.progressStatus ?? ""] ?? "SERP API 수집이 진행 중입니다."}
       </p>
-      {reserved && (
+      {reserved && file.requestId && <p className="text-xs text-neutral-500">행의 체크박스로 대기 작업을 선택한 뒤 목록 상단에서 실행 요청하거나 취소하세요. 제출·처리 상태는 확인 단계에서 다시 검사합니다.</p>}
+      {reserved && !file.requestId && (
         <EditOnly>
           <div className="flex items-center gap-2">
             <Button variant="primary" disabled={busy !== null} onClick={submitNow}>{busy === "submit" ? "제출 중…" : "지금 제출"}</Button>

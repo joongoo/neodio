@@ -31,6 +31,7 @@ export interface RequestItemRow {
   errorMessage: string | null;
   retryOfTaskId: string | null;
   retries: { requestId: string; taskId: string; status: ProviderTaskStatus }[];
+  canManagePending?: boolean;
   result: null | { runId: string; dir: string; filename: string; outcome: string | null; answerLength: number; citationCount: number; category: string | null; topic: string | null };
 }
 
@@ -65,6 +66,10 @@ export async function listRequestItems(organizationId: string, brandId: string, 
         'submissionAttemptedAt',t.submission_attempted_at,'submittedAt',t.submitted_at,'completedAt',t.completed_at,
         'estimatedCostUsd',COALESCE(t.estimated_cost_usd,0)::float8,'actualCostUsd',COALESCE(t.actual_cost_usd,0)::float8,
         'errorCode',t.error_code,'errorMessage',t.error_message,'retryOfTaskId',t.retry_of_task_id,
+        'canManagePending',t.execution_kind='serp-api' AND t.status='reserved' AND EXISTS (
+          SELECT 1 FROM provider_tasks pending WHERE pending.id=t.id AND pending.provider_task_id IS NULL
+            AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $11)
+        ),
         'retries',COALESCE((SELECT jsonb_agg(jsonb_build_object('requestId',retry.collection_request_id,'taskId',retry.id,'status',retry.status) ORDER BY retry.created_at DESC,retry.id DESC)
           FROM collection_execution_items retry JOIN collection_requests rr ON rr.id=retry.collection_request_id
           WHERE retry.retry_of_task_id=t.id AND retry.execution_kind=t.execution_kind
@@ -81,6 +86,6 @@ export async function listRequestItems(organizationId: string, brandId: string, 
         SELECT p.* FROM prompt_runs p WHERE (p.provider_task_id=t.id OR p.id=t.run_id) AND p.organization_id=$1
         ORDER BY p.run_at DESC,p.id DESC LIMIT 1
       ) run ON true),'[]'::jsonb)) END AS payload FROM bounds b
-  `, [organizationId, brandId, requestId, options.status, options.surface, options.q, options.size, options.page, options.from, options.to]);
+  `, [organizationId, brandId, requestId, options.status, options.surface, options.q, options.size, options.page, options.from, options.to, new Date().toISOString()]);
   return result.payload;
 }
