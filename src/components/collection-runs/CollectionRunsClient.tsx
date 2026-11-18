@@ -17,8 +17,6 @@ import type { CollectedRunDetail } from "@/lib/backend/collectionRuns";
 import { engineLabel, RUN_PAGE_SIZES, type RunListPage, type RunListRow } from "@/lib/collectionRunList";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
-import type { CollectionRequestSummary } from "@/lib/backend/dataforseo/collectionRequestStore";
-import { collectionRequestDisplayStatus, collectionRequestFinishedCount } from "@/lib/collectionRequestProgress";
 
 function StatusBadge({ file }: { file: RunListRow }) {
   if (file.progressStatus === "submission_unknown") return <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">확인 필요</span>;
@@ -257,69 +255,12 @@ export function CollectionRunList({ listPage, total, searchValue, onSearchChange
   </TablePanel>;
 }
 
-const REQUEST_STATUS_VIEW = {
-  queued: { label: "대기", className: "bg-amber-100 text-amber-700" },
-  running: { label: "진행 중", className: "bg-blue-100 text-blue-700" },
-  completed: { label: "완료", className: "bg-emerald-100 text-emerald-700" },
-  partially_failed: { label: "일부 실패", className: "bg-red-100 text-red-700" },
-  needs_attention: { label: "확인 필요", className: "bg-orange-100 text-orange-700" },
-  cancelled: { label: "취소", className: "bg-neutral-100 text-neutral-600" },
-} as const;
-
-function CollectionRequestProgress({ requests }: { requests: CollectionRequestSummary[] }) {
-  if (requests.length === 0) return null;
-  return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-4">
-      <div className="mb-3">
-        <h2 className="text-sm font-bold text-neutral-900">SERP API 요청 현황</h2>
-        <p className="mt-0.5 text-xs text-neutral-500">최근 승인한 요청의 전체 진행 상황입니다. 확인이 필요한 건은 자동으로 다시 제출되지 않습니다.</p>
-      </div>
-      <div className="flex flex-col divide-y divide-neutral-100">
-        {requests.map((request) => {
-          const status = collectionRequestDisplayStatus(request);
-          const statusView = REQUEST_STATUS_VIEW[status];
-          const finished = collectionRequestFinishedCount(request);
-          const percent = request.totalTaskCount > 0 ? Math.round((finished / request.totalTaskCount) * 100) : 0;
-          return (
-            <div key={request.id} className="grid gap-2 py-3 first:pt-0 last:pb-0 md:grid-cols-[170px_1fr_190px] md:items-center">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${statusView.className}`}>{statusView.label}</span>
-                  <span className="text-xs text-neutral-500">{request.requestKind === "retry" ? "재제출" : "일반 수집"}</span>
-                </div>
-                <p className="mt-1 text-[11px] text-neutral-400">{formatKst(request.createdAt)}</p>
-              </div>
-              <div>
-                <div className="mb-1 flex justify-between text-xs text-neutral-600">
-                  <span>완료 {finished.toLocaleString()} / {request.totalTaskCount.toLocaleString()}</span>
-                  <span>{percent}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100">
-                  <div className="h-full rounded-full bg-blue-500" style={{ width: `${percent}%` }} />
-                </div>
-                <p className="mt-1 text-[11px] text-neutral-400">
-                  대기 {request.waitingCount.toLocaleString()} · 처리 중 {request.runningCount.toLocaleString()}
-                  {request.attentionCount > 0 && <span className="text-orange-600"> · 확인 필요 {request.attentionCount.toLocaleString()}</span>}
-                  {request.failedCount > 0 && <span className="text-red-600"> · 실패 {request.failedCount.toLocaleString()}</span>}
-                </p>
-              </div>
-              <div className="text-left text-xs text-neutral-500 md:text-right">
-                예상 ${request.estimatedCostUsd.toFixed(4)} · 사용 ${request.actualCostUsd.toFixed(4)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
 
 export function CollectionRunsClient({
   listPage,
   search,
   brandId,
   pollingTaskIds,
-  collectionRequests,
   stats,
   categories,
 }: {
@@ -327,7 +268,6 @@ export function CollectionRunsClient({
   search: string;
   brandId: string;
   pollingTaskIds: string[];
-  collectionRequests: CollectionRequestSummary[];
   stats: { total: number; pending: number; success: number; ownMentions: number; ownCitations: number };
   categories: string[];
 }) {
@@ -412,7 +352,6 @@ export function CollectionRunsClient({
 
       <div className="h-px w-full bg-neutral-200" />
 
-      <CollectionRequestProgress requests={collectionRequests} />
 
       {stats.total === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">

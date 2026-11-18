@@ -10,7 +10,6 @@ import { listCategories } from "@/lib/backend/categoryStore";
 import { getRealBrandSeeds } from "@/lib/backend/brandSeeds";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
-import { PostgresCollectionRequestStore } from "@/lib/backend/dataforseo/collectionRequestStore";
 import { pageRunList, toPendingRunListRow, toRunListRow } from "@/lib/collectionRunList";
 
 // Always re-read .tmp/*-ai on request — the collector scripts
@@ -29,12 +28,11 @@ export default async function CollectionRunsPage({
     const query = new URLSearchParams(Object.entries(params).flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []));
     return <RequestLogList base={tenant.base} organizationId={tenant.orgId} brandId={tenant.brandId} query={query} />;
   }
-  const [runFiles, brandsData, realCategories, activeProviderTasks, collectionRequests] = await Promise.all([
+  const [runFiles, brandsData, realCategories, activeProviderTasks] = await Promise.all([
     listCollectedRuns(tenant.orgId),
     db.brandsManagement.get(tenant.orgId),
     listCategories(tenant.orgId),
     tenant.brandId ? new PostgresProviderTaskStore().listActive(tenant.orgId, tenant.brandId) : [],
-    tenant.brandId ? new PostgresCollectionRequestStore().listRecentSummaries(tenant.orgId, tenant.brandId) : [],
   ]);
   // 기본 조직은 예전처럼 시드 브랜드로 언급을 판정하고, 다른 조직은 그 조직의
   // 자사 브랜드 + 기타 브랜드(브랜드 설정)로 판정한다.
@@ -64,7 +62,6 @@ export default async function CollectionRunsPage({
       search={typeof params.q === "string" ? params.q : ""}
       brandId={tenant.brandId ?? ""}
       pollingTaskIds={activeProviderTasks.filter((task) => task.status !== "reserved").map((task) => task.id)}
-      collectionRequests={collectionRequests}
       stats={{
         total: listRows.length,
         pending: activeProviderTasks.length,

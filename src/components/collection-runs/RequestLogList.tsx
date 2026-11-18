@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { listRequestLogs, parseRequestLogOptions, RequestLogInputError } from "@/lib/backend/dataforseo/requestLog";
 import { formatKst } from "@/lib/backend/collectionRunsTypes";
-import { RequestFilters, RequestPageLinks, REQUEST_STATUS_LABEL, surfaceLabel, usd } from "./RequestLogViews";
+import { RequestFilters, RequestPageLinks, RequestStatusBadge, surfaceLabel, usd } from "./RequestLogViews";
+import { RequestRowLink } from "./RequestRowLink";
 
 export async function RequestLogList({ base, organizationId, brandId, query }: { base: string; organizationId: string; brandId: string; query: URLSearchParams }) {
   const path = `${base}/collection-runs`;
@@ -20,12 +21,12 @@ export async function RequestLogList({ base, organizationId, brandId, query }: {
       <RequestFilters path={path} query={query} />
       </div>
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white"><div className="overflow-x-auto"><table className="w-full text-left text-xs text-neutral-700"><thead className="border-b border-neutral-200 text-neutral-500"><tr>{["수집 요청", "등록 시각", "요청자", "엔진", "상태", "완료 / 전체", "실패 / 확인 필요", "예상 / 실제 USD"].map(h => <th key={h} className="px-5 py-3 font-semibold whitespace-nowrap">{h}</th>)}</tr></thead><tbody>
-        {data.rows.map(row => <tr key={row.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+        {data.rows.map(row => <RequestRowLink key={row.id} label={`수집 요청 ${row.id} 상세 보기`} href={`${path}/${encodeURIComponent(row.id)}?${new URLSearchParams({ back: query.toString() })}`}>
           <td className="px-5 py-3"><Link title={row.id} className="block max-w-40 truncate font-medium text-slate-800 hover:underline" href={`${path}/${encodeURIComponent(row.id)}?${new URLSearchParams({ back: query.toString() })}`}>{row.id}</Link></td>
           <td className="px-5 py-3 whitespace-nowrap">{formatKst(row.createdAt)}</td><td className="px-5 py-3 whitespace-nowrap">{row.requestedBy?.name ?? "-"}</td>
-          <td className="px-5 py-3 min-w-36">{row.surfaces.map(surfaceLabel).join(", ")}</td><td className="px-5 py-3 whitespace-nowrap">{REQUEST_STATUS_LABEL[row.status]}</td>
+          <td className="px-5 py-3 min-w-36">{row.surfaces.map(surfaceLabel).join(", ")}</td><td className="px-5 py-3 whitespace-nowrap"><RequestStatusBadge status={row.status} /></td>
           <td className="px-5 py-3 whitespace-nowrap">{row.counts.completed} / {row.counts.total}</td><td className="px-5 py-3 whitespace-nowrap">{row.counts.failed} / {row.counts.attention}</td><td className="px-5 py-3 whitespace-nowrap">{usd(row.estimatedCostUsd)} / {usd(row.actualCostUsd)}</td>
-        </tr>)}
+        </RequestRowLink>)}
         {data.rows.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-neutral-500">조건에 맞는 수집 요청이 없습니다.</td></tr>}
       </tbody></table></div><div className="border-t border-neutral-200 px-5">
       <RequestPageLinks path={path} query={query} page={data.page} pageCount={data.pageCount} total={data.filteredTotal} />

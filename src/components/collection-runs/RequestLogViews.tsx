@@ -11,12 +11,21 @@ export const REQUEST_STATUS_LABEL: Record<string, string> = {
 };
 export const surfaceLabel = (surface: string) => SURFACE_LABEL[surface as PromptSurface] ?? surface;
 export const usd = (cost: number) => cost === 0 ? "-" : `$${cost.toFixed(4)}`;
+
+export function RequestStatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    queued: "bg-amber-100 text-amber-800", running: "bg-blue-100 text-blue-800",
+    completed: "bg-emerald-100 text-emerald-800", partially_failed: "bg-red-100 text-red-800",
+    needs_attention: "bg-orange-100 text-orange-800", cancelled: "bg-neutral-100 text-neutral-600",
+  };
+  return <span className={`inline-flex whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-bold ${colors[status] ?? colors.cancelled}`}>{REQUEST_STATUS_LABEL[status] ?? status}</span>;
+}
 export const fieldClass = "h-9 min-w-0 rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-slate-300";
 
 export function RequestSummary({ request }: { request: RequestLogRow }) {
   const c = request.counts;
   return <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-2">
-    <div className="flex flex-wrap items-center gap-3"><h2 className="font-semibold">{REQUEST_STATUS_LABEL[request.status]}</h2><span className="text-sm text-neutral-500">{formatKst(request.createdAt)} · {request.requestedBy?.name ?? "요청자 정보 없음"}</span></div>
+    <div className="flex flex-wrap items-center gap-3"><RequestStatusBadge status={request.status} /><span className="text-sm text-neutral-500">{formatKst(request.createdAt)} · {request.requestedBy?.name ?? "요청자 정보 없음"}</span></div>
     <p className="text-sm">전체 {c.total} · 완료 {c.completed} · 대기 {c.waiting} · 진행 {c.running} · 실패 {c.failed} · 확인 필요 {c.attention} · 취소 {c.cancelled}</p>
     <p className="text-sm text-neutral-600">예상 {usd(request.estimatedCostUsd)} / 실제 {usd(request.actualCostUsd)} USD · {request.surfaces.map(surfaceLabel).join(", ")}</p>
   </div>;
