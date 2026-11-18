@@ -29,6 +29,8 @@ export interface RunLlmResult {
   status: "success" | "failed";
   citations: number;
   errorMessage: string | null;
+  /** 실패했을 때 잠시 뒤 다시 시도하면 성공할 수 있는 오류(429·5xx 등)인지. 성공이면 false */
+  retryable: boolean;
 }
 
 /** 환경변수, 없으면 macOS 키체인(scripts/secret.sh set <이름>)에서 API 키를 읽는다. */
@@ -54,6 +56,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
   let errorMessage: string | null = null;
   let webSearch = options.webSearch;
   let quotaBlocked = false;
+  let lastRetryable = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale });
@@ -65,6 +68,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
       errorMessage = error instanceof Error ? error.message : String(error);
       quotaBlocked = error instanceof LlmRequestError && error.status === 429;
       const retryable = error instanceof LlmRequestError && error.retryable;
+      lastRetryable = retryable;
       if (!retryable || attempt === retries) break;
       await sleep(2_000 * 2 ** attempt);
     }
@@ -78,6 +82,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
     } catch (error) {
       answer = null;
       errorMessage = error instanceof Error ? error.message : String(error);
+      lastRetryable = error instanceof LlmRequestError && error.retryable;
     }
   }
 
@@ -103,5 +108,5 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
     },
   };
   await store.importRun(orgId, { dir: `.tmp/${provider.id}-api`, filename: `${runId}.json`, promptRun });
-  return { runId, status: promptRun.status === "success" ? "success" : "failed", citations: answer?.citations.length ?? 0, errorMessage };
+  return { runId, status: promptRun.status === "success" ? "success" : "failed", citations: answer?.citations.length ?? 0, errorMessage, retryable: !answer && lastRetryable };
 }

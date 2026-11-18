@@ -11,6 +11,7 @@ import { cancelAgentJob, createAgentJob, getAgentJob, getAgentResults, getAgentS
 import { cancelAioCollect, pollAioCollect, startAioCollect } from "@/lib/aioCollectClient";
 import type { AioCollectJob } from "@/lib/backend/aio/jobTypes";
 import type { CollectStep } from "@/lib/collectSteps";
+import { retryTransient, type AttemptOutcome } from "@/lib/collectRetry";
 
 // "선택 수집"의 통합 진행 창 — 선택한 플랫폼을 한꺼번에 시작한다. 레인(네이버 / 구글 / Gemini)이 서로 기다리지 않아서
 // 구글에서 캡차가 떠도 네이버·Gemini 수집은 계속 돌아간다. 답변 수집(네이버·구글AI) 결과는 끝나는 대로 자동 반영하고,
@@ -332,31 +333,50 @@ function GeminiRunner({ keywords, index, patch, setCancel }: RunnerProps & { key
       patch(index, { phase: "stopped", note: "중단했습니다." });
     });
 
+    const collectOne = async (keyword: string): Promise<{ outcome: AttemptOutcome; status: number; error?: string }> => {
+      try {
+        const res = await fetch("/api/gemini-collect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: keyword }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string; retryable?: boolean };
+        if (res.ok) return { outcome: { ok: true }, status: res.status };
+        return { outcome: { ok: false, retryable: !!data.retryable }, status: res.status, error: data.error ?? `오류 ${res.status}` };
+      } catch {
+        return { outcome: { ok: false, retryable: true }, status: 0, error: "네트워크 오류" };
+      }
+    };
+
     (async () => {
       let ok = 0;
       let failed = 0;
       let lastError: string | null = null;
+      const failedRetryable: number[] = [];
       for (let i = 0; i < keywords.length && !stopped; i++) {
         patch(index, { current: keywords[i] });
-        try {
-          const res = await fetch("/api/gemini-collect", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: keywords[i] }),
-          });
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          if (res.ok) ok++;
-          else {
-            failed++;
-            lastError = data.error ?? `오류 ${res.status}`;
-          }
-          patch(index, { done: ok + failed });
-          if (res.status === 503) break;
-        } catch {
+        const r = await collectOne(keywords[i]);
+        if (r.outcome.ok) ok++;
+        else {
           failed++;
-          lastError = "네트워크 오류";
-          patch(index, { done: ok + failed });
+          lastError = r.error ?? null;
+          if (r.outcome.retryable) failedRetryable.push(i);
         }
+        patch(index, { done: ok + failed });
+        if (r.status === 503 && !r.outcome.ok && !r.outcome.retryable) break; // 서버 설정 없음(503, 재시도 불가)
+      }
+      // 제공사 과부하(503)·한도(429) 같은 일시 오류는 잠시 뒤 실패한 항목만 다시 시도한다.
+      if (failedRetryable.length > 0 && !stopped) {
+        await retryTransient(failedRetryable, async (i) => {
+          patch(index, { current: keywords[i] });
+          const r = await collectOne(keywords[i]);
+          if (r.outcome.ok) { ok++; failed--; if (failed === 0) lastError = null; patch(index, { done: ok + failed }); }
+          else lastError = r.error ?? lastError;
+          return r.outcome;
+        }, {
+          shouldStop: () => stopped,
+          onPass: (pass, remaining, wait) => patch(index, { current: null, note: `일시 오류 ${remaining.length}개 — ${Math.round(wait / 1000)}초 뒤 다시 시도해요(${pass}회차)` }),
+        });
       }
       if (stopped) return;
       patch(index, {
