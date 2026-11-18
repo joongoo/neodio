@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRequestDetailPoller, hasActiveRequestTasks, REQUEST_DETAIL_POLL_MS } from "./requestDetailProgress";
+import { createRequestDetailPoller, hasActiveRequestTasks, REQUEST_DETAIL_POLL_MS, type RequestRefreshState } from "./requestDetailProgress";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
 
 function timers() {
@@ -77,4 +77,33 @@ test("a slow read times out and schedules another read without changing task sta
   assert.equal(errors, 1);
   assert.equal([...clock.pending.values()].filter(timer => timer.ms === REQUEST_DETAIL_POLL_MS).length, 1);
   poller.dispose(); assert.equal(clock.pending.size, 0);
+});
+
+test("visual countdown follows the actual schedule without additional reads", async () => {
+  const clock = timers(); let currentTime = 100_000, reads = 0, remainsActive = true;
+  const states: RequestRefreshState[] = [];
+  const poller = createRequestDetailPoller({ ...clock, now: () => currentTime, onStateChange: state => states.push(state),
+    initiallyActive: true, initiallyVisible: true, read: async () => { reads++; return remainsActive; }, onData: () => {}, onError: () => assert.fail("unexpected error"), isActive: value => value });
+  assert.deepEqual(states.at(-1), { phase: "waiting", secondsUntilRefresh: 5, nextRefreshAt: 105_000, lastUpdatedAt: null });
+  currentTime += 1000; clock.fire(1000); assert.equal(states.at(-1)?.secondsUntilRefresh, 4);
+  currentTime += 1000; clock.fire(1000); assert.equal(states.at(-1)?.secondsUntilRefresh, 3);
+  assert.equal(reads, 0, "countdown is client-only");
+  currentTime = 105_000; clock.fire(REQUEST_DETAIL_POLL_MS);
+  assert.equal(states.at(-1)?.phase, "refreshing");
+  await flush();
+  assert.deepEqual(states.at(-1), { phase: "waiting", secondsUntilRefresh: 5, nextRefreshAt: 110_000, lastUpdatedAt: 105_000 });
+  remainsActive = false; currentTime = 110_000; clock.fire(REQUEST_DETAIL_POLL_MS); await flush();
+  assert.deepEqual(states.at(-1), { phase: "stopped", secondsUntilRefresh: null, nextRefreshAt: null, lastUpdatedAt: 110_000 });
+  assert.equal(reads, 2); assert.equal(clock.pending.size, 0); poller.dispose();
+});
+
+test("visual feedback pauses on hidden tabs and ignores updates after disposal", async () => {
+  const clock = timers(), states: RequestRefreshState[] = [];
+  const poller = createRequestDetailPoller({ ...clock, initiallyActive: true, initiallyVisible: false,
+    onStateChange: state => states.push(state), read: async () => true, onData: () => {}, onError: () => {}, isActive: value => value });
+  assert.equal(states.at(-1)?.phase, "paused"); assert.equal(clock.pending.size, 0);
+  poller.setVisible(true); assert.equal(states.at(-1)?.phase, "refreshing"); await flush();
+  assert.equal(states.at(-1)?.phase, "waiting");
+  poller.setVisible(false); assert.equal(states.at(-1)?.phase, "paused"); assert.equal(clock.pending.size, 0);
+  poller.dispose(); const count = states.length; poller.setVisible(true); await flush(); assert.equal(states.length, count);
 });
