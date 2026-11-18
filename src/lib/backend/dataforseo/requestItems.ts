@@ -1,16 +1,19 @@
 import { getPromptStore } from "@/lib/backend/database";
 import { parseRequestLogOptions, RequestLogInputError, type RequestLogDatabase } from "./requestLog";
 import type { ProviderTaskStatus } from "./types";
+import { filterValues, REQUEST_ITEM_STATUSES, REQUEST_ITEM_SURFACES, type RequestItemFacets } from "@/lib/requestItemFilters";
+import { WITHOUT_COLLECTION_RETRY_SQL } from "./collectionActivity";
 
 export function parseRequestItemOptions(params: URLSearchParams) {
-  const status = params.get("status");
-  if (status && status !== "all" && !["reserved", "submitting", "submission_unknown", "queued", "collecting", "raw_saved", "normalized", "completed", "provider_failed", "artifact_failed", "projection_failed", "parse_failed", "cancelled"].includes(status)) {
+  const statuses = filterValues(params, "status"), surfaces = filterValues(params, "surface");
+  if (statuses.some(value => !REQUEST_ITEM_STATUSES.includes(value)) || surfaces.some(value => !REQUEST_ITEM_SURFACES.includes(value))) {
     throw new RequestLogInputError("status 값이 올바르지 않습니다.");
   }
   const shared = new URLSearchParams(params);
   shared.delete("status");
+  shared.delete("surface");
   if (!shared.has("sort")) shared.set("sort", "oldest");
-  return { ...parseRequestLogOptions(shared), status: status && status !== "all" ? status : null };
+  return { ...parseRequestLogOptions(shared), status: statuses[0] ?? null, surface: surfaces[0] ?? null, statuses, surfaces };
 }
 
 export interface RequestItemRow {
@@ -35,7 +38,7 @@ export interface RequestItemRow {
   result: null | { runId: string; dir: string; filename: string; outcome: string | null; answerLength: number; citationCount: number; category: string | null; topic: string | null };
 }
 
-export interface RequestItemPage { rows: RequestItemRow[]; filteredTotal: number; page: number; pageSize: number; pageCount: number }
+export interface RequestItemPage { rows: RequestItemRow[]; filteredTotal: number; page: number; pageSize: number; pageCount: number; facets?: RequestItemFacets }
 
 /** Returns null for an out-of-scope request, and an empty page for an empty filter. */
 export async function listRequestItems(organizationId: string, brandId: string, requestId: string, options: ReturnType<typeof parseRequestItemOptions>, database?: RequestLogDatabase): Promise<RequestItemPage | null> {
@@ -44,12 +47,13 @@ export async function listRequestItems(organizationId: string, brandId: string, 
   const [result] = await db.query<{ payload: RequestItemPage | null }>(`
     WITH request AS (
       SELECT id FROM collection_requests WHERE organization_id=$1 AND brand_id=$2 AND id=$3
-    ), filtered AS (
+    ), scoped AS (
       SELECT t.* FROM collection_execution_items t JOIN request r ON r.id=t.collection_request_id
       WHERE t.organization_id=$1 AND t.brand_id=$2
-        AND ($4::text IS NULL OR t.status=$4) AND ($5::text IS NULL OR t.surface=$5)
         AND ($6='' OR strpos(lower(t.query_snapshot),lower($6))>0)
         AND ($9::text IS NULL OR t.created_at >= $9) AND ($10::text IS NULL OR t.created_at < $10)
+    ), filtered AS (
+      SELECT * FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) AND ($5::text[] IS NULL OR surface=ANY($5))
     ), pagination AS (
       SELECT count(*)::int AS total, GREATEST(1,ceil(count(*)::numeric/$7)::int) AS pages FROM filtered
     ), bounds AS (
@@ -60,6 +64,11 @@ export async function listRequestItems(organizationId: string, brandId: string, 
     )
     SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM request) THEN NULL ELSE jsonb_build_object(
       'filteredTotal',b.total,'page',b.current_page,'pageSize',$7::int,'pageCount',b.pages,
+      'facets',jsonb_build_object(
+        'status',COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::int n FROM scoped WHERE ($5::text[] IS NULL OR surface=ANY($5)) GROUP BY status) s),'{}'::jsonb),
+        'surface',COALESCE((SELECT jsonb_object_agg(surface,n) FROM (SELECT surface,count(*)::int n FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) GROUP BY surface) s),'{}'::jsonb),
+        'retry',(SELECT jsonb_build_object('failed',count(*) FILTER (WHERE p.status IN ('provider_failed','parse_failed'))::int,'cancelled',count(*) FILTER (WHERE p.status='cancelled')::int) FROM filtered p WHERE ${WITHOUT_COLLECTION_RETRY_SQL})
+      ),
       'rows',COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',t.id,'executionKind',t.execution_kind,'promptId',t.prompt_id,'query',t.query_snapshot,
         'surface',t.surface,'device',t.device,'status',t.status,'createdAt',t.created_at,
@@ -86,6 +95,6 @@ export async function listRequestItems(organizationId: string, brandId: string, 
         SELECT p.* FROM prompt_runs p WHERE (p.provider_task_id=t.id OR p.id=t.run_id) AND p.organization_id=$1
         ORDER BY p.run_at DESC,p.id DESC LIMIT 1
       ) run ON true),'[]'::jsonb)) END AS payload FROM bounds b
-  `, [organizationId, brandId, requestId, options.status, options.surface, options.q, options.size, options.page, options.from, options.to, new Date().toISOString()]);
+  `, [organizationId, brandId, requestId, options.statuses.length ? options.statuses : null, options.surfaces.length ? options.surfaces : null, options.q, options.size, options.page, options.from, options.to, new Date().toISOString()]);
   return result.payload;
 }

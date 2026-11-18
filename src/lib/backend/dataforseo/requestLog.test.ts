@@ -230,6 +230,13 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal((await items("b"))?.rows[0].status, "submission_unknown");
     assert.equal((await items("a", "q=absent"))?.filteredTotal, 0);
     assert.equal((await items("a", "surface=naver-aio&page=99"))?.page, 1);
+    const multi = await items("a", "status=completed,cancelled&surface=google-aio&surface=naver-aio");
+    assert.equal(multi?.filteredTotal, 2);
+    assert.deepEqual(multi?.facets, { status: { completed: 2 }, surface: { "google-aio": 1, "naver-aio": 1 }, retry: { failed: 0, cancelled: 0 } });
+    const emptyStatus = await items("a", "status=cancelled&surface=google-aio");
+    assert.equal(emptyStatus?.filteredTotal, 0);
+    assert.deepEqual(emptyStatus?.facets?.status, { completed: 1 }, "status facet ignores its own filter");
+    assert.deepEqual(emptyStatus?.facets?.surface, {}, "platform facet applies selected status");
     assert.equal(await items("hidden"), null);
     assert.equal(await items("other-brand"), null);
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,actual_cost_usd,query_snapshot,run_id)
@@ -255,10 +262,14 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
       VALUES ('gemini-failed','org','brand','a','gemini','desktop','parse_failed','gemini'),
         ('gemini-cancelled','org','brand','a','gemini','desktop','cancelled','cancelled')`);
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 3, "Gemini failures included, cancellations excluded");
+    const geminiFilter = "status=parse_failed,cancelled&surface=gemini";
+    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 1, cancelled: 1 });
+    assert.equal((await listRetryCandidates("org", "brand", "a", "failed", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 1);
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('local-retry','org','brand','b','naver-ai','desktop','reserved','retry','legacy-1'),
         ('gemini-retry','org','brand','b','gemini','desktop','reserved','retry gemini','gemini-failed')`);
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 1, "local and Gemini retried originals excluded");
+    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1 }, "selection counts exclude retried originals");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"]);
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='gemini-retry'");
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "failed retry is counted instead of its original");

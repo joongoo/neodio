@@ -20,7 +20,7 @@ export default async function RequestLogDetailPage({ params, searchParams }: {
   const tenant = await getCurrentTenant();
   const { requestId } = await params;
   const raw = await searchParams;
-  const query = new URLSearchParams(Object.entries(raw).flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []));
+  const query = new URLSearchParams(Object.entries(raw).flatMap(([key, value]) => (Array.isArray(value) ? value : typeof value === "string" ? [value] : []).map(item => [key, item])));
   const request = await getRequestLog(tenant.orgId, tenant.brandId, requestId);
   if (!request) notFound();
   const listPath = `${tenant.base}/collection-runs`;

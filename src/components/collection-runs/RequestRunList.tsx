@@ -83,7 +83,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
   });
   return <>
     <CollectionRunList actions={canEdit && <>
-      <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={loading ? [] : chosen} selecting={selecting || loading} onSelectGroup={selectGroup} groupsSelected={groupsSelected} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
+      <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={loading ? [] : chosen} selecting={selecting || loading} groupCounts={items.facets?.retry} onSelectGroup={selectGroup} groupsSelected={groupsSelected} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
       {selectionError && <p role="alert" className="text-xs text-red-600">{selectionError}</p>}
       <p className="text-xs text-neutral-500">실패·취소 전체 선택은 현재 필터에 맞는 모든 페이지에 적용됩니다. 필터 변경 시 선택을 초기화합니다. 미제출 SERP만 선택하면 기존 큐 실행 요청·대기 취소가 가능합니다. 이미 재수집된 원본은 제외합니다.</p>
     </>} loading={loading} listPage={{ ...items, rows }} total={total} searchValue={searchText} onSearchChange={value => {

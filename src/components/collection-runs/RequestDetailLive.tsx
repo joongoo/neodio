@@ -46,7 +46,7 @@ export function RequestDetailLive({ initial, query: initialQuery, listProps, chi
   const liveMatches = live?.key === key && live.baseline === initial;
   const snapshot = liveMatches ? live.snapshot : initial;
   const loading = !liveMatches && query !== initialQuery;
-  const filterKey = JSON.stringify(["status", "surface", "q", "from", "to"].map(name => params.get(name) ?? ""));
+  const filterKey = JSON.stringify(["status", "surface", "q", "from", "to"].map(name => params.getAll(name)));
   const active = hasActiveRequestTasks(snapshot.request);
   const currentError = error?.key === key && error.baseline === initial ? error : null;
   const refreshState: RequestRefreshState = refresh?.key === key && refresh.baseline === initial ? refresh.state : { phase: active ? "waiting" : "stopped", secondsUntilRefresh: active ? 5 : null, nextRefreshAt: null, lastUpdatedAt: null };
@@ -86,7 +86,7 @@ export function RequestDetailLive({ initial, query: initialQuery, listProps, chi
     <p className="text-xs text-neutral-500">{currentError?.stopped ? "현황 조회를 중지했습니다. 접근 권한과 요청 상태를 확인한 뒤 새로고침하세요." : active ? "이 상세 화면을 보고 있는 동안 5초 간격으로 내부 상태를 확인합니다. 다른 탭으로 이동하면 일시 중지합니다." : "활성 작업이 없어 자동 갱신을 중지했습니다. 최신 상태가 필요하면 페이지를 새로고침하세요."} 외부 수집 API를 조회하거나 작업을 다시 제출하지 않습니다.</p>
     {currentError && <p role="alert" className="text-xs text-amber-700">{currentError.message}</p>}
     {children}
-    <RequestDetailFilters query={query} onChange={changeFilters} />
+    <RequestDetailFilters query={query} facets={snapshot.items.facets} loading={loading} onChange={changeFilters} />
     <RequestRunList key={filterKey} {...listProps} search={params.get("q") ?? ""} loading={loading} items={snapshot.items} total={snapshot.request.counts.total} />
   </>;
 }

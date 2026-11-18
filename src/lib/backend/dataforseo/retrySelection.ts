@@ -16,11 +16,11 @@ export async function listRetryCandidates(org: string, brand: string, requestId:
   return db.query<RetrySelectionItem>(`SELECT p.id,p.execution_kind AS "executionKind",p.query_snapshot AS query,p.surface,p.device,p.status,false AS "hasRetry"
     FROM collection_execution_items p WHERE p.collection_request_id=$1 AND p.organization_id=$2 AND p.brand_id=$3
       AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL}
-      AND ($5::text IS NULL OR p.status=$5) AND ($6::text IS NULL OR p.surface=$6)
+      AND ($5::text[] IS NULL OR p.status=ANY($5)) AND ($6::text[] IS NULL OR p.surface=ANY($6))
       AND ($7='' OR strpos(lower(p.query_snapshot),lower($7))>0)
       AND ($8::text IS NULL OR p.created_at >= $8) AND ($9::text IS NULL OR p.created_at < $9)
       ORDER BY p.created_at,p.id LIMIT 2001`,
-  [requestId, org, brand, group === "cancelled" ? ["cancelled"] : RETRY_FAILURE_STATUSES, filters?.status ?? null, filters?.surface ?? null, filters?.q ?? "", filters?.from ?? null, filters?.to ?? null]);
+  [requestId, org, brand, group === "cancelled" ? ["cancelled"] : RETRY_FAILURE_STATUSES, filters?.statuses.length ? filters.statuses : null, filters?.surfaces.length ? filters.surfaces : null, filters?.q ?? "", filters?.from ?? null, filters?.to ?? null]);
 }
 
 export async function retrySelectedItems(org: string, brand: string, originalId: string, clientId: string, actor: string | null, ids: string[]) {
