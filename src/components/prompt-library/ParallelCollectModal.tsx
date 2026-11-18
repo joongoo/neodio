@@ -60,10 +60,23 @@ export function ParallelCollectModal({
   );
   const cancels = useRef<(() => void)[]>(steps.map(() => () => {}));
   const doneNotified = useRef(false);
+  const legacyStarted = useRef(new Set<number>());
 
   const patch = useCallback((index: number, next: Partial<PanelState>) => {
     setStates((prev) => prev.map((s, i) => (i === index ? { ...s, ...next } : s)));
-  }, []);
+    const step = steps[index];
+    if (step.kind !== "serp-api" && step.requestId) {
+      const terminal = next.phase && next.phase !== "running";
+      if (terminal || !legacyStarted.current.has(index)) {
+        legacyStarted.current.add(index);
+        void fetch("/api/collection-requests/legacy", { method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step, phase: next.phase ?? "running", note: next.note }),
+        }).then(response => {
+          if (!response.ok) throw new Error(`수집 요청 상태 저장 오류 (${response.status})`);
+        }).catch(error => console.error("수집 요청 진행 상태 저장 실패", error));
+      }
+    }
+  }, [steps]);
   const setCancel = useCallback((index: number, fn: () => void) => {
     cancels.current[index] = fn;
   }, []);
@@ -170,9 +183,9 @@ export function ParallelCollectModal({
               {step.kind === "ai" ? (
                 <AgentAiRunner step={step} orgName={orgName} index={index} patch={patch} setCancel={setCancel} />
               ) : step.kind === "aio" ? (
-                <AioRunner brandId={brandId} promptIds={step.promptIds} index={index} patch={patch} setCancel={setCancel} />
+                <AioRunner brandId={brandId} promptIds={step.promptIds} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
               ) : (
-                <GeminiRunner keywords={step.keywords} index={index} patch={patch} setCancel={setCancel} />
+                <GeminiRunner keywords={step.keywords} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
               )}
             </PanelShell>
           ))}
@@ -388,7 +401,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
           const res = await fetch("/api/collection-runs/import", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ runs: runs.slice(i, i + IMPORT_CHUNK) }),
+            body: JSON.stringify({ runs: runs.slice(i, i + IMPORT_CHUNK), requestId: step.requestId }),
           });
           const data = await res.json().catch(() => null);
           if (!res.ok) throw new Error(data?.error ?? "반영하지 못했습니다.");
@@ -412,7 +425,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
 }
 
 // 구글AIO — 수집기가 검색하고, 검색마다 서버에 올려 판정한다.
-function AioRunner({ brandId, promptIds, index, patch, setCancel }: RunnerProps & { brandId: string; promptIds: string[] }) {
+function AioRunner({ brandId, promptIds, requestId, index, patch, setCancel }: RunnerProps & { brandId: string; promptIds: string[]; requestId?: string }) {
   const router = useRouter();
   const started = useRef(false);
 
@@ -428,7 +441,7 @@ function AioRunner({ brandId, promptIds, index, patch, setCancel }: RunnerProps 
     });
 
     (async () => {
-      const result = await startAioCollect({ brandId, promptIds, force: false });
+      const result = await startAioCollect({ brandId, promptIds, requestId, force: false });
       if (!result.ok) {
         patch(index, { phase: "error", note: result.error || "수집기를 확인하세요." });
         return;
@@ -470,7 +483,7 @@ function AioRunner({ brandId, promptIds, index, patch, setCancel }: RunnerProps 
 }
 
 // Gemini — 서버가 API로 한 건씩 묻는다(수집기 불필요).
-function GeminiRunner({ keywords, index, patch, setCancel }: RunnerProps & { keywords: string[] }) {
+function GeminiRunner({ keywords, requestId, index, patch, setCancel }: RunnerProps & { keywords: string[]; requestId?: string }) {
   const started = useRef(false);
 
   useEffect(() => {
@@ -492,7 +505,7 @@ function GeminiRunner({ keywords, index, patch, setCancel }: RunnerProps & { key
           const res = await fetch("/api/gemini-collect", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: keywords[i] }),
+            body: JSON.stringify({ query: keywords[i], requestId }),
           });
           const data = (await res.json().catch(() => ({}))) as { error?: string };
           if (res.ok) ok++;

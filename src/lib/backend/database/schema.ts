@@ -249,6 +249,23 @@ ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS submission_attempted_at TEXT
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS lease_owner TEXT;
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS lease_expires_at TEXT;
 ALTER TABLE provider_tasks ADD COLUMN IF NOT EXISTS next_poll_at TEXT;
+CREATE TABLE IF NOT EXISTS legacy_collection_items (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organizations(id), brand_id TEXT NOT NULL REFERENCES brands(id),
+  collection_request_id TEXT NOT NULL REFERENCES collection_requests(id), prompt_id TEXT, query_snapshot TEXT NOT NULL,
+  surface TEXT NOT NULL, device TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'reserved',
+  created_at TEXT NOT NULL, submitted_at TEXT, completed_at TEXT, error_message TEXT,
+  run_id TEXT REFERENCES prompt_runs(id),
+  UNIQUE(collection_request_id,query_snapshot,surface,device)
+);
+CREATE INDEX IF NOT EXISTS legacy_collection_request ON legacy_collection_items(collection_request_id);
+CREATE OR REPLACE VIEW collection_execution_items AS
+  SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,
+    created_at,submitted_at,completed_at,submission_attempted_at,estimated_cost_usd,actual_cost_usd,error_code,error_message,retry_of_task_id,
+    'serp-api'::text AS execution_kind,NULL::text AS run_id FROM provider_tasks
+  UNION ALL
+  SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,
+    created_at,submitted_at,completed_at,submitted_at,0::numeric,0::numeric,NULL::text,error_message,NULL::text,
+    'legacy'::text,run_id FROM legacy_collection_items;
 CREATE INDEX IF NOT EXISTS provider_tasks_collection_request ON provider_tasks(collection_request_id,created_at);
 CREATE INDEX IF NOT EXISTS provider_tasks_queue_due ON provider_tasks(provider,status,next_poll_at,lease_expires_at);
 ALTER TABLE provider_tasks DROP CONSTRAINT IF EXISTS provider_tasks_status_check;

@@ -1,5 +1,5 @@
 import { getPromptStore } from "@/lib/backend/database";
-import { SERP_API_SURFACES } from "@/lib/dataforseoPricing";
+import { PROMPT_SURFACES } from "@/lib/promptSurfaces";
 import type { CollectionRequestDisplayStatus } from "@/lib/collectionRequestProgress";
 
 export class RequestLogInputError extends Error {}
@@ -17,7 +17,7 @@ export function parseRequestLogOptions(params: URLSearchParams) {
   const status = params.get("status");
   if (status && !["queued", "running", "completed", "partially_failed", "needs_attention", "cancelled"].includes(status)) throw new RequestLogInputError("status 값이 올바르지 않습니다.");
   const surface = params.get("surface");
-  if (surface && !(SERP_API_SURFACES as readonly string[]).includes(surface)) throw new RequestLogInputError("surface 값이 올바르지 않습니다.");
+  if (surface && !(PROMPT_SURFACES as readonly string[]).includes(surface)) throw new RequestLogInputError("surface 값이 올바르지 않습니다.");
   const sort = params.get("sort") ?? "newest";
   if (!["newest", "oldest"].includes(sort)) throw new RequestLogInputError("sort 값이 올바르지 않습니다.");
   const date = (key: string) => {
@@ -84,7 +84,7 @@ export async function listRequestLogs(
         CASE WHEN count(t.id)>0 AND bool_and(t.status IN ('completed','provider_failed','parse_failed','cancelled'))
           AND bool_and(t.completed_at IS NOT NULL) THEN max(t.completed_at) ELSE NULL END AS finished_at,
         COALESCE(bool_or(strpos(lower(t.query_snapshot),lower($5))>0),false) AS query_match
-      FROM scoped r LEFT JOIN provider_tasks t ON t.collection_request_id=r.id
+      FROM scoped r LEFT JOIN collection_execution_items t ON t.collection_request_id=r.id
         AND t.organization_id=r.organization_id AND t.brand_id=r.brand_id
       GROUP BY r.id
     ), summaries AS (

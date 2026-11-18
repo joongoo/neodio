@@ -285,17 +285,33 @@ export function PromptLibraryClient({
   const parallel = Boolean(collectionAgent && brandId);
   const step = parallel ? undefined : queue[0];
 
-  function startPendingCollection(forceSerpDuplicate: boolean) {
+  async function startPendingCollection(forceSerpDuplicate: boolean) {
     if (!pendingCollection) return;
     const requestId = crypto.randomUUID();
     stepDoneRef.current = false;
-    setQueue(buildCollectSteps(
+    const steps = buildCollectSteps(
       selectedRows,
       pendingCollection.enabled,
       pendingCollection.serpApiEnabled,
       requestId,
       forceSerpDuplicate,
-    ));
+    );
+    const legacyItems = steps.flatMap(s => {
+      if (s.kind === "serp-api") return [];
+      if (s.kind === "aio") return selectedRows.filter(row => row.promptId && s.promptIds.includes(row.promptId)).map(row => ({ query: row.prompt, surface: "google-aio" }));
+      if (s.kind === "gemini") return s.keywords.map(query => ({ query, surface: "gemini" }));
+      return s.keywords.flatMap(query => s.engines.map(engine => ({ query, surface: engine === "naver" ? "naver-ai" : engine === "naver-overview" ? "naver-aio" : "google-ai-mode" })));
+    });
+    if (legacyItems.length) {
+      try {
+        const response = await fetch("/api/collection-requests/legacy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, items: legacyItems }) });
+        if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? "수집 요청을 등록하지 못했습니다.");
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "수집 요청을 등록하지 못했습니다.");
+        return;
+      }
+    }
+    setQueue(steps);
     setActiveCollectionConflicts(null);
     setPendingCollection(null);
   }

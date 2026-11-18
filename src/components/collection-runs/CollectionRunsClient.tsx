@@ -21,6 +21,7 @@ import type { CollectionRequestSummary } from "@/lib/backend/dataforseo/collecti
 import { collectionRequestDisplayStatus, collectionRequestFinishedCount } from "@/lib/collectionRequestProgress";
 
 function StatusBadge({ file }: { file: RunListRow }) {
+  if (file.progressStatus === "submission_unknown") return <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">확인 필요</span>;
   if (file.state === "pending" && file.progressStatus === "reserved") {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">수집 대기</span>;
   }
@@ -36,7 +37,7 @@ function StatusBadge({ file }: { file: RunListRow }) {
   return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
 }
 
-function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
+export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
   return [
     {
       key: "runAt",
@@ -96,7 +97,7 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       label: "",
       width: "w-[90px]",
       render: (file) => (
-        file.state === "pending" ? null : <EditOnly>
+        file.state === "pending" || file.dir === "provider-task" || file.dir === "legacy-task" ? null : <EditOnly>
           <button
             type="button"
             onClick={(e) => {
@@ -190,7 +191,8 @@ function RunDetail({ file }: { file: RunListRow }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/collection-runs/detail?dir=${encodeURIComponent(file.dir)}&filename=${encodeURIComponent(file.filename)}`)
+    const scope = file.requestId && file.taskId ? `&requestId=${encodeURIComponent(file.requestId)}&taskId=${encodeURIComponent(file.taskId)}` : "";
+    fetch(`/api/collection-runs/detail?dir=${encodeURIComponent(file.dir)}&filename=${encodeURIComponent(file.filename)}${scope}`)
       .then(async (res) => (res.ok ? { detail: (await res.json()) as CollectedRunDetail } : { error: (await res.json().catch(() => null))?.error ?? "원문을 불러오지 못했습니다." }))
       .catch(() => ({ error: "원문을 불러오지 못했습니다." }))
       .then((result) => {
@@ -199,7 +201,7 @@ function RunDetail({ file }: { file: RunListRow }) {
     return () => {
       cancelled = true;
     };
-  }, [file.dir, file.filename]);
+  }, [file.dir, file.filename, file.requestId, file.taskId]);
 
   if (!state) return <p className="text-xs text-neutral-400">원문을 불러오는 중…</p>;
   if (!state.detail) return <p className="text-xs text-red-600">{state.error}</p>;
@@ -233,6 +235,26 @@ function RunDetail({ file }: { file: RunListRow }) {
       </div>
     </div>
   );
+}
+
+export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, brandId, onChanged, onPageChange, onPageSizeChange }: {
+  listPage: RunListPage; total: number; searchValue: string; onSearchChange: (value: string) => void;
+  columns: DataTableColumn<RunListRow>[]; brandId: string; onChanged: () => void;
+  onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void;
+}) {
+  return <TablePanel title="수집 실행 목록" description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
+    count={listPage.filteredTotal} total={total} searchValue={searchValue} onSearchChange={onSearchChange} searchPlaceholder="키워드/엔진/카테고리 검색">
+    {listPage.filteredTotal === 0 ? <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p> : <>
+      <DataTable columns={columns} rows={listPage.rows} getRowId={file => file.key} renderExpanded={file =>
+        file.dir === "legacy-task"
+          ? <p className="text-xs text-neutral-600">{file.errorMessage ?? "레거시 수집기가 처리 중입니다. 결과가 반영되면 원문을 확인할 수 있습니다."}</p>
+          : file.dir === "provider-task" && file.state !== "pending"
+          ? <p className="text-xs text-amber-700">{file.errorMessage ?? "수집 결과가 없습니다. 작업 상태를 확인해 주세요."}</p>
+          : file.state === "pending" ? <PendingRunDetail file={file} brandId={brandId} onChanged={onChanged} /> : <RunDetail file={file} />} />
+      <div className="mt-3"><Pagination page={listPage.page} pageCount={listPage.pageCount} pageSize={listPage.pageSize}
+        totalCount={listPage.filteredTotal} pageSizeOptions={RUN_PAGE_SIZES} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} /></div>
+    </>}
+  </TablePanel>;
 }
 
 const REQUEST_STATUS_VIEW = {
@@ -409,41 +431,17 @@ export function CollectionRunsClient({
             <SimpleStatCard label="브랜드 인용" value={stats.ownCitations} tooltip="수집된 답변이 우리 도메인을 인용한 횟수입니다." />
           </div>
 
-          <TablePanel
-            title="수집 실행 목록"
-            description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
-            count={listPage.filteredTotal}
+          <CollectionRunList
+            listPage={listPage}
             total={stats.total}
             searchValue={searchText}
             onSearchChange={setSearchText}
-            searchPlaceholder="키워드/엔진/카테고리 검색"
-          >
-            {listPage.filteredTotal === 0 ? (
-              <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p>
-            ) : (
-              <>
-                <DataTable
-                  columns={columns}
-                  rows={listPage.rows}
-                  getRowId={(file) => file.key}
-                  renderExpanded={(file) => file.state === "pending"
-                    ? <PendingRunDetail file={file} brandId={brandId} onChanged={() => router.refresh()} />
-                    : <RunDetail file={file} />}
-                />
-                <div className="mt-3">
-                  <Pagination
-                    page={listPage.page}
-                    pageCount={listPage.pageCount}
-                    pageSize={listPage.pageSize}
-                    totalCount={listPage.filteredTotal}
-                    pageSizeOptions={RUN_PAGE_SIZES}
-                    onPageChange={(page) => navigate({ page: page === 1 ? null : String(page) })}
-                    onPageSizeChange={(size) => navigate({ size: String(size), page: null })}
-                  />
-                </div>
-              </>
-            )}
-          </TablePanel>
+            columns={columns}
+            brandId={brandId}
+            onChanged={() => router.refresh()}
+            onPageChange={(page) => navigate({ page: page === 1 ? null : String(page) })}
+            onPageSizeChange={(size) => navigate({ size: String(size), page: null })}
+          />
 
           <InfoBanner
             title="이 원문·인용 데이터가 다음 LLM 분석 단계의 입력입니다"
@@ -472,7 +470,7 @@ export function CollectionRunsClient({
 // (키워드만 입력), 여기서 사후에 태그를 붙여야 Overview의 카테고리 필터가 실 데이터에
 // 적용될 수 있다. LLM 기반 프롬프트 제안 생성은 이 모달의 다음 단계로 남겨둠 — 실제 LLM
 // 호출에 필요한 API 키가 아직 설정돼 있지 않음.
-function CategorizeRunModal({
+export function CategorizeRunModal({
   file,
   categories,
   onClose,

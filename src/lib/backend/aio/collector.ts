@@ -5,6 +5,7 @@ import { getManagedBrandById } from "../brandsManagementStore";
 import { getBrandAioSettings, listBrandYoutubeChannels } from "../brandAioConfig";
 import { resolveYoutubeVideo } from "../youtube";
 import { getPromptStore } from "../database";
+import { linkLegacyRun } from "../dataforseo/legacyRequest";
 import { buildJudgeContext, CollectedSource, judgeCitations } from "./judge";
 import { cacheVideo, collectedToday, getCachedVideos, keywordPromptContext, listAioKeywords, saveAioObservation, seoulDate } from "./store";
 import { AioCitation, AioDevice, AioObservationStatus, AioParagraph, PromptRunSeed, RawCitationMetadata, YoutubeVideoMeta } from "@/lib/db/types";
@@ -32,6 +33,8 @@ function toRawCitation(citation: AioCitation): RawCitationMetadata {
 // aio_observations 저장은 그대로 유지한다 — YouTube AIO 전용 대시보드(영상
 // 소유 판정, 채널별 통계 등)는 아직 이 테이블을 직접 쓴다.
 async function syncAioRunToPromptRuns(params: {
+  requestId?: string;
+  brandId?: string;
   keywordId: string;
   device: AioDevice;
   status: AioObservationStatus;
@@ -74,6 +77,7 @@ async function syncAioRunToPromptRuns(params: {
     };
     const store = await getPromptStore();
     await store.importRun(context.organizationId, { dir: "aio-sync", filename: `${run.id}.json`, promptRun: run }, null);
+    if (params.brandId) await linkLegacyRun(context.organizationId, params.brandId, params.requestId, run, params.device);
   } catch (error) {
     console.error("[aio] prompt_runs 동기화 실패 — aio_observations 저장은 영향 없음:", error);
   }
@@ -116,6 +120,7 @@ export type AioRunEvent =
     };
 
 export interface AioRunOptions {
+  requestId?: string;
   brandId: string;
   /** 없으면 브랜드의 활성 키워드 전체 */
   keywordIds?: string[];
@@ -233,6 +238,7 @@ export async function planAioRun(
 
 /** 수집 결과 한 건을 판정(자사 영상·경쟁사 등 분류)해 저장한다 — 서버가 직접 돌린 결과와 수집기가 올린 결과가 같이 쓴다. */
 export async function saveCollectedResult(params: {
+  requestId?: string;
   brandId: string;
   keywordId: string;
   device: AioDevice;
@@ -258,6 +264,8 @@ export async function saveCollectedResult(params: {
     errorMessage: result.errorMessage ?? null,
   });
   await syncAioRunToPromptRuns({
+    requestId: params.requestId,
+    brandId,
     keywordId,
     device,
     status: result.status,
@@ -325,6 +333,7 @@ export async function runAioCollection(options: AioRunOptions): Promise<AioRunSu
     }
 
     const { citations, saved } = await saveCollectedResult({
+      requestId: options.requestId,
       brandId,
       keywordId: keyword.id,
       device,

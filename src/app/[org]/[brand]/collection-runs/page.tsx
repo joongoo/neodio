@@ -1,4 +1,6 @@
 import { CollectionRunsClient } from "@/components/collection-runs/CollectionRunsClient";
+import Link from "next/link";
+import { RequestLogList } from "@/components/collection-runs/RequestLogList";
 import { listCollectedRuns } from "@/lib/backend/collectionRuns";
 import { isBotBlocked } from "@/lib/backend/collectionRunsTypes";
 import { processStoredPromptRuns as processPromptRuns } from "@/lib/backend/database/analysis";
@@ -19,10 +21,14 @@ export const dynamic = "force-dynamic";
 export default async function CollectionRunsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; size?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
   const tenant = await getCurrentTenant();
+  if (params.view !== "items") {
+    const query = new URLSearchParams(Object.entries(params).flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []));
+    return <RequestLogList base={tenant.base} organizationId={tenant.orgId} brandId={tenant.brandId} query={query} />;
+  }
   const [runFiles, brandsData, realCategories, activeProviderTasks, collectionRequests] = await Promise.all([
     listCollectedRuns(tenant.orgId),
     db.brandsManagement.get(tenant.orgId),
@@ -47,15 +53,15 @@ export default async function CollectionRunsPage({
   const listRows = [...activeProviderTasks.map(toPendingRunListRow), ...runFiles.map(toRunListRow)]
     .sort((a, b) => b.runAt.localeCompare(a.runAt));
   const listPage = pageRunList(listRows, {
-    search: params.q,
+    search: typeof params.q === "string" ? params.q : undefined,
     page: Number(params.page),
     pageSize: Number(params.size),
   });
 
   return (
-    <CollectionRunsClient
+    <><div className="mx-auto max-w-6xl px-6 pt-6"><Link className="text-sm font-medium text-slate-700 hover:underline" href={`${tenant.base}/collection-runs`}>← 수집 요청 목록</Link></div><CollectionRunsClient
       listPage={listPage}
-      search={params.q ?? ""}
+      search={typeof params.q === "string" ? params.q : ""}
       brandId={tenant.brandId ?? ""}
       pollingTaskIds={activeProviderTasks.filter((task) => task.status !== "reserved").map((task) => task.id)}
       collectionRequests={collectionRequests}
@@ -67,6 +73,6 @@ export default async function CollectionRunsPage({
         ownCitations: processed.citations.filter((c) => c.isOwnDomain).length,
       }}
       categories={(brandsData?.categories ?? realCategories).map((c) => c.name)}
-    />
+    /></>
   );
 }

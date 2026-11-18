@@ -3,6 +3,10 @@ import test from "node:test";
 import { Pool } from "pg";
 import { getRequestLog, listRequestLogs, parseRequestLogOptions, type RequestLogDatabase } from "./requestLog";
 import { listRequestItems, parseRequestItemOptions } from "./requestItems";
+import { randomUUID } from "node:crypto";
+import { getPromptStore } from "@/lib/backend/database";
+import { registerLegacyRequest, linkLegacyRun } from "./legacyRequest";
+import type { PromptRunSeed } from "@/lib/db/types";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -11,6 +15,33 @@ test("request filters reject invalid inputs and normalize time zones", () => {
   assert.equal(parseRequestLogOptions(new URLSearchParams({ from: "2026-11-18T09:00:00+09:00" })).from, "2026-11-18T00:00:00.000Z");
   assert.throws(() => parseRequestItemOptions(new URLSearchParams("status=invalid")));
   assert.equal(parseRequestItemOptions(new URLSearchParams("status=reserved")).status, "reserved");
+});
+
+test("legacy registration is idempotent and links results to the approved request", { skip: !process.env.POSTGRES_URL && !process.env.POSTGRES_URL_NON_POOLING }, async () => {
+  const store = await getPromptStore();
+  const rollback = new Error("diagnostic rollback");
+  try {
+    await assert.rejects(store.transaction(async () => {
+      const [sample] = await store.query<{ organization_id: string; brand_id: string; prompt_id: string; text: string }>(
+        `SELECT p.organization_id,t.brand_id,p.id AS prompt_id,p.text FROM prompts p JOIN prompt_tracking t ON t.organization_id=p.organization_id AND t.prompt_id=p.id WHERE t.status='active' LIMIT 1`);
+      assert.ok(sample, "an active tracked prompt is required for this rollback integration test");
+      const clientId = `test-${randomUUID()}`;
+      const planned = [{ query: sample.text, promptId: sample.prompt_id, surface: "naver-ai", device: "desktop" }];
+      const first = await registerLegacyRequest(sample.organization_id, sample.brand_id, clientId, null, planned);
+      const second = await registerLegacyRequest(sample.organization_id, sample.brand_id, clientId, null, planned);
+      assert.equal(first.created, 1);
+      assert.equal(second.created, 0);
+      assert.equal(first.requestId, second.requestId);
+      const run: PromptRunSeed = { id: `run-${randomUUID()}`, promptId: sample.prompt_id, llmModelId: "model-naver-ai", marketId: "market-kr", runAt: new Date().toISOString(), status: "success", rawResponse: "test", rawMetadata: { source: "naver-ai-search", query: sample.text } };
+      await store.importRun(sample.organization_id, { dir: "test-legacy", filename: `${run.id}.json`, promptRun: run }, null, sample.prompt_id);
+      await linkLegacyRun(sample.organization_id, sample.brand_id, clientId, run);
+      const page = await listRequestItems(sample.organization_id, sample.brand_id, first.requestId, parseRequestItemOptions(new URLSearchParams()));
+      assert.equal(page?.rows[0].result?.runId, run.id);
+      assert.equal(page?.rows[0].status, "completed");
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, first.requestId))?.counts.total, 1);
+      throw rollback;
+    }), error => error === rollback);
+  } finally { await store.close(); }
 });
 
 test("Postgres request list scopes, aggregates before filtering and clamps pages", { skip: !process.env.POSTGRES_URL && !process.env.POSTGRES_URL_NON_POOLING }, async () => {
@@ -24,6 +55,14 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
       CREATE TEMP TABLE provider_tasks AS SELECT * FROM public.provider_tasks WITH NO DATA;
       CREATE TEMP TABLE neodio_users AS SELECT * FROM public.neodio_users WITH NO DATA;
       CREATE TEMP TABLE prompt_runs AS SELECT * FROM public.prompt_runs WITH NO DATA;`);
+    await client.query(`CREATE TEMP TABLE legacy_items_test AS SELECT * FROM provider_tasks WITH NO DATA;
+      ALTER TABLE legacy_items_test ADD COLUMN run_id text;
+      CREATE TEMP VIEW collection_execution_items AS
+        SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,created_at,submitted_at,completed_at,
+          submission_attempted_at,estimated_cost_usd,actual_cost_usd,error_code,error_message,retry_of_task_id,'serp-api'::text AS execution_kind,NULL::text AS run_id FROM provider_tasks
+        UNION ALL
+        SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,created_at,submitted_at,completed_at,
+          submission_attempted_at,estimated_cost_usd,actual_cost_usd,error_code,error_message,retry_of_task_id,'legacy'::text,run_id FROM legacy_items_test;`);
     await client.query(`INSERT INTO collection_requests(id,organization_id,brand_id,request_kind,status,created_at,approved_at,estimated_cost_usd,cancel_requested)
       VALUES ('a','org','brand','manual','queued','2026-11-18T01:00:00.000Z','2026-11-18T01:00:00.000Z',0.3,false),
       ('b','org','brand','manual','queued','2026-11-18T02:00:00.000Z','2026-11-18T02:00:00.000Z',0.1,false),
@@ -62,6 +101,15 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal((await items("a", "surface=naver-aio&page=99"))?.page, 1);
     assert.equal(await items("hidden"), null);
     assert.equal(await items("other-brand"), null);
+    await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,actual_cost_usd,query_snapshot,run_id)
+      VALUES ('legacy-1','org','brand','a','naver-ai','desktop','completed',0,'legacy query','run-legacy');
+      INSERT INTO prompt_runs(id,organization_id,run_at,raw_response,source_dir,source_filename,original_json)
+      VALUES ('run-legacy','org','2026-11-18T06:00:00.000Z','legacy answer','.tmp/naver-ai','legacy.json','{}');`);
+    assert.equal((await getRequestLog("org", "brand", "a", db))?.counts.total, 3);
+    const mixed = await items("a");
+    assert.equal(mixed?.rows.length, 3);
+    assert.equal(mixed?.rows.find(row => row.id === "legacy-1")?.executionKind, "legacy");
+    assert.equal(mixed?.rows.find(row => row.id === "legacy-1")?.result?.filename, "legacy.json");
   } finally {
     await client.query("ROLLBACK");
     client.release();

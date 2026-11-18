@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
 
   // 키워드 하나를 "지금" 수집하는 건 오늘 이미 수집했어도 다시 보려는 것이다.
   const job = startAioJob({
+    requestId: typeof body?.requestId === "string" ? body.requestId : undefined,
     brandId,
     keywordIds: selectedIds,
     label,

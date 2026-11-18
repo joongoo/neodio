@@ -20,6 +20,9 @@ export interface RunListRow {
   citationCount: number | null;
   state: "pending" | "success" | "blocked" | "failed";
   progressStatus?: ProviderTaskStatus;
+  requestId?: string;
+  taskId?: string;
+  errorMessage?: string | null;
 }
 
 const ENGINE_LABEL: Record<string, string> = {

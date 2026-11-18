@@ -50,8 +50,8 @@ test("SERP API surfaces become separate reservation steps while other surfaces k
   const enabled = new Set(["google-aio", "google-ai-mode", "naver-aio", "naver-ai"] as const);
   const serpApi = new Set(["google-ai-mode", "naver-aio"] as const);
   assert.deepEqual(buildCollectSteps(selected, enabled, serpApi, "batch-1"), [
-    { kind: "ai", engines: ["naver"], keywords: ["A", "B"] },
-    { kind: "aio", promptIds: ["pa"] },
+    { kind: "ai", engines: ["naver"], keywords: ["A", "B"], requestId: "batch-1" },
+    { kind: "aio", promptIds: ["pa"], requestId: "batch-1" },
     { kind: "serp-api", surface: "google-ai-mode", prompts: [{ promptId: "pa", query: "A" }], requestId: "batch-1" },
     { kind: "serp-api", surface: "naver-aio", prompts: [{ promptId: "pb", query: "B" }], requestId: "batch-1" },
   ]);

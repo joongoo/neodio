@@ -7,11 +7,11 @@ import { SERP_API_SURFACES, type SerpApiSurface } from "@/lib/dataforseoPricing"
 
 export type CollectEngine = "naver" | "naver-overview" | "google";
 
-export type CollectStep =
+export type CollectStep = (
   | { kind: "ai"; engines: CollectEngine[]; keywords: string[] }
   | { kind: "aio"; promptIds: string[] }
   | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[]; force?: boolean }
-  | { kind: "gemini"; keywords: string[] };
+  | { kind: "gemini"; keywords: string[] }) & { requestId?: string };
 
 export interface ActiveSerpApiTask {
   id: string;
@@ -77,7 +77,7 @@ export function buildCollectSteps(
   }
   const geminiKeywords = enabled.has("gemini") ? rows.filter((row) => surfacesOf(row).includes("gemini")).map((row) => row.prompt) : [];
   if (geminiKeywords.length > 0) steps.push({ kind: "gemini", keywords: geminiKeywords });
-  return steps;
+  return requestId === "manual" ? steps : steps.map(step => ({ ...step, requestId }));
 }
 
 /** DB에 남은 미완료 Provider 작업을 원래 수집 묶음·표면별 진행 단계로 복원한다. */
