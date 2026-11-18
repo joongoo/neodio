@@ -3,29 +3,16 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getManagedBrandById } from "../brandsManagementStore";
 import { getBrandAioSettings, listBrandYoutubeChannels } from "../brandAioConfig";
-import { resolveYoutubeVideo } from "../youtube";
 import { getPromptStore } from "../database";
 import { linkLegacyRun } from "../dataforseo/legacyRequest";
 import { buildJudgeContext, CollectedSource, judgeCitations } from "./judge";
-import { cacheVideo, collectedToday, getCachedVideos, keywordPromptContext, listAioKeywords, saveAioObservation, seoulDate } from "./store";
-import { AioCitation, AioDevice, AioObservationStatus, AioParagraph, PromptRunSeed, RawCitationMetadata, YoutubeVideoMeta } from "@/lib/db/types";
+import { collectedToday, keywordPromptContext, listAioKeywords, saveAioObservation, seoulDate } from "./store";
+import { AioCitation, AioDevice, AioObservationStatus, AioParagraph, PromptRunSeed } from "@/lib/db/types";
+import { lookupAioVideo, toRawAioCitation } from "./citationEnrichment";
 
 const GOOGLE_AIO_MODEL_ID = "model-google-aio";
 const DEFAULT_MARKET_ID = "market-kr";
 
-function toRawCitation(citation: AioCitation): RawCitationMetadata {
-  return {
-    title: citation.title,
-    url: citation.url,
-    domain: citation.domain,
-    isOwnDomain: citation.sourceType === "own_video" || citation.sourceType === "own_web",
-    position: citation.position,
-    sourceType: citation.sourceType,
-    videoId: citation.videoId,
-    channelId: citation.channelId,
-    startSeconds: citation.startSeconds,
-  };
-}
 
 // 구글AIO 결과를 다른 플랫폼(네이버AI/구글AI모드)과 같은 prompt_runs에도
 // 적재한다 — 수집 로그·가시성 개요·브랜드 가시성이 전부 prompt_runs만
@@ -71,7 +58,7 @@ async function syncAioRunToPromptRuns(params: {
         screenshotPath: params.screenshotPath ?? undefined,
         htmlPath: params.htmlPath ?? undefined,
         answerTextLength: params.aioText?.length,
-        citations: params.citations.map(toRawCitation),
+        citations: params.citations.map(toRawAioCitation),
         errorMessage,
       },
     };
@@ -191,14 +178,6 @@ function runCollector(args: string[], onChild?: (child: ChildProcess | null) => 
   });
 }
 
-// 영상 → 채널 조회는 캐시 우선. 한 번 본 영상은 다시 묻지 않는다.
-async function lookupVideo(videoId: string): Promise<YoutubeVideoMeta | null> {
-  const cached = (await getCachedVideos([videoId])).get(videoId);
-  if (cached) return cached;
-  const fetched = await resolveYoutubeVideo(videoId).catch(() => null);
-  if (fetched) await cacheVideo(fetched);
-  return fetched;
-}
 
 export interface AioPlan {
   brand: NonNullable<Awaited<ReturnType<typeof getManagedBrandById>>>;
@@ -250,7 +229,7 @@ export async function saveCollectedResult(params: {
   context: ReturnType<typeof buildJudgeContext>;
 }) {
   const { brandId, keywordId, device, country, language, result, context } = params;
-  const citations = result.status === "aio_present" ? await judgeCitations(result.sources ?? [], context, lookupVideo) : [];
+  const citations = result.status === "aio_present" ? await judgeCitations(result.sources ?? [], context, lookupAioVideo) : [];
   const saved = await saveAioObservation(brandId, {
     keywordId,
     device,

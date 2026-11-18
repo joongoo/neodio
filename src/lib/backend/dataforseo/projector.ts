@@ -3,6 +3,10 @@ import { getPromptStore } from "@/lib/backend/database";
 import type { CollectedRunFile } from "@/lib/backend/collectionRunsTypes";
 import type { AioCitation, PromptRunMetadata, PromptRunSeed } from "@/lib/db/types";
 import type { DataForSeoSurface, NormalizedAiObservation, ProviderTaskRecord } from "./types";
+import { getManagedBrandById } from "../brandsManagementStore";
+import { listBrandYoutubeChannels } from "../brandAioConfig";
+import { buildJudgeContext, judgeCitations } from "../aio/judge";
+import { lookupAioVideo, toRawAioCitation } from "../aio/citationEnrichment";
 
 export interface ObservationProjector {
   project(task: ProviderTaskRecord, observation: NormalizedAiObservation): Promise<void>;
@@ -60,42 +64,43 @@ export function observationRunFile(task: ProviderTaskRecord, observation: Normal
   return { dir: "dataforseo", filename: `${task.id}.json`, promptRun };
 }
 
-function youtubeVideoId(rawUrl: string): string | null {
-  try {
-    const url = new URL(rawUrl);
-    if (url.hostname === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] ?? null;
-    if (url.hostname.endsWith("youtube.com")) return url.searchParams.get("v");
-  } catch { /* Invalid provider URL is retained as a generic citation. */ }
-  return null;
+interface ProjectorDependencies {
+  getStore: () => Promise<Pick<Awaited<ReturnType<typeof getPromptStore>>, "importRun">>;
+  getBrand: typeof getManagedBrandById;
+  getChannels: typeof listBrandYoutubeChannels;
+  getKeywordIds: typeof aioKeywordIdsForPrompts;
+  saveObservation: typeof saveAioObservation;
+  lookupVideo: typeof lookupAioVideo;
 }
 
-function aioCitations(observation: NormalizedAiObservation): AioCitation[] {
-  return observation.citations.map((citation) => {
-    const videoId = youtubeVideoId(citation.url);
-    return {
-      position: citation.order,
-      url: citation.url,
-      domain: citation.domain,
-      title: citation.title,
-      sourceType: videoId ? "other_youtube" : "other",
-      videoId,
-      channelId: null,
-      startSeconds: null,
-    };
-  });
-}
+const defaultDependencies: ProjectorDependencies = { getStore: getPromptStore, getBrand: getManagedBrandById,
+  getChannels: listBrandYoutubeChannels, getKeywordIds: aioKeywordIdsForPrompts,
+  saveObservation: saveAioObservation, lookupVideo: lookupAioVideo };
 
 export class PostgresObservationProjector implements ObservationProjector {
+  private readonly dependencies: ProjectorDependencies;
+  constructor(overrides: Partial<ProjectorDependencies> = {}) { this.dependencies = { ...defaultDependencies, ...overrides }; }
+
   async project(task: ProviderTaskRecord, observation: NormalizedAiObservation): Promise<void> {
-    const store = await getPromptStore();
-    await store.importRun(task.organizationId, observationRunFile(task, observation), null, task.promptId);
+    const deps = this.dependencies;
+    const file = observationRunFile(task, observation);
+    let citations: AioCitation[] = [];
+    if (task.surface === "google-aio" && task.brandId && observation.outcome === "ai_answered") {
+      const brand = await deps.getBrand(task.brandId);
+      if (!brand || brand.organizationId !== task.organizationId) throw new Error("AIO 판정 대상 브랜드의 조직이 일치하지 않습니다.");
+      const channels = await deps.getChannels(task.brandId);
+      citations = await judgeCitations(observation.citations.map(citation => ({ ...citation, position: citation.order })),
+        buildJudgeContext(brand, channels.map(channel => channel.channelId)), deps.lookupVideo);
+      file.promptRun.rawMetadata.citations = citations.map(toRawAioCitation);
+    }
+    const store = await deps.getStore();
+    await store.importRun(task.organizationId, file, null, task.promptId);
 
     // The dedicated AIO dashboard currently represents only Google AI Overview.
     if (task.surface !== "google-aio" || !task.brandId || !task.promptId) return;
-    const keywordIds = await aioKeywordIdsForPrompts(task.brandId, [task.promptId]);
-    const citations = aioCitations(observation);
+    const keywordIds = await deps.getKeywordIds(task.brandId, [task.promptId]);
     for (const keywordId of keywordIds) {
-      await saveAioObservation(task.brandId, {
+      await deps.saveObservation(task.brandId, {
         providerTaskId: task.id,
         keywordId,
         device: task.device,

@@ -15,6 +15,14 @@
 
 ## 최신 인수인계
 
+### 2026-11-18 — SERP AIO 기존 인용 판정 재사용
+
+- 사용자 요청으로 호환성 검토의 첫 문제만 수정했습니다. 공통 AppShell 뱃지 집계 실패 격리는 이번 범위에 포함하지 않았습니다.
+- PostgresObservationProjector는 google-aio + 브랜드가 있는 응답에서 실제 브랜드/등록 채널로 buildJudgeContext를 만들고 기존 judgeCitations를 호출합니다. 브랜드 조직이 task 조직과 다른 경우 저장 전 거부합니다. 판정된 citations를 prompt_runs.original_json과 aio_observations에 동일하게 저장합니다.
+- 기존 collector의 캐시 우선 lookupVideo와 RawCitation 변환을 aio/citationEnrichment.ts로 추출해 양쪽에서 재사용합니다. 영상 캐시가 없으면 기존과 동일한 YouTube 메타데이터 조회(API 키 설정 시 해당 API, 아니면 페이지 조회)를 사용할 수 있습니다. 이 작업 중 실제 네트워크 호출은 하지 않았습니다.
+- AI absence는 영상 조회 없이 빈 인용을 저장하고, Google AI Mode/Naver AIO의 기존 투영 경로는 유지합니다. API 작업 자동 재제출/과거 데이터 일괄 갱신은 없습니다. 이미 완료된 관측의 소급 보정은 별도 작업입니다.
+- 테스트는 주입된 가짜 저장소·영상 메타데이터로 자체 판정 함수를 대체하지 않고 실제 judgeCitations를 실행합니다. 자사 영상·웹·경쟁사·타 영상·기타·Shorts·타임스탬프·메타데이터 조회 불가와 조직 격리를 검증합니다.
+
 ### 2026-11-18 — 실제 PostgreSQL 선점·취소 경합 / 예산 제한 보류
 
 - 이전 worker 중단 모의 테스트 작업은 `9c182c7`로 커밋했습니다. 사용자 요청: 예산 제한 기능은 당장 필요 없으므로 현재 구현 순서와 출시 필수 잔여 범위에서 제외합니다. 아래 과거 계획의 예산 제한 기재보다 본 결정을 우선합니다.
