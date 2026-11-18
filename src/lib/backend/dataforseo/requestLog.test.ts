@@ -204,6 +204,10 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "failed retry is counted instead of its original");
     assert.equal((await getCollectionActivitySummary("foreign-org", "brand", db)).attentionCount, 0);
     assert.equal((await list("attention=1&page=99")).page, 1);
+    await client.query("UPDATE provider_tasks SET status='submitting' WHERE id='t1'");
+    await client.query("UPDATE provider_tasks SET status='raw_saved' WHERE id='t2'");
+    const phases = (await getRequestLog("org", "brand", "a", db))!.phases;
+    assert.deepEqual(phases, { submitting: 1, collecting: 0, processing: 1 }, "progress phases come only from scoped DB states");
     await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('foreign-retry','other','other-brand','hidden','dataforseo','google-aio','desktop','reserved','hidden','t1')`);
     assert.equal((await items("a"))?.rows.find(item => item.id === "t1")?.retries.length, 0, "item links never expose another tenant's retry request");

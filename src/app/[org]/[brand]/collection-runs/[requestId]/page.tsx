@@ -4,8 +4,8 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { getRequestLog, listRequestLogs, parseRequestLogOptions, RequestLogInputError } from "@/lib/backend/dataforseo/requestLog";
 import { RequestRelations } from "@/components/collection-runs/RequestRelations";
 import { listRequestItems, parseRequestItemOptions } from "@/lib/backend/dataforseo/requestItems";
-import { RequestFilters, RequestSummary } from "@/components/collection-runs/RequestLogViews";
-import { RequestRunList } from "@/components/collection-runs/RequestRunList";
+import { RequestFilters } from "@/components/collection-runs/RequestLogViews";
+import { RequestDetailLive } from "@/components/collection-runs/RequestDetailLive";
 import { listCategories } from "@/lib/backend/categoryStore";
 import { collectorDownloadsConfigured, collectionUsesLocalAgent } from "@/lib/backend/collectionMode";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
@@ -46,11 +46,10 @@ export default async function RequestLogDetailPage({ params, searchParams }: {
   return <section className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
     <Link href={`${listPath}?${back}`} className="text-sm underline">← 수집 요청 목록</Link>
     <header><h1 className="text-2xl font-semibold text-neutral-900">수집 요청 상세</h1><p className="mt-1 break-all text-xs text-neutral-500">{request.id}</p></header>
-    <RequestSummary request={request} />
+    <RequestDetailLive key={requestId} initial={{ request, items }} query={query.toString()} listProps={{ requestId, brandId: tenant.brandId, categories: categories.map(c => c.name), search: options.q, orgName: tenant.org.name, base: tenant.base, serverCollector: !collectionUsesLocalAgent(), downloadPlatforms: collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : [] }}>
     <RequestRelations parent={parent} retries={retries.rows} total={retries.filteredTotal} page={retries.page} pageCount={retries.pageCount} path={path} query={query.toString()} listPath={listPath} itemCount={request.counts.total} />
     <div className="rounded-xl border border-neutral-200 bg-white p-4"><RequestFilters path={path} query={query} itemMode /></div>
-    <RequestRunList key={requestId} items={items} requestId={requestId} brandId={tenant.brandId} total={request.counts.total} categories={categories.map(c => c.name)} search={options.q} orgName={tenant.org.name} base={tenant.base} serverCollector={!collectionUsesLocalAgent()} downloadPlatforms={collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : []} />
-    <p className="text-xs text-neutral-500">최신 상태는 페이지를 새로고침해 확인하세요.</p>
+    </RequestDetailLive>
     <Link className="text-sm underline" href={`${listPath}?view=items`}>이전 개별 수집 이력</Link>
   </section>;
 }

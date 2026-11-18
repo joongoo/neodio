@@ -47,6 +47,7 @@ export interface RequestLogRow {
   surfaces: string[];
   devices: string[];
   counts: { total: number; waiting: number; running: number; completed: number; failed: number; attention: number; cancelled: number };
+  phases?: { submitting: number; collecting: number; processing: number };
   estimatedCostUsd: number;
   actualCostUsd: number;
   cancelRequested: boolean;
@@ -86,6 +87,9 @@ export async function listRequestLogs(
       SELECT r.id, count(t.id)::int AS total,
         count(t.id) FILTER (WHERE t.status='reserved')::int AS waiting,
         count(t.id) FILTER (WHERE t.status IN ('submitting','queued','collecting','raw_saved','normalized','artifact_failed','projection_failed'))::int AS running,
+        count(t.id) FILTER (WHERE t.status='submitting')::int AS submitting,
+        count(t.id) FILTER (WHERE t.status IN ('queued','collecting'))::int AS collecting,
+        count(t.id) FILTER (WHERE t.status IN ('raw_saved','normalized','artifact_failed','projection_failed'))::int AS processing,
         count(t.id) FILTER (WHERE t.status='completed')::int AS completed,
         count(t.id) FILTER (WHERE t.status IN ('provider_failed','parse_failed'))::int AS failed,
         count(t.id) FILTER (WHERE t.status='submission_unknown')::int AS attention,
@@ -100,7 +104,7 @@ export async function listRequestLogs(
         AND t.organization_id=r.organization_id AND t.brand_id=r.brand_id
       GROUP BY r.id
     ), summaries AS (
-      SELECT r.*, a.total,a.waiting,a.running,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
+      SELECT r.*, a.total,a.waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
         CASE WHEN a.attention>0 THEN 'needs_attention'
           WHEN a.total>0 AND a.completed+a.failed+a.cancelled>=a.total THEN
             CASE WHEN a.failed>0 THEN 'partially_failed' WHEN a.cancelled=a.total THEN 'cancelled' ELSE 'completed' END
@@ -125,6 +129,7 @@ export async function listRequestLogs(
         'createdAt',p.created_at,'approvedAt',p.approved_at,'completedAt',p.finished_at,'status',p.display_status,
         'surfaces',p.surfaces,'devices',p.devices,
         'counts',jsonb_build_object('total',p.total,'waiting',p.waiting,'running',p.running,'completed',p.completed,'failed',p.failed,'attention',p.attention,'cancelled',p.cancelled),
+        'phases',jsonb_build_object('submitting',p.submitting,'collecting',p.collecting,'processing',p.processing),
         'estimatedCostUsd',p.estimated_cost_usd::float8,'actualCostUsd',p.actual_cost,
         'cancelRequested',p.cancel_requested,'retryOfRequestId',p.retry_of_request_id
       ) ORDER BY p.created_at ${direction},p.id ${direction}) FROM paged p),'[]'::jsonb)) AS payload
