@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Printer, Lock, Trash2, Save } from "lucide-react";
 import { EditOnly } from "@/components/auth/PermissionsProvider";
 import { RateBars, TrendChart } from "@/components/reports/ReportCharts";
-import { REPORT_SECTIONS, RANGE_LABEL, type ReportKpi, type ReportSectionKey, type ReportSections } from "@/lib/report";
+import { REPORT_SECTIONS, RANGE_LABEL, type ReportKpi, type ReportSectionKey, type ReportSections, trendCaveat } from "@/lib/report";
 import type { Report } from "@/lib/backend/reportStore";
 
 const fmtDate = (iso: string) => {
@@ -168,6 +168,18 @@ export function ReportView({ report }: { report: Report }) {
         {on("trend") && s.kpis && (
           <section className="break-inside-avoid">
             <Heading n={number("trend")}>추이</Heading>
+            {(() => {
+              const caveat = trendCaveat(s);
+              return caveat ? (
+                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                  <p className="font-medium">추이를 읽을 때 주의해 주세요</p>
+                  <p className="mt-1">{caveat.summary}</p>
+                  <ul className="mt-1 list-disc pl-4 text-amber-800">
+                    {caveat.weeks.map((w) => <li key={w.week}>{w.week}: {w.note}</li>)}
+                  </ul>
+                </div>
+              ) : null;
+            })()}
             <TrendChart series={[
               { name: "가시성 점수", color: "#1e293b", points: weekly(s.kpis.score) },
               { name: "언급률(%)", color: "#2563eb", points: weekly(s.kpis.mention) },

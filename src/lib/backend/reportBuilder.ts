@@ -1,5 +1,5 @@
 import {
-  getRealCitedSources, getRealCollectionQuality, getRealConsistency, getRealMarketComparison, getRealMentionsByModel, getRealPlacementStats,
+  getRealCitedSources, getRealCollectionQuality, getRealComparability, getRealConsistency, getRealMarketComparison, getRealMentionsByModel, getRealPlacementStats,
   getRealReportFacts, getRealStatSeries, getRealTopBrands, getRealTopicRows, type RealDataFilters, type RealMetric,
 } from "./collectionStatsReader";
 import { getPromptStore } from "./database";
@@ -20,7 +20,7 @@ export async function buildReportSnapshot(params: {
   filterLabels: { market: string; model: string; scope: string };
 }): Promise<ReportSnapshot> {
   const { orgId, brand, range, filters } = params;
-  const [stats, ranked, placement, competitors, topBrands, topicRows, sources, quality, consistency, facts] = await Promise.all([
+  const [stats, ranked, placement, competitors, topBrands, topicRows, sources, quality, consistency, facts, comparability] = await Promise.all([
     getRealStatSeries(range, filters),
     getRealMentionsByModel(range, filters),
     getRealPlacementStats(filters),
@@ -31,6 +31,7 @@ export async function buildReportSnapshot(params: {
     getRealCollectionQuality(filters),
     getRealConsistency(10, filters),
     getRealReportFacts(range, filters),
+    getRealComparability(range, filters),
   ]);
 
   const store = await getPromptStore();
@@ -51,6 +52,7 @@ export async function buildReportSnapshot(params: {
     period: { range, label: RANGE_LABEL[range], weekLabels: kpis?.score.sparkline.map((p) => p.week) ?? [] },
     filters: params.filterLabels,
     kpis,
+    comparability: comparability?.map((c) => ({ week: c.week, status: c.comparison.status, note: c.comparison.note })),
     engines: (ranked?.visibility ?? []).map((row) => ({ label: row.label, visibility: row.value })),
     placement: placement ?? [],
     competitors: (competitors ?? []).slice(0, 8).map((row) => ({ brand: row.brand, isSelf: row.isSelf, mentionRate: row.mentions, citationRate: row.citations })),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildActionDrafts, buildInsights, defaultSections, REPORT_SECTIONS, type ReportKpi, type ReportSnapshot } from "./report";
+import { buildActionDrafts, buildInsights, defaultSections, REPORT_SECTIONS, trendCaveat, type ReportKpi, type ReportSnapshot } from "./report";
 
 const kpi = (value: number, direction: "up" | "down" | "flat" = "up", percent = 5): ReportKpi => ({ value, trend: { direction, percent }, trendUnit: "%", sparkline: [] });
 const snapshot = (over: Partial<ReportSnapshot> = {}): ReportSnapshot => ({
@@ -44,4 +44,23 @@ test("실행 제안 초안과 섹션 기본값", () => {
   assert.equal(Object.keys(sections).length, REPORT_SECTIONS.length);
   assert.ok(sections.summary.commentary.startsWith("• ") && sections.actions.commentary.includes("GEO 컨설팅"));
   assert.equal(sections.appendix.commentary, "");
+});
+
+test("추이 주의(D9): 같은 조건이 아닌 주가 있을 때만 안내한다", () => {
+  assert.equal(trendCaveat(snapshot()), null); // 예전 스냅샷
+  const ok = snapshot({ comparability: [{ week: "9/7", status: "first", note: "" }, { week: "9/14", status: "comparable", note: "같은 조건" }] });
+  assert.equal(trendCaveat(ok), null);
+  const mixed = snapshot({
+    comparability: [
+      { week: "9/7", status: "first", note: "" },
+      { week: "9/14", status: "shifted", note: "구성 변동" },
+      { week: "9/21", status: "break", note: "질문 편집" },
+      { week: "9/28", status: "comparable", note: "같은 조건" },
+    ],
+  });
+  const c = trendCaveat(mixed)!;
+  assert.match(c.summary, /2\/3개/);
+  assert.match(c.summary, /질문·엔진·마켓이 바뀐 주 1개/);
+  assert.match(c.summary, /질문 구성이 달라진 주 1개/);
+  assert.equal(c.weeks.length, 2);
 });

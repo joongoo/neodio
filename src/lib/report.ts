@@ -2,6 +2,7 @@
 // 서버·클라이언트가 함께 쓰는 순수 모듈: 타입, 섹션 정의, 자동 인사이트.
 import type { CollectionQualityRow, ConsistencySummary } from "@/lib/db";
 import type { PlacementSummary } from "@/lib/placement";
+import type { WeekComparison } from "@/lib/comparability";
 
 export type ReportRange = "1w" | "2w" | "4w";
 
@@ -31,6 +32,8 @@ export interface ReportSnapshot {
   period: { range: ReportRange; label: string; weekLabels: string[] };
   filters: { market: string; model: string; scope: string };
   kpis: { score: ReportKpi; mention: ReportKpi; citation: ReportKpi } | null;
+  /** 주별 비교 가능성(D9) — 없으면 예전 스냅샷. 첫 주는 비교 대상이 없어 status가 first. */
+  comparability?: { week: string; status: WeekComparison["status"]; note: string }[];
   engines: { label: string; visibility: number }[];
   placement: PlacementSummary[];
   competitors: { brand: string; isSelf: boolean; mentionRate: number; citationRate: number }[];
@@ -93,6 +96,21 @@ export function buildInsights(s: ReportSnapshot): string[] {
   const exposed = s.sources.filter((src) => src.myBrandMentions === 0 && src.coMentioned);
   if (exposed.length > 0) out.push(`경쟁사만 함께 언급되고 우리는 빠진 인용 소스가 ${exposed.length}곳 이상이에요(예: ${exposed[0].domain}).`);
   return out.slice(0, 5);
+}
+
+/** 추이 해석 주의(D9) — 직전 주와 같은 조건이 아닌 주가 있으면 주별 안내와 한 줄 요약을 돌려준다. 없으면 null. */
+export function trendCaveat(s: ReportSnapshot): { summary: string; weeks: { week: string; status: string; note: string }[] } | null {
+  const rows = (s.comparability ?? []).filter((c) => c.status !== "first" && c.status !== "comparable");
+  if (rows.length === 0) return null;
+  const total = (s.comparability ?? []).filter((c) => c.status !== "first").length;
+  const broke = rows.filter((c) => c.status === "break").length;
+  const shifted = rows.filter((c) => c.status === "shifted").length;
+  const parts: string[] = [];
+  if (broke) parts.push(`질문·엔진·마켓이 바뀐 주 ${broke}개`);
+  if (shifted) parts.push(`질문 구성이 달라진 주 ${shifted}개`);
+  const other = rows.length - broke - shifted;
+  if (other) parts.push(`비교 조건이 불확실한 주 ${other}개`);
+  return { summary: `직전 주와 같은 조건이 아닌 주가 ${rows.length}/${total}개예요(${parts.join(", ")}). 이 주들의 증감은 성과 변화가 아니라 측정 대상이 달라진 영향일 수 있어요.`, weeks: rows };
 }
 
 /** 실행 제안 초안 — 스냅샷의 공백에서 바로 할 수 있는 일을 뽑는다. */
