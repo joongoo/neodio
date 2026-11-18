@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CircleCheck, Loader2, TriangleAlert } from "lucide-react";
+import { Ban, CircleCheck, Clock3, Loader2, TriangleAlert } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { CollectorProblem, type Problem } from "./AgentCollectionModal";
@@ -23,7 +23,7 @@ const SERP_RESERVE_BATCH_SIZE = 200;
 const IMPORT_CHUNK = 20;
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 
-type PanelState = { label: string; done: number; total: number; current: string | null; waitUntil: number | null; phase: "running" | "done" | "stopped" | "error"; note: string | null };
+type PanelState = { label: string; done: number; total: number; current: string | null; waitUntil: number | null; phase: "waiting" | "running" | "done" | "stopped" | "error"; note: string | null };
 
 function stepLabel(step: CollectStep): string {
   if (step.kind === "aio") return "구글AIO";
@@ -101,7 +101,11 @@ export function ParallelCollectModal({
           ? "no_chrome"
           : null;
     setGate(problem ? { problem, status } : "ready");
-  }, [steps]);
+    if (problem) steps.forEach((step, index) => {
+      if (step.kind !== "serp-api") patch(index, { phase: "waiting", note: "수집기를 확인하지 못해 대기 중입니다. 수집기 연결 후 다시 시작해 주세요." });
+    });
+    else setStates(previous => previous.map(state => state.phase === "waiting" ? { ...state, phase: "running", note: null } : state));
+  }, [steps, patch]);
   const check = useCallback(() => {
     setGate("checking");
     return run();
@@ -264,6 +268,8 @@ function PanelShell({ state, onCancel, children }: { state: PanelState; onCancel
             <Loader2 size={16} className="shrink-0 animate-spin text-slate-600" />
           ) : state.phase === "done" ? (
             <CircleCheck size={16} className="shrink-0 text-emerald-500" />
+          ) : state.phase === "waiting" ? (
+            <Clock3 size={16} className="shrink-0 text-neutral-500" />
           ) : (
             <TriangleAlert size={16} className="shrink-0 text-amber-500" />
           )}
@@ -499,7 +505,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
         });
         router.refresh();
       } catch (e) {
-        if (!stopped) patch(index, { phase: "error", current: null, note: e instanceof Error ? e.message : "수집하지 못했습니다." });
+        if (!stopped) patch(index, { phase: jobId ? "error" : "waiting", current: null, note: e instanceof Error ? e.message : "수집하지 못했습니다." });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -526,7 +532,7 @@ function AioRunner({ brandId, promptIds, devices, targets, requestId, index, pat
     (async () => {
       const result = await startAioCollect({ brandId, promptIds, devices, targets, requestId, force: false });
       if (!result.ok) {
-        patch(index, { phase: "error", note: result.error || "수집기를 확인하세요." });
+        patch(index, { phase: result.handled ? "waiting" : "error", note: result.error || "수집기를 확인하세요." });
         return;
       }
       let job: AioCollectJob = result.job;

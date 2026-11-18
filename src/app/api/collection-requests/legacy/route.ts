@@ -35,7 +35,7 @@ export async function PATCH(request: NextRequest) {
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   const step = body?.step;
-  if (!step || typeof step.requestId !== "string" || !["ai", "aio", "gemini"].includes(step.kind) || !["running", "done", "error", "stopped"].includes(body.phase)) {
+  if (!step || typeof step.requestId !== "string" || !["ai", "aio", "gemini"].includes(step.kind) || !["waiting", "running", "done", "error", "stopped"].includes(body.phase)) {
     return NextResponse.json({ error: "진행 상태 형식이 올바르지 않습니다." }, { status: 400 });
   }
   const surfaces = step.kind === "aio" ? ["google-aio"] : step.kind === "gemini" ? ["gemini"] :
@@ -44,15 +44,15 @@ export async function PATCH(request: NextRequest) {
   if (!Array.isArray(identities) || identities.length > 2000 || identities.some(value => typeof value !== "string")) return NextResponse.json({ error: "항목 형식이 올바르지 않습니다." }, { status: 400 });
   const phase = body.phase;
   const now = new Date().toISOString();
-  const state = phase === "running" ? "collecting" : phase === "stopped" ? "cancelled" : "parse_failed";
+  const state = phase === "waiting" ? "reserved" : phase === "running" ? "collecting" : phase === "stopped" ? "cancelled" : "parse_failed";
   await (await getPromptStore()).query(`UPDATE legacy_collection_items i SET status=$1,
-    submitted_at=COALESCE(submitted_at,$2),completed_at=CASE WHEN $1='collecting' THEN NULL ELSE $2 END,
+    submitted_at=CASE WHEN $1='reserved' THEN submitted_at ELSE COALESCE(submitted_at,$2) END,completed_at=CASE WHEN $1 IN ('reserved','collecting') THEN NULL ELSE $2 END,
     error_message=CASE WHEN $1='collecting' THEN NULL ELSE $3 END
     FROM collection_requests r WHERE r.id=i.collection_request_id AND r.client_request_id=$4
       AND r.organization_id=$5 AND r.brand_id=$6 AND i.run_id IS NULL
       AND i.surface=ANY($7::text[]) AND (${step.kind === "aio" ? "i.prompt_id" : "i.query_snapshot"}=ANY($8::text[]))
       AND i.status=ANY($9::text[])`,
   [state, now, typeof body.note === "string" ? body.note.slice(0, 2000) : "수집 결과가 반영되지 않았습니다.", step.requestId, tenant.orgId, tenant.brandId, surfaces, identities,
-    phase === "running" ? ["reserved"] : ["reserved", "collecting"]]);
+    phase === "running" || phase === "waiting" ? ["reserved"] : ["reserved", "collecting"]]);
   return NextResponse.json({ updated: true });
 }

@@ -15,6 +15,13 @@
 
 ## 최신 인수인계
 
+### 2026-11-18 — 수집기 미확인 대기 보존
+
+- ParallelCollectModal의 collector gate 실패(미연결/구버전/Chrome 없음)는 로컬 패널을 waiting으로 기록합니다. 상태 PATCH waiting은 reserved만 대상으로 하며 submitted_at을 새로 만들지 않고 completed_at도 NULL로 유지합니다. 정상 연결 재확인 후에는 runner를 시작할 수 있습니다. SERP 등록은 영향받지 않습니다.
+- Agent AI 작업 생성 이전 예외는 waiting, AIO 시작의 collector 설치/연결 안내로 처리된 실패(handled)는 waiting입니다. 이미 실행 중인 작업의 실패를 대기로 되돌리지는 않습니다.
+- session leave가 reserved/collecting 모두를 cancelled로 만들던 원인을 수정했습니다. reportLegacySession은 collecting만 cancelled로 바꾸고 미실행 reserved는 보존합니다. heartbeat·조직/브랜드 격리·결과가 저장된 항목 보호는 유지합니다. 명시적 대기 취소 API는 그대로입니다.
+- 실제 DB 롤백 테스트에서 미실행 대기/실행 중 혼합 요청의 heartbeat·다른 조직 이탈 차단·반복 leave 후 대기 보존/실행 중 취소를 검증했습니다. 과거 cancelled 레코드는 자동 보정하지 않습니다. 로컬 재시작 보호를 위한 기존 세션 heartbeat 30초 만료 조건도 유지합니다.
+
 ### 2026-11-18 — 상세 비용 카드 위치 변경
 
 - RequestSummary의 비용 문구를 제거하고 RequestProgressStages의 9번째 카드 ‘실제 발생 예상 비용’으로 이동했습니다. 값은 request.actualCostUsd(Provider 비용 합계)이며 estimatedCostUsd는 표시하지 않습니다. 0은 `-`, 양수는 소수점 4자리 달러 + USD입니다. 비용 계산/API/polling 정책은 변경하지 않았습니다.

@@ -14,6 +14,7 @@ import { isRetryFailure } from "@/lib/requestRetrySelection";
 import { getCollectionActivitySummary } from "./collectionActivity";
 import { managePendingSerpItems } from "./pendingSelection";
 import { CollectionQueueService } from "./collectionQueue";
+import { reportLegacySession } from "./legacySession";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "attention=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -81,6 +82,21 @@ test("legacy registration is idempotent and links results to the approved reques
       selectedRows = (await listRequestItems(sample.organization_id, sample.brand_id, selectedRequest.requestId, parseRequestItemOptions(new URLSearchParams())))!.rows;
       assert.equal(selectedRows.find(row => row.id === selectedIds[1])?.status, "cancelled");
       const fixtureKey = `test-${randomUUID()}`;
+      const sessionClientId = `collector-missing-${randomUUID()}`;
+      const waitingRequest = await registerLegacyRequest(sample.organization_id, sample.brand_id, sessionClientId, null,
+        [{ ...planned[0], surface: "naver-ai" }, { ...planned[0], surface: "google-ai-mode" }]);
+      await store.query("UPDATE legacy_collection_items SET status='collecting',submitted_at=$2 WHERE collection_request_id=$1 AND surface='google-ai-mode'", [waitingRequest.requestId, new Date().toISOString()]);
+      await reportLegacySession(sample.organization_id, sample.brand_id, sessionClientId, "heartbeat");
+      await reportLegacySession("foreign-org", sample.brand_id, sessionClientId, "leave");
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, waitingRequest.requestId))?.counts.running, 1, "another tenant cannot end the session");
+      await reportLegacySession(sample.organization_id, sample.brand_id, sessionClientId, "leave");
+      await reportLegacySession(sample.organization_id, sample.brand_id, sessionClientId, "leave");
+      const sessionItems = (await listRequestItems(sample.organization_id, sample.brand_id, waitingRequest.requestId, parseRequestItemOptions(new URLSearchParams())))!.rows;
+      const neverStarted = sessionItems.find(item => item.surface === 'naver-ai')!;
+      assert.equal(neverStarted.status, "reserved", "missing collector and repeated leave preserve waiting, not cancelled");
+      assert.equal(neverStarted.submittedAt, null);
+      assert.equal(neverStarted.completedAt, null);
+      assert.equal(sessionItems.find(item => item.surface === 'google-ai-mode')!.status, "cancelled", "leaving after actual execution still cancels unfinished work");
       const fixtureId = await createMixedFailureFixture(sample.organization_id, sample.brand_id, fixtureKey);
       assert.equal(await createMixedFailureFixture(sample.organization_id, sample.brand_id, fixtureKey), fixtureId, "fixture is idempotent");
       const mixedPage = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
