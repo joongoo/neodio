@@ -429,7 +429,7 @@ export function ImportPromptsModal({
     <Modal open={open} onClose={() => { if (!importing) onClose(); }}>
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-neutral-900">CSV로 프롬프트 가져오기</h2>
-        <ModalCloseButton onClose={() => { if (!importing) onClose(); }} />
+        <ModalCloseButton disabled={importing} onClose={() => { if (!importing) onClose(); }} />
       </div>
       <p className="mt-2 text-xs text-neutral-500">
         필수 컬럼: <code className="rounded bg-neutral-100 px-1">prompt</code> · 선택:{" "}
