@@ -51,6 +51,24 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, first.requestId))?.counts.completed, 1);
       await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, first.requestId, `duplicate-${randomUUID()}`, null), LegacyRetryConflict);
       assert.equal(await retryLegacyRequest("other-org", sample.brand_id, first.requestId, `foreign-${randomUUID()}`, null), null);
+      const selectedRequest = await registerLegacyRequest(sample.organization_id, sample.brand_id, `selected-${randomUUID()}`, null, [{ ...planned[0], surface: "naver-ai" }, { ...planned[0], surface: "google-ai-mode" }]);
+      const selectedPage = await listRequestItems(sample.organization_id, sample.brand_id, selectedRequest.requestId, parseRequestItemOptions(new URLSearchParams()));
+      const selectedIds = selectedPage!.rows.map(row => row.id);
+      const selectedAction = (action: "start" | "retry" | "cancel", itemIds: string[]) => retryLegacyRequest(sample.organization_id, sample.brand_id, selectedRequest.requestId, `action-${randomUUID()}`, null, { action, itemIds });
+      await assert.rejects(selectedAction("start", [selectedIds[0]]), LegacyRetryConflict, "fresh session cannot be executed twice");
+      await assert.rejects(selectedAction("cancel", ["foreign-item"]), LegacyRetryConflict);
+      await store.query("UPDATE legacy_collection_items SET last_seen_at=now()-interval '1 minute' WHERE collection_request_id=$1", [selectedRequest.requestId]);
+      assert.equal((await selectedAction("cancel", [selectedIds[0]]))?.count, 1);
+      let selectedRows = (await listRequestItems(sample.organization_id, sample.brand_id, selectedRequest.requestId, parseRequestItemOptions(new URLSearchParams())))!.rows;
+      assert.equal(selectedRows.find(row => row.id === selectedIds[0])?.status, "cancelled");
+      assert.equal(selectedRows.find(row => row.id === selectedIds[1])?.status, "reserved", "unselected item remains untouched");
+      await assert.rejects(selectedAction("start", [selectedIds[0]]), LegacyRetryConflict, "cancelled item requires retry action");
+      const selectedStart = await selectedAction("start", [selectedIds[1]]);
+      assert.equal(selectedStart?.count, 1);
+      assert.equal(selectedStart?.steps.length, 1);
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, selectedStart!.requestId))?.retryOfRequestId, selectedRequest.requestId);
+      selectedRows = (await listRequestItems(sample.organization_id, sample.brand_id, selectedRequest.requestId, parseRequestItemOptions(new URLSearchParams())))!.rows;
+      assert.equal(selectedRows.find(row => row.id === selectedIds[1])?.status, "cancelled");
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }

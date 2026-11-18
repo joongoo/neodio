@@ -156,7 +156,7 @@ export function ParallelCollectModal({
 
   const close = () => {
     if (serpRegistering && !window.confirm("SERP API 작업을 등록 중입니다. 지금 닫으면 일부 작업이 등록되지 않을 수 있습니다. 닫을까요?")) return false;
-    if (legacyRunning && !window.confirm("진행 중인 레거시 수집을 중단하고 닫을까요? SERP API 작업은 계속 진행됩니다. 중단한 레거시 항목은 요청 상세에서 다시 시도할 수 있습니다.")) return false;
+    if (legacyRunning && !window.confirm("진행 중인 로컬 수집을 중단하고 닫을까요? SERP API 작업은 계속 진행됩니다. 중단한 로컬 항목은 요청 상세에서 다시 시도할 수 있습니다.")) return false;
     onClose();
     return true;
   };
@@ -182,7 +182,7 @@ export function ParallelCollectModal({
             {serpRegistering
               ? "등록이 끝나면 이 화면을 닫아도 서버에서 수집을 이어갑니다."
               : serpRegistered
-                ? "레거시 완료와 관계없이 SERP API 작업이 등록되었습니다. 이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
+                ? "로컬 완료와 관계없이 SERP API 작업이 등록되었습니다. 이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
                 : "등록하지 못한 작업을 확인한 뒤 다시 시도해 주세요."}
           </p>
           {serpFailureNotes.map((note) => <p key={note} className="mt-1 text-xs font-medium">{note}</p>)}
@@ -209,7 +209,7 @@ export function ParallelCollectModal({
           <p className="text-sm text-neutral-500">
             {legacyIndexes.length === 0
               ? serpRegistering ? "SERP API 수집 작업을 등록하고 있습니다." : "SERP API 수집 작업을 등록했습니다."
-              : allFinished ? "모든 수집이 끝났습니다." : `${serpIndexes.length ? "SERP API는 레거시 완료를 기다리지 않고 바로 등록됩니다. " : ""}레거시 수집 결과 반영을 마치려면 이 화면을 유지하세요. 이탈하면 미완료 레거시 항목은 요청 상세에서 다시 시도할 수 있습니다.`}
+              : allFinished ? "모든 수집이 끝났습니다." : `${serpIndexes.length ? "SERP API는 로컬 완료를 기다리지 않고 바로 등록됩니다. " : ""}로컬 수집 결과 반영을 마치려면 이 화면을 유지하세요. 이탈하면 미완료 로컬 항목은 요청 상세에서 다시 시도할 수 있습니다.`}
           </p>
           {steps.map((step, index) => step.kind === "serp-api" ? null : (
             <PanelShell key={index} state={states[index]} onCancel={() => cancels.current[index]()}>
@@ -416,7 +416,7 @@ function ServerAiRunner({ step, index, patch, setCancel }: RunnerProps & { step:
     setCancel(index, cancel);
     void (async () => {
       try {
-        if (step.engines.includes("naver-overview")) throw new Error("네이버 AIO 레거시 수집은 설치형 수집기 모드가 필요합니다.");
+        if (step.engines.includes("naver-overview")) throw new Error("네이버 AIO 로컬 수집은 설치형 수집기 모드가 필요합니다.");
         let failures = 0;
         for (let i = 0; i < step.keywords.length && !stopped; i++) {
           patch(index, { current: step.keywords[i] });

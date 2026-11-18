@@ -19,12 +19,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
 
 function StatusBadge({ file }: { file: RunListRow }) {
+  if (file.progressStatus === "cancelled") return <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-bold text-neutral-600">취소됨</span>;
   if (file.progressStatus === "submission_unknown") return <span className="rounded bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-700">확인 필요</span>;
   if (file.state === "pending" && file.progressStatus === "reserved") {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">수집 대기</span>;
   }
   if (file.state === "pending") {
-    return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">진행 중</span>;
+    return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{file.dir === "legacy-task" ? "수집 중" : "진행 중"}</span>;
   }
   if (file.state === "blocked") {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">차단됨(캡차)</span>;
@@ -245,7 +246,7 @@ export function CollectionRunList({ listPage, total, searchValue, onSearchChange
     {listPage.filteredTotal === 0 ? <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p> : <>
       <DataTable columns={columns} rows={listPage.rows} getRowId={file => file.key} renderExpanded={file =>
         file.dir === "legacy-task"
-          ? <p className="text-xs text-neutral-600">{file.errorMessage ?? "레거시 수집기가 처리 중입니다. 결과가 반영되면 원문을 확인할 수 있습니다."}</p>
+          ? <p className="text-xs text-neutral-600">{file.errorMessage ?? "로컬 수집기가 처리 중입니다. 결과가 반영되면 원문을 확인할 수 있습니다."}</p>
           : file.dir === "provider-task" && file.state !== "pending"
           ? <p className="text-xs text-amber-700">{file.errorMessage ?? "수집 결과가 없습니다. 작업 상태를 확인해 주세요."}</p>
           : file.state === "pending" ? <PendingRunDetail file={file} brandId={brandId} onChanged={onChanged} /> : <RunDetail file={file} />} />

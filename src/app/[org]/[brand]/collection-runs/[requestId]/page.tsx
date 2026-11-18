@@ -6,8 +6,6 @@ import { listRequestItems, parseRequestItemOptions } from "@/lib/backend/datafor
 import { RequestFilters, RequestSummary } from "@/components/collection-runs/RequestLogViews";
 import { RequestRunList } from "@/components/collection-runs/RequestRunList";
 import { listCategories } from "@/lib/backend/categoryStore";
-import { getPromptStore } from "@/lib/backend/database";
-import { LegacyRetryControl } from "@/components/collection-runs/LegacyRetryControl";
 import { collectorDownloadsConfigured, collectionUsesLocalAgent } from "@/lib/backend/collectionMode";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 
@@ -36,18 +34,16 @@ export default async function RequestLogDetailPage({ params, searchParams }: {
     if (!(error instanceof RequestLogInputError)) throw error;
     return <div role="alert" className="mx-auto max-w-6xl p-6">{error.message} <Link href={path} className="underline">필터 초기화</Link></div>;
   }
-  const [items, categories, retryable] = await Promise.all([
+  const [items, categories] = await Promise.all([
     listRequestItems(tenant.orgId, tenant.brandId, requestId, options), listCategories(tenant.orgId),
-    (await getPromptStore()).query(`SELECT id FROM legacy_collection_items WHERE collection_request_id=$1 AND organization_id=$2 AND brand_id=$3 AND status<>'completed' LIMIT 1`, [requestId, tenant.orgId, tenant.brandId]),
   ]);
   if (!items) notFound();
   return <section className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
     <Link href={`${listPath}?${back}`} className="text-sm underline">← 수집 요청 목록</Link>
     <header><h1 className="text-2xl font-semibold text-neutral-900">수집 요청 상세</h1><p className="mt-1 break-all text-xs text-neutral-500">{request.id}</p></header>
     <RequestSummary request={request} />
-    {retryable.length > 0 && <LegacyRetryControl requestId={requestId} brandId={tenant.brandId} orgName={tenant.org.name} base={tenant.base} serverCollector={!collectionUsesLocalAgent()} downloadPlatforms={collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : []} />}
     <div className="rounded-xl border border-neutral-200 bg-white p-4"><RequestFilters path={path} query={query} itemMode /></div>
-    <RequestRunList key={query.toString()} items={items} requestId={requestId} brandId={tenant.brandId} total={request.counts.total} categories={categories.map(c => c.name)} search={options.q} />
+    <RequestRunList key={query.toString()} items={items} requestId={requestId} brandId={tenant.brandId} total={request.counts.total} categories={categories.map(c => c.name)} search={options.q} orgName={tenant.org.name} base={tenant.base} serverCollector={!collectionUsesLocalAgent()} downloadPlatforms={collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : []} />
     <p className="text-xs text-neutral-500">최신 상태는 페이지를 새로고침해 확인하세요.</p>
     <Link className="text-sm underline" href={`${listPath}?view=items`}>이전 개별 수집 이력</Link>
   </section>;
