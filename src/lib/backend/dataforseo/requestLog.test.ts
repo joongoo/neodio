@@ -232,7 +232,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal((await items("a", "surface=naver-aio&page=99"))?.page, 1);
     const multi = await items("a", "status=completed,cancelled&surface=google-aio&surface=naver-aio");
     assert.equal(multi?.filteredTotal, 2);
-    assert.deepEqual(multi?.facets, { status: { completed: 2 }, surface: { "google-aio": 1, "naver-aio": 1 }, retry: { failed: 0, cancelled: 0 } });
+    assert.deepEqual(multi?.facets, { status: { completed: 2 }, surface: { "google-aio": 1, "naver-aio": 1 }, retry: { failed: 0, cancelled: 0, selectable: 0 } });
     const emptyStatus = await items("a", "status=cancelled&surface=google-aio");
     assert.equal(emptyStatus?.filteredTotal, 0);
     assert.deepEqual(emptyStatus?.facets?.status, { completed: 1 }, "status facet ignores its own filter");
@@ -263,13 +263,14 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
         ('gemini-cancelled','org','brand','a','gemini','desktop','cancelled','cancelled')`);
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 3, "Gemini failures included, cancellations excluded");
     const geminiFilter = "status=parse_failed,cancelled&surface=gemini";
-    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 1, cancelled: 1 });
+    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 1, cancelled: 1, selectable: 2 });
+    assert.equal((await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 2);
     assert.equal((await listRetryCandidates("org", "brand", "a", "failed", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 1);
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('local-retry','org','brand','b','naver-ai','desktop','reserved','retry','legacy-1'),
         ('gemini-retry','org','brand','b','gemini','desktop','reserved','retry gemini','gemini-failed')`);
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 1, "local and Gemini retried originals excluded");
-    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1 }, "selection counts exclude retried originals");
+    assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1, selectable: 1 }, "selection counts exclude retried originals");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"]);
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='gemini-retry'");
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "failed retry is counted instead of its original");
@@ -279,6 +280,16 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query("UPDATE provider_tasks SET status='raw_saved' WHERE id='t2'");
     const phases = (await getRequestLog("org", "brand", "a", db))!.phases;
     assert.deepEqual(phases, { submitting: 1, collecting: 0, processing: 1 }, "progress phases come only from scoped DB states");
+    await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
+      VALUES ('local-waiting','org','brand','a','gemini','desktop','reserved','waiting'),
+        ('local-running','org','brand','a','naver-ai','desktop','collecting','running');
+      INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,lease_expires_at)
+      VALUES ('pending-free','org','brand','a','dataforseo','google-aio','desktop','reserved','pending',NULL),
+        ('pending-claimed','org','brand','a','dataforseo','google-aio','desktop','reserved','claimed','2999-01-01T00:00:00Z');`);
+    const allCandidates = (await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams())))!;
+    assert.deepEqual(allCandidates.map(item => item.id).sort(), ['gemini-cancelled','local-running','local-waiting','pending-free'].sort(), "all pages include only selectable failures/cancellations/local/pending items, not active leases or retried originals");
+    assert.equal(allCandidates.find(item => item.id === 'pending-free')?.canManagePending, true);
+    assert.equal((await items('a'))?.facets?.retry.selectable, allCandidates.length);
     await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('foreign-retry','other','other-brand','hidden','dataforseo','google-aio','desktop','reserved','hidden','t1')`);
     assert.equal((await items("a"))?.rows.find(item => item.id === "t1")?.retries.length, 0, "item links never expose another tenant's retry request");

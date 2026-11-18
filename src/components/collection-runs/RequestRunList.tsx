@@ -8,7 +8,8 @@ import { CategorizeRunModal, CollectionRunList, runColumns } from "./CollectionR
 import { RequestCollectControl } from "./RequestCollectControl";
 import { useCanEdit } from "@/components/auth/PermissionsProvider";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
-import { isRetrySelectable, reconcileRetrySelection, retryGroupSelected, mergeRetrySelection, type RetrySelectionItem, type RetrySelectionGroup } from "@/lib/requestRetrySelection";
+import { requestSelectionScope } from "@/lib/requestItemFilters";
+import { isRetrySelectable, reconcileRetrySelection, mergeRetrySelection, type RetrySelectionItem } from "@/lib/requestRetrySelection";
 
 export function RequestRunList({ items, requestId, brandId, total, categories, search, orgName, base, serverCollector, downloadPlatforms, loading = false }: {
   items: RequestItemPage; requestId: string; brandId: string; total: number; categories: string[]; search: string;
@@ -22,29 +23,27 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
   const [selected, setSelected] = useState<Map<string, RetrySelectionItem>>(new Map());
   const [selecting, setSelecting] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [groupCandidates, setGroupCandidates] = useState<Record<RetrySelectionGroup, RetrySelectionItem[]>>({ failed: [], cancelled: [] });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const filterScope = requestSelectionScope(new URLSearchParams(params.toString()));
   const effectiveSelected = reconcileRetrySelection(selected, items.rows);
   const selectable = items.rows.filter(isRetrySelectable);
   const chosen = [...effectiveSelected.values()];
-  const groupsSelected = { failed: retryGroupSelected(effectiveSelected, groupCandidates.failed), cancelled: retryGroupSelected(effectiveSelected, groupCandidates.cancelled) };
-  async function selectGroup(group: RetrySelectionGroup) {
-    if (groupsSelected[group]) { setSelected(mergeRetrySelection(effectiveSelected, groupCandidates[group], false)); return; }
+  async function selectAll() {
     setSelecting(true); setSelectionError(null);
     try {
-      const selectionQuery = new URLSearchParams(params.toString()); selectionQuery.set("group", group);
+      const selectionQuery = new URLSearchParams(params.toString()); selectionQuery.set("group", "all");
       const response = await fetch(`/api/collection-requests/${encodeURIComponent(requestId)}/retry?${selectionQuery}`, { cache: "no-store" });
       const data = await response.json();
+      if (requestSelectionScope(new URLSearchParams(window.location.search)) !== filterScope) return;
       if (!response.ok) throw new Error(data.error ?? "선택 항목을 조회하지 못했습니다.");
       const candidates = data.items as RetrySelectionItem[];
       const next = mergeRetrySelection(effectiveSelected, candidates, true);
       if (next.size > 2000) throw new Error("한 번에 최대 2,000건까지 선택할 수 있습니다.");
-      setGroupCandidates(current => ({ ...current, [group]: candidates }));
       setSelected(next);
     } catch (error) { setSelectionError(error instanceof Error ? error.message : "선택 항목을 조회하지 못했습니다."); }
     finally { setSelecting(false); }
   }
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, [filterScope]);
   function navigate(changes: Record<string, string>) {
     if (timer.current) clearTimeout(timer.current);
     const next = new URLSearchParams(window.location.search);
@@ -83,9 +82,9 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
   });
   return <>
     <CollectionRunList actions={canEdit && <>
-      <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={loading ? [] : chosen} selecting={selecting || loading} groupCounts={items.facets?.retry} onSelectGroup={selectGroup} groupsSelected={groupsSelected} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
+      <RequestCollectControl requestId={requestId} brandId={brandId} orgName={orgName} base={base} serverCollector={serverCollector} downloadPlatforms={downloadPlatforms} selected={loading ? [] : chosen} selecting={selecting || loading} selectableCount={items.facets?.retry.selectable} onSelectAll={selectAll} onClearSelection={() => { setSelected(new Map()); setSelectionError(null); }} onChanged={() => setSelected(new Map())} />
       {selectionError && <p role="alert" className="text-xs text-red-600">{selectionError}</p>}
-      <p className="text-xs text-neutral-500">실패·취소 전체 선택은 현재 필터에 맞는 모든 페이지에 적용됩니다. 필터 변경 시 선택을 초기화합니다. 미제출 SERP만 선택하면 기존 큐 실행 요청·대기 취소가 가능합니다. 이미 재수집된 원본은 제외합니다.</p>
+      <p className="text-xs text-neutral-500">전체 선택은 현재 필터에 맞는 모든 페이지의 선택 가능한 항목에 적용됩니다. 필터 변경 시 선택을 초기화합니다. 미제출 SERP만 선택하면 기존 큐 실행 요청·대기 취소가 가능합니다. 이미 재수집된 원본은 제외합니다.</p>
     </>} loading={loading} listPage={{ ...items, rows }} total={total} searchValue={searchText} onSearchChange={value => {
       setSearchText(value);
       if (timer.current) clearTimeout(timer.current);

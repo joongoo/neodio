@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (denied) return denied;
   const tenant = await getCurrentTenant(), id = (await params).requestId;
   const group = request.nextUrl.searchParams.get("group") ?? "failed";
-  if (group !== "failed" && group !== "cancelled") return NextResponse.json({ error: "선택 그룹이 올바르지 않습니다." }, { status: 400 });
+  if (group !== "failed" && group !== "cancelled" && group !== "all") return NextResponse.json({ error: "선택 그룹이 올바르지 않습니다." }, { status: 400 });
   let filters;
   try { filters = parseRequestItemOptions(request.nextUrl.searchParams); }
   catch (error) { if (error instanceof RequestLogInputError) return NextResponse.json({ error: error.message }, { status: 400 }); throw error; }

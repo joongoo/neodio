@@ -7,6 +7,7 @@ import { Clock3, Loader2, Pause, CircleCheck } from "lucide-react";
 import { RequestSummary } from "./RequestLogViews";
 import { RequestRunList } from "./RequestRunList";
 import { RequestDetailFilters } from "./RequestDetailFilters";
+import { requestSelectionScope } from "@/lib/requestItemFilters";
 
 export function RequestRefreshIndicator({ state }: { state: RequestRefreshState }) {
   const time = (timestamp: number) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(timestamp);
@@ -46,7 +47,6 @@ export function RequestDetailLive({ initial, query: initialQuery, listProps, chi
   const liveMatches = live?.key === key && live.baseline === initial;
   const snapshot = liveMatches ? live.snapshot : initial;
   const loading = !liveMatches && query !== initialQuery;
-  const filterKey = JSON.stringify(["status", "surface", "q", "from", "to"].map(name => params.getAll(name)));
   const active = hasActiveRequestTasks(snapshot.request);
   const currentError = error?.key === key && error.baseline === initial ? error : null;
   const refreshState: RequestRefreshState = refresh?.key === key && refresh.baseline === initial ? refresh.state : { phase: active ? "waiting" : "stopped", secondsUntilRefresh: active ? 5 : null, nextRefreshAt: null, lastUpdatedAt: null };
@@ -87,6 +87,6 @@ export function RequestDetailLive({ initial, query: initialQuery, listProps, chi
     {currentError && <p role="alert" className="text-xs text-amber-700">{currentError.message}</p>}
     {children}
     <RequestDetailFilters query={query} facets={snapshot.items.facets} loading={loading} onChange={changeFilters} />
-    <RequestRunList key={filterKey} {...listProps} search={params.get("q") ?? ""} loading={loading} items={snapshot.items} total={snapshot.request.counts.total} />
+    <RequestRunList key={requestSelectionScope(new URLSearchParams(query))} {...listProps} search={params.get("q") ?? ""} loading={loading} items={snapshot.items} total={snapshot.request.counts.total} />
   </>;
 }

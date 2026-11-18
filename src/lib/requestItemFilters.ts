@@ -5,8 +5,12 @@ export function filterValues(params: URLSearchParams, key: string) {
   return [...new Set(params.getAll(key).flatMap(value => value.split(",")).map(value => value.trim()).filter(value => value && value !== "all"))];
 }
 
+export function requestSelectionScope(params: URLSearchParams) {
+  return JSON.stringify(["status", "surface", "q", "from", "to"].map(name => params.getAll(name)));
+}
+
 export interface RequestItemFacets {
   status: Record<string, number>;
   surface: Record<string, number>;
-  retry: { failed: number; cancelled: number };
+  retry: { failed: number; cancelled: number; selectable?: number };
 }
