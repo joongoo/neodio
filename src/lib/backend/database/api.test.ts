@@ -45,6 +45,19 @@ const request = (pathname: string, method = "GET", body?: unknown) => new NextRe
   method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body),
 });
 
+test("CSV batches validate limits and can be replayed without duplicate tracking", async () => {
+  const route = await import("../../../app/api/tracked-topics/import/route");
+  const rows = Array.from({ length: 25 }, (_, i) => ({ prompt: `Batch CSV ${i}`, category: "Batch category", topic: "Batch topic" }));
+  const send = (rows: unknown[]) => route.POST(request("/api/tracked-topics/import", "POST", { rows }));
+  assert.equal((await send([...rows, rows[0]])).status, 400);
+  assert.equal((await send([{ prompt: "" }])).status, 400);
+  const first = await (await send(rows)).json();
+  assert.equal(first.ok, true);
+  assert.equal(first.rows.length, 25);
+  const replay = await (await send(rows)).json();
+  assert.deepEqual(replay.rows.map((row: { id: string }) => row.id), first.rows.map((row: { id: string }) => row.id));
+});
+
 test("API lifecycle: strategy -> untracked prompt -> tracking -> rename category -> pause -> archive -> restore", async () => {
   const text = "Integration test question for strategy provenance";
   const category = "Integration category";

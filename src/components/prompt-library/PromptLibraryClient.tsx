@@ -28,6 +28,7 @@ import { ParallelCollectModal } from "./ParallelCollectModal";
 import { AgentCollectionModal } from "@/components/prompt-library/AgentCollectionModal";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
+import { importPromptCsv } from "@/lib/importPromptCsv";
 import { downloadCsv } from "@/lib/csv";
 
 const ORIGIN_LABEL: Record<PromptLibraryRow["origin"], string> = {
@@ -114,20 +115,11 @@ export function PromptLibraryClient({
     );
   }
 
-  // CSV로 가져온 행도 실제로 .tmp에 저장한다 — 이전엔 로컬 state에만 남아서
-  // 새로고침하면 통째로 사라졌다.
+  // 작은 묶음을 순서대로 저장하고, 완료된 묶음은 즉시 화면에 반영한다.
   async function importCsv(imported: ImportedPromptRow[]) {
-    const results = await Promise.all(
-      imported.map((r) =>
-        fetch("/api/tracked-topics", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: r.prompt, category: r.category, topic: r.topic, origin: "csv_import" }),
-        }).then((res) => res.json())
-      )
-    );
-    const newRows = results.filter((r) => r.ok).map((r) => r.row as PromptLibraryRow);
-    setRows((prev) => [...new Map([...prev, ...newRows].map(row => [row.id, row])).values()]);
+    await importPromptCsv(imported, (newRows) => {
+      setRows((prev) => [...new Map([...prev, ...newRows].map(row => [row.id, row])).values()]);
+    });
   }
 
   function toggleSelected(id: string) {
