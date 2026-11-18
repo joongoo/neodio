@@ -1,4 +1,6 @@
 import { ChildProcess, spawn } from "node:child_process";
+import { linkLegacyRun } from "./dataforseo/legacyRequest";
+import type { PromptRunSeed } from "@/lib/db/types";
 import { CollectionJob } from "./collectionJobTypes";
 import { getPersistedCollectionJob, getPromptStore, persistCollectionJob, syncCollectedFiles } from "./database";
 
@@ -63,9 +65,11 @@ export async function getJob(id: string): Promise<CollectionJob | undefined> {
   return jobs.get(id) ?? getPersistedCollectionJob(id);
 }
 
-export function startCollectionJob(organizationId: string, keyword: string, engines: ("naver" | "google")[]): CollectionJob {
+export function startCollectionJob(organizationId: string, keyword: string, engines: ("naver" | "google")[], request?: { clientId: string; brandId: string }): CollectionJob {
   const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const job: CollectionJob = {
+    collectionRequestClientId: request?.clientId,
+    brandId: request?.brandId,
     id,
     organizationId,
     keyword,
@@ -143,6 +147,10 @@ async function runJob(job: CollectionJob) {
   appendLog(job, "수집 결과 저장(가공) 중...");
   const store = await getPromptStore();
   await syncCollectedFiles(store);
+  if (job.collectionRequestClientId && job.brandId && job.organizationId) {
+    const runs = await store.query<{ original_json: PromptRunSeed }>("SELECT original_json FROM prompt_runs WHERE organization_id=$1 AND job_id=$2", [job.organizationId, job.id]);
+    for (const run of runs) await linkLegacyRun(job.organizationId, job.brandId, job.collectionRequestClientId, run.original_json);
+  }
   const saveCode = await runCommand(npx, ["tsx", "scripts/migrate-db.ts"], (line) => appendLog(job, line), job.id);
   if (cancelledJobs.has(job.id)) return markCancelled(job);
   if (saveCode !== 0) throw new Error("Failed to save collection analysis");

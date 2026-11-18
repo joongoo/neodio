@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { getPromptStore } from "@/lib/backend/database";
 import { registerLegacyRequest, linkLegacyRun } from "./legacyRequest";
 import type { PromptRunSeed } from "@/lib/db/types";
+import { retryLegacyRequest, LegacyRetryConflict } from "./legacyRetry";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -39,6 +40,17 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal(page?.rows[0].result?.runId, run.id);
       assert.equal(page?.rows[0].status, "completed");
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, first.requestId))?.counts.total, 1);
+      const unfinished = await registerLegacyRequest(sample.organization_id, sample.brand_id, clientId, null, [{ ...planned[0], surface: "google-ai-mode" }]);
+      await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, unfinished.requestId, `blocked-${randomUUID()}`, null), LegacyRetryConflict);
+      await store.query("UPDATE legacy_collection_items SET status='cancelled' WHERE collection_request_id=$1 AND run_id IS NULL", [first.requestId]);
+      const retried = await retryLegacyRequest(sample.organization_id, sample.brand_id, first.requestId, `retry-${randomUUID()}`, null);
+      assert.equal(retried?.count, 1);
+      assert.equal(retried?.steps.length, 1);
+      assert.equal(retried?.steps[0].kind, "ai");
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, retried!.requestId))?.retryOfRequestId, first.requestId);
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, first.requestId))?.counts.completed, 1);
+      await assert.rejects(retryLegacyRequest(sample.organization_id, sample.brand_id, first.requestId, `duplicate-${randomUUID()}`, null), LegacyRetryConflict);
+      assert.equal(await retryLegacyRequest("other-org", sample.brand_id, first.requestId, `foreign-${randomUUID()}`, null), null);
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }

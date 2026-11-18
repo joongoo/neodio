@@ -282,7 +282,7 @@ export function PromptLibraryClient({
 
   // 선택한 프롬프트 중 구글AIO가 켜진 것 — AIO 수집 대상.
   const selectedRows = rows.filter((r) => selected.has(r.id));
-  const parallel = Boolean(collectionAgent && brandId);
+  const parallel = Boolean(brandId);
   const step = parallel ? undefined : queue[0];
 
   async function startPendingCollection(forceSerpDuplicate: boolean) {
@@ -654,12 +654,13 @@ export function PromptLibraryClient({
           </div>
         </Modal>
       )}
-      {parallel && collectionAgent && queue.length > 0 && (
+      {parallel && queue.length > 0 && (
         <ParallelCollectModal
           steps={queue}
-          orgName={collectionAgent.orgName}
+          orgName={collectionAgent?.orgName ?? ""}
+          serverCollector={!collectionAgent}
           brandId={brandId}
-          downloadPlatforms={collectionAgent.downloadPlatforms}
+          downloadPlatforms={collectionAgent?.downloadPlatforms ?? []}
           onDone={() => {
             stepDoneRef.current = true;
           }}

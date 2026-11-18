@@ -12,6 +12,7 @@ import { cancelAioCollect, pollAioCollect, startAioCollect } from "@/lib/aioColl
 import type { AioCollectJob } from "@/lib/backend/aio/jobTypes";
 import type { CollectStep } from "@/lib/collectSteps";
 import { SURFACE_LABEL } from "@/lib/promptSurfaces";
+import { useTenantBase } from "@/lib/useTenantBase";
 
 // "선택 수집"의 통합 진행 창 — 선택한 플랫폼을 한꺼번에 시작한다. 레인(네이버 / 구글 / Gemini)이 서로 기다리지 않아서
 // 구글에서 캡차가 떠도 네이버·Gemini 수집은 계속 돌아간다. 답변 수집(네이버·구글AI) 결과는 끝나는 대로 자동 반영하고,
@@ -44,6 +45,7 @@ export function ParallelCollectModal({
   downloadPlatforms,
   onClose,
   onDone,
+  serverCollector = false,
 }: {
   steps: CollectStep[];
   orgName: string;
@@ -51,9 +53,11 @@ export function ParallelCollectModal({
   downloadPlatforms: CollectorPlatform[];
   onClose: () => void;
   onDone: () => void;
+  serverCollector?: boolean;
 }) {
   const router = useRouter();
-  const needsAgent = steps.some((s) => s.kind === "ai" || s.kind === "aio");
+  const tenantBase = useTenantBase();
+  const needsAgent = !serverCollector && steps.some((s) => s.kind === "ai" || s.kind === "aio");
   const [gate, setGate] = useState<"checking" | "ready" | { problem: Problem; status: CollectorAgentStatus | null }>(needsAgent ? "checking" : "ready");
   const [states, setStates] = useState<PanelState[]>(() =>
     steps.map((s) => ({ label: stepLabel(s), done: 0, total: stepTotal(s), current: null, waitUntil: null, phase: "running", note: null }))
@@ -61,6 +65,9 @@ export function ParallelCollectModal({
   const cancels = useRef<(() => void)[]>(steps.map(() => () => {}));
   const doneNotified = useRef(false);
   const legacyStarted = useRef(new Set<number>());
+  const latestStates = useRef(states);
+  const delayedLeave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { latestStates.current = states; }, [states]);
 
   const patch = useCallback((index: number, next: Partial<PanelState>) => {
     setStates((prev) => prev.map((s, i) => (i === index ? { ...s, ...next } : s)));
@@ -69,7 +76,7 @@ export function ParallelCollectModal({
       const terminal = next.phase && next.phase !== "running";
       if (terminal || !legacyStarted.current.has(index)) {
         legacyStarted.current.add(index);
-        void fetch("/api/collection-requests/legacy", { method: "PATCH", headers: { "Content-Type": "application/json" },
+        void fetch("/api/collection-requests/legacy", { method: "PATCH", keepalive: true, headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ step, phase: next.phase ?? "running", note: next.note }),
         }).then(response => {
           if (!response.ok) throw new Error(`수집 요청 상태 저장 오류 (${response.status})`);
@@ -116,6 +123,31 @@ export function ParallelCollectModal({
   const legacyRunning = legacyIndexes.some((index) => states[index].phase === "running");
   const allFinished = states.every((s) => s.phase !== "running");
   useEffect(() => {
+    if (delayedLeave.current) clearTimeout(delayedLeave.current);
+    const requestIds = [...new Set(steps.filter(s => s.kind !== "serp-api").map(s => s.requestId).filter((id): id is string => !!id))];
+    if (!requestIds.length) return;
+    const running = () => steps.some((s, index) => s.kind !== "serp-api" && latestStates.current[index]?.phase === "running");
+    const report = (action: "heartbeat" | "leave") => {
+      for (const requestId of requestIds) void fetch("/api/collection-requests/legacy/session", {
+        method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, action }),
+      }).catch(() => undefined);
+    };
+    const leave = () => {
+      if (!running()) return;
+      steps.forEach((s, index) => { if (s.kind !== "serp-api" && latestStates.current[index]?.phase === "running") cancels.current[index](); });
+      report("leave");
+    };
+    report("heartbeat");
+    const heartbeat = setInterval(() => { if (running()) report("heartbeat"); }, 10_000);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      clearInterval(heartbeat);
+      window.removeEventListener("pagehide", leave);
+      // React development replays effects; only a real unmount releases the session.
+      delayedLeave.current = setTimeout(leave, 0);
+    };
+  }, [steps]);
+  useEffect(() => {
     if (gate === "ready" && allFinished && !doneNotified.current && states.some((s) => s.done > 0)) {
       doneNotified.current = true;
       onDone();
@@ -123,9 +155,10 @@ export function ParallelCollectModal({
   }, [gate, allFinished, states, onDone]);
 
   const close = () => {
-    if (serpRegistering && !window.confirm("SERP API 작업을 큐에 등록하고 있습니다. 지금 닫으면 아직 등록되지 않은 작업이 누락될 수 있습니다. 닫을까요?")) return;
-    if (!serpRegistering && legacyRunning && !window.confirm("수집 중입니다. 창을 닫아도 이 PC의 수집기는 계속 수집하지만 결과 자동 반영은 멈춥니다. 닫을까요?")) return;
+    if (serpRegistering && !window.confirm("SERP API 작업을 등록 중입니다. 지금 닫으면 일부 작업이 등록되지 않을 수 있습니다. 닫을까요?")) return false;
+    if (legacyRunning && !window.confirm("진행 중인 레거시 수집을 중단하고 닫을까요? SERP API 작업은 계속 진행됩니다. 중단한 레거시 항목은 요청 상세에서 다시 시도할 수 있습니다.")) return false;
     onClose();
+    return true;
   };
 
   return (
@@ -149,12 +182,12 @@ export function ParallelCollectModal({
             {serpRegistering
               ? "등록이 끝나면 이 화면을 닫아도 서버에서 수집을 이어갑니다."
               : serpRegistered
-                ? "이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
+                ? "레거시 완료와 관계없이 SERP API 작업이 등록되었습니다. 이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
                 : "등록하지 못한 작업을 확인한 뒤 다시 시도해 주세요."}
           </p>
           {serpFailureNotes.map((note) => <p key={note} className="mt-1 text-xs font-medium">{note}</p>)}
           {serpRegistered && (
-            <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => router.push("/collection-runs")}>
+            <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => { if (close()) router.push(`${tenantBase}/collection-runs`); }}>
               수집 로그 보기
             </button>
           )}
@@ -176,24 +209,26 @@ export function ParallelCollectModal({
           <p className="text-sm text-neutral-500">
             {legacyIndexes.length === 0
               ? serpRegistering ? "SERP API 수집 작업을 등록하고 있습니다." : "SERP API 수집 작업을 등록했습니다."
-              : allFinished ? "모든 수집이 끝났습니다." : "레거시 수집기는 이 화면에서 진행되며, SERP API는 서버 작업 큐에서 처리됩니다."}
+              : allFinished ? "모든 수집이 끝났습니다." : `${serpIndexes.length ? "SERP API는 레거시 완료를 기다리지 않고 바로 등록됩니다. " : ""}레거시 수집 결과 반영을 마치려면 이 화면을 유지하세요. 이탈하면 미완료 레거시 항목은 요청 상세에서 다시 시도할 수 있습니다.`}
           </p>
           {steps.map((step, index) => step.kind === "serp-api" ? null : (
             <PanelShell key={index} state={states[index]} onCancel={() => cancels.current[index]()}>
-              {step.kind === "ai" ? (
+              {step.kind === "ai" && serverCollector ? (
+                <ServerAiRunner step={step} index={index} patch={patch} setCancel={setCancel} />
+              ) : step.kind === "ai" ? (
                 <AgentAiRunner step={step} orgName={orgName} index={index} patch={patch} setCancel={setCancel} />
               ) : step.kind === "aio" ? (
-                <AioRunner brandId={brandId} promptIds={step.promptIds} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
+                <AioRunner brandId={brandId} promptIds={step.promptIds} devices={step.devices} targets={step.targets} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
               ) : (
                 <GeminiRunner keywords={step.keywords} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
               )}
             </PanelShell>
           ))}
-          <div className="flex justify-end gap-2">
+          {legacyIndexes.length > 0 && <div className="flex justify-end gap-2">
             <Button variant="primary" onClick={allFinished ? onClose : close}>
-              {allFinished ? legacyIndexes.length === 0 ? "계속 작업" : "확인" : "닫기"}
+              {allFinished ? "확인" : "닫기"}
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </Modal>
@@ -366,6 +401,50 @@ function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps &
   return null;
 }
 
+function ServerAiRunner({ step, index, patch, setCancel }: RunnerProps & { step: Extract<CollectStep, { kind: "ai" }> }) {
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    let stopped = false;
+    let currentJobId: string | null = null;
+    const cancel = () => {
+      stopped = true;
+      if (currentJobId) void fetch("/api/collection-runs/cancel", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: currentJobId }) }).catch(() => undefined);
+      patch(index, { phase: "stopped", current: null, note: "페이지 이탈 또는 사용자 요청으로 중단했습니다." });
+    };
+    setCancel(index, cancel);
+    void (async () => {
+      try {
+        if (step.engines.includes("naver-overview")) throw new Error("네이버 AIO 레거시 수집은 설치형 수집기 모드가 필요합니다.");
+        let failures = 0;
+        for (let i = 0; i < step.keywords.length && !stopped; i++) {
+          patch(index, { current: step.keywords[i] });
+          const response = await fetch("/api/collection-runs/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keyword: step.keywords[i], engines: step.engines, requestId: step.requestId }) });
+          const created = await response.json();
+          if (!response.ok || !created.jobId) throw new Error(created.error ?? "로컬 수집을 시작하지 못했습니다.");
+          currentJobId = created.jobId;
+          if (stopped) { cancel(); return; }
+          while (!stopped) {
+            const status = await fetch(`/api/collection-runs/status?jobId=${encodeURIComponent(created.jobId)}`, { cache: "no-store" });
+            const data = await status.json();
+            if (!status.ok) throw new Error(data.error ?? "로컬 수집 상태를 확인하지 못했습니다.");
+            if (data.done) { if (data.error || data.stage === "cancelled") failures++; break; }
+            await new Promise(resolve => setTimeout(resolve, POLL_MS));
+          }
+          currentJobId = null;
+          patch(index, { done: i + 1 });
+        }
+        if (!stopped) patch(index, { phase: failures ? "error" : "done", current: null, note: failures ? `${failures}개 수집을 마치지 못했습니다.` : "로컬 수집 결과를 반영했습니다." });
+      } catch (cause) {
+        if (!stopped) patch(index, { phase: "error", current: null, note: cause instanceof Error ? cause.message : "로컬 수집에 실패했습니다." });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 // 네이버 / 구글AI — 수집기에 작업을 만들고, 끝나면 결과를 서버에 반영한다.
 function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps & { step: Extract<CollectStep, { kind: "ai" }>; orgName: string }) {
   const router = useRouter();
@@ -386,6 +465,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
       try {
         const created = await createAgentJob(step.keywords, step.engines, orgName);
         jobId = created.id;
+        if (stopped) { await cancelAgentJob(created.id).catch(() => undefined); return; }
         let job: CollectorJob = created;
         while (!stopped) {
           job = await getAgentJob(created.id).catch(() => job);
@@ -398,6 +478,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
         if (stopped) return;
         const runs = await getAgentResults(created.id);
         for (let i = 0; i < runs.length; i += IMPORT_CHUNK) {
+          if (stopped) return;
           const res = await fetch("/api/collection-runs/import", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -425,7 +506,7 @@ function AgentAiRunner({ step, orgName, index, patch, setCancel }: RunnerProps &
 }
 
 // 구글AIO — 수집기가 검색하고, 검색마다 서버에 올려 판정한다.
-function AioRunner({ brandId, promptIds, requestId, index, patch, setCancel }: RunnerProps & { brandId: string; promptIds: string[]; requestId?: string }) {
+function AioRunner({ brandId, promptIds, devices, targets, requestId, index, patch, setCancel }: RunnerProps & { brandId: string; promptIds: string[]; devices?: ("desktop" | "mobile")[]; targets?: { promptId: string; device: "desktop" | "mobile" }[]; requestId?: string }) {
   const router = useRouter();
   const started = useRef(false);
 
@@ -441,13 +522,14 @@ function AioRunner({ brandId, promptIds, requestId, index, patch, setCancel }: R
     });
 
     (async () => {
-      const result = await startAioCollect({ brandId, promptIds, requestId, force: false });
+      const result = await startAioCollect({ brandId, promptIds, devices, targets, requestId, force: false });
       if (!result.ok) {
         patch(index, { phase: "error", note: result.error || "수집기를 확인하세요." });
         return;
       }
       let job: AioCollectJob = result.job;
       jobId = job.id;
+      if (stopped) { await cancelAioCollect(job.id); return; }
       while (!stopped) {
         patch(index, {
           done: job.results.length,

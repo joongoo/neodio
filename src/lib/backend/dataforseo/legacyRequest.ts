@@ -6,18 +6,18 @@ import type { PromptRunSeed } from "@/lib/db/types";
 export interface LegacyPlannedItem { query: string; surface: string; device: string; promptId?: string }
 const sources: Record<string, string> = { "naver-ai-search": "naver-ai", "naver-overview": "naver-aio", "google-ai-overview": "google-ai-mode", "google-aio": "google-aio", api: "gemini" };
 
-export async function registerLegacyRequest(org: string, brand: string, clientId: string, actor: string | null, items: LegacyPlannedItem[]) {
+export async function registerLegacyRequest(org: string, brand: string, clientId: string, actor: string | null, items: LegacyPlannedItem[], retryOfRequestId?: string) {
   const db = await getPromptStore();
   return db.transaction(async () => {
     const requests = new PostgresCollectionRequestStore();
     await requests.lockClientRequest(org, clientId);
     let request = await requests.getByClientRequestId(org, clientId);
     if (request && request.brandId !== brand) throw new Error("수집 요청의 브랜드가 일치하지 않습니다.");
-    if (!request) request = await requests.create({ organizationId: org, brandId: brand, clientRequestId: clientId, requestedBy: actor, requestKind: "manual", totalTaskCount: items.length, estimatedCostUsd: 0 });
+    if (!request) request = await requests.create({ organizationId: org, brandId: brand, clientRequestId: clientId, requestedBy: actor, requestKind: retryOfRequestId ? "retry" : "manual", retryOfRequestId, totalTaskCount: items.length, estimatedCostUsd: 0 });
     let created = 0;
     for (const item of items) {
-      const rows = await db.query(`INSERT INTO legacy_collection_items(id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,created_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(collection_request_id,query_snapshot,surface,device) DO NOTHING RETURNING id`,
+      const rows = await db.query(`INSERT INTO legacy_collection_items(id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,created_at,last_seen_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9) ON CONFLICT(collection_request_id,query_snapshot,surface,device) DO NOTHING RETURNING id`,
       [`legacy-${randomUUID()}`, org, brand, request.id, item.promptId ?? null, item.query, item.surface, item.device, new Date().toISOString()]);
       created += rows.length;
     }

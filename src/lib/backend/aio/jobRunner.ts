@@ -57,7 +57,7 @@ export function cancelAioJob(id: string): boolean {
   return true;
 }
 
-export function startAioJob(params: { brandId: string; keywordIds?: string[]; label: string; force: boolean; requestId?: string }): AioCollectJob {
+export function startAioJob(params: { brandId: string; keywordIds?: string[]; label: string; force: boolean; requestId?: string; devices?: ("desktop" | "mobile")[]; targets?: { keywordId: string; device: "desktop" | "mobile" }[] }): AioCollectJob {
   const job: AioCollectJob = {
     id: `aiojob-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     brandId: params.brandId,
@@ -74,6 +74,8 @@ export function startAioJob(params: { brandId: string; keywordIds?: string[]; la
   state.jobs.set(job.id, job);
 
   runAioCollection({
+    devices: params.devices,
+    targets: params.targets,
     requestId: params.requestId,
     brandId: params.brandId,
     keywordIds: params.keywordIds,

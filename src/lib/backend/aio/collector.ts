@@ -120,6 +120,7 @@ export type AioRunEvent =
     };
 
 export interface AioRunOptions {
+  targets?: { keywordId: string; device: AioDevice }[];
   requestId?: string;
   brandId: string;
   /** 없으면 브랜드의 활성 키워드 전체 */
@@ -216,7 +217,7 @@ export interface AioPlan {
  * 정기 수집 CLI처럼 조직(쿠키)을 모르는 곳에서도 돌아야 해서 브랜드 id로 찾는다.
  */
 export async function planAioRun(
-  options: Pick<AioRunOptions, "brandId" | "keywordIds" | "devices" | "force" | "limit">
+  options: Pick<AioRunOptions, "brandId" | "keywordIds" | "devices" | "force" | "limit" | "targets">
 ): Promise<{ plan: AioPlan } | { skippedReason: string }> {
   const { brandId } = options;
   const brand = await getManagedBrandById(brandId);
@@ -233,7 +234,8 @@ export async function planAioRun(
   const tasks = shuffle(keywords.flatMap((keyword) => devices.map((device) => ({ keyword, device }))))
     .filter((t) => !skip.has(`${t.keyword.id}:${t.device}`))
     .slice(0, options.limit ?? Infinity);
-  return { plan: { brand, channelIds: channels.map((c) => c.channelId), settings, devices, tasks, skipped: keywords.length * devices.length - tasks.length } };
+  const selectedTasks = options.targets ? tasks.filter(task => options.targets!.some(target => target.keywordId === task.keyword.id && target.device === task.device)) : tasks;
+  return { plan: { brand, channelIds: channels.map((c) => c.channelId), settings, devices, tasks: selectedTasks, skipped: keywords.length * devices.length - selectedTasks.length } };
 }
 
 /** 수집 결과 한 건을 판정(자사 영상·경쟁사 등 분류)해 저장한다 — 서버가 직접 돌린 결과와 수집기가 올린 결과가 같이 쓴다. */

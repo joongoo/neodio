@@ -9,7 +9,7 @@ export type CollectEngine = "naver" | "naver-overview" | "google";
 
 export type CollectStep = (
   | { kind: "ai"; engines: CollectEngine[]; keywords: string[] }
-  | { kind: "aio"; promptIds: string[] }
+  | { kind: "aio"; promptIds: string[]; devices?: ("desktop" | "mobile")[]; targets?: { promptId: string; device: "desktop" | "mobile" }[] }
   | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[]; force?: boolean }
   | { kind: "gemini"; keywords: string[] }) & { requestId?: string };
 

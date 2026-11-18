@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS legacy_collection_items (
   UNIQUE(collection_request_id,query_snapshot,surface,device)
 );
 CREATE INDEX IF NOT EXISTS legacy_collection_request ON legacy_collection_items(collection_request_id);
+ALTER TABLE legacy_collection_items ADD COLUMN IF NOT EXISTS last_seen_at TEXT;
 CREATE OR REPLACE VIEW collection_execution_items AS
   SELECT id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,status,
     created_at,submitted_at,completed_at,submission_attempted_at,estimated_cost_usd,actual_cost_usd,error_code,error_message,retry_of_task_id,
