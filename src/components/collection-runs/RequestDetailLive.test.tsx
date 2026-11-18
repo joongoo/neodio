@@ -3,6 +3,15 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RequestProgressStages, RequestRefreshIndicator } from "./RequestDetailLive";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
+import { RequestSummary } from "./RequestLogViews";
+
+test("top summary keeps request metadata and costs without duplicate counts or channels", () => {
+  const request = { status: "running", createdAt: "2026-11-18T00:00:00Z", requestedBy: { name: "테스트 요청자" }, estimatedCostUsd: 0.12, actualCostUsd: 0.06,
+    surfaces: ["google-aio", "gemini"], counts: { total: 20, completed: 8, waiting: 2, running: 6, failed: 2, attention: 1, cancelled: 1 } } as RequestLogRow;
+  const html = renderToStaticMarkup(<RequestSummary request={request} />);
+  for (const text of ["진행 중", "테스트 요청자", "$0.1200", "$0.0600", "USD"]) assert.ok(html.includes(text), text);
+  for (const text of ["전체 20", "완료 8", "대기 2", "실패 2", "Google", "Gemini"]) assert.ok(!html.includes(text), text);
+});
 
 test("progress shows independent stages including partial results and uncertain submissions", () => {
   const request = { counts: { total: 20, waiting: 2, running: 6, completed: 8, failed: 2, attention: 1, cancelled: 1 },
