@@ -4,6 +4,20 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { RequestProgressStages, RequestRefreshIndicator } from "./RequestDetailLive";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
 import { RequestSummary } from "./RequestLogViews";
+import { PendingRunDetail } from "./CollectionRunsClient";
+import { toPendingRunListRow } from "@/lib/collectionRunList";
+import type { ProviderTaskRecord } from "@/lib/backend/dataforseo/types";
+
+test("older pending history links to request controls instead of direct-submit/delete actions", () => {
+  const task = { id: "ptask-1", collectionRequestId: "creq-1", status: "reserved", surface: "google-aio" } as ProviderTaskRecord;
+  const html = renderToStaticMarkup(<PendingRunDetail file={toPendingRunListRow(task)} />);
+  assert.ok(html.includes("/collection-runs/creq-1"));
+  assert.ok(html.includes("비용 확인")); assert.ok(html.includes("이력은 유지"));
+  assert.ok(!html.includes("지금 제출")); assert.ok(!html.includes("예약 삭제"));
+  const orphan = renderToStaticMarkup(<PendingRunDetail file={toPendingRunListRow({ ...task, collectionRequestId: null })} />);
+  assert.ok(orphan.includes("직접 실행하거나 삭제할 수 없습니다"));
+  assert.ok(!orphan.includes("<button"));
+});
 
 test("top summary keeps request metadata and costs without duplicate counts or channels", () => {
   const request = { status: "running", createdAt: "2026-11-18T00:00:00Z", requestedBy: { name: "테스트 요청자" }, estimatedCostUsd: 0.12, actualCostUsd: 0.06,

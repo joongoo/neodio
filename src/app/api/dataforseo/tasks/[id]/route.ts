@@ -1,30 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { guardApi } from "@/lib/backend/auth/guard";
-import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
-import { getCurrentTenant } from "@/lib/backend/tenant";
 
-const TASK_ID = /^ptask-[a-f0-9-]+$/i;
-
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+/** Retired: cancellation must preserve task history and validate worker leases. */
+export async function DELETE() {
   const denied = await guardApi("write");
   if (denied) return denied;
-  const { id } = await params;
-  const brandId = request.nextUrl.searchParams.get("brandId") ?? "";
-  if (!TASK_ID.test(id) || !brandId) {
-    return NextResponse.json({ error: "유효한 task ID와 brandId가 필요합니다." }, { status: 400 });
-  }
-
-  const tenant = await getCurrentTenant();
-  const store = new PostgresProviderTaskStore();
-  const task = await store.get(id);
-  if (!task || task.organizationId !== tenant.orgId || task.brandId !== brandId) {
-    return NextResponse.json({ error: "삭제할 작업을 찾을 수 없습니다." }, { status: 404 });
-  }
-  if (task.status !== "reserved" || task.providerTaskId) {
-    return NextResponse.json({ error: "외부 API에 제출되지 않은 예약만 삭제할 수 있습니다." }, { status: 409 });
-  }
-  if (!(await store.deleteReserved(id, tenant.orgId, brandId))) {
-    return NextResponse.json({ error: "작업 상태가 바뀌어 예약을 삭제하지 못했습니다." }, { status: 409 });
-  }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ code: "request_detail_required", error: "예약 삭제는 종료되었습니다. 수집 요청 상세에서 미제출 대기 항목을 선택하고 취소해 주세요. 작업 이력은 유지됩니다. 요청에 연결되지 않은 과거 예약은 직접 취소할 수 없습니다." },
+    { status: 410, headers: { "Cache-Control": "private, no-store" } });
 }

@@ -15,6 +15,16 @@
 
 ## 최신 인수인계
 
+### 2026-11-18 — 이전 개별 이력 직접 제출·물리 삭제 종료
+
+- 상단 카드 정리 작업은 `4dad3fc`로 커밋했습니다.
+- 기존 `POST /api/dataforseo/tasks/submit`과 `DELETE /api/dataforseo/tasks/{id}`는 쓰기 권한 검증 후 410 request_detail_required를 반환합니다. 외부 Provider·DB 변경·wake 없이 종료하므로 과거 브라우저나 직접 요청이 큐 제한·승인·이력 보존 정책을 우회하지 못합니다.
+- 이전 개별 이력의 pending row에 실제 collectionRequestId/taskId를 전달합니다. PendingRunDetail은 다른 화면이면 동일 조직/브랜드의 요청 상세로 이동을 안내하고, 해당 상세에서는 상단 선택 조작을 안내합니다. 직접 제출/삭제 버튼·fetch를 제거했습니다.
+- 요청 미연결 과거 예약은 읽기 전용입니다. 임의 요청 생성·자동 재연결·물리 삭제·자동 재제출하지 않습니다. 새로운 수집은 프롬프트 라이브러리에서 명시적으로 승인해야 하며 과거 예약의 운영상 정리는 별도 판단 사항입니다.
+- 기존 요청 상세의 pending API는 그대로 유지합니다(잠금·lease·제출 시도 검증, wake만 발행/soft cancel). 이번 범위에서 Provider 호출이나 실제 과거 데이터 변경은 하지 않습니다.
+- 검증: `npm run test:dataforseo:retired`는 guard만 대체해 실제 종료 라우트를 실행하고 410/no-store·403 차단 및 Provider/DB/wake import 부재를 확인합니다. 연결 ID 전달과 이전 화면의 요청 링크/고아 예약 읽기 전용 안내도 회귀 테스트에 추가했습니다. 실제 API·과거 예약 데이터 변경 없이 검증합니다.
+- 다음 단위: worker 종료/재시작·중복 wake/lease 경합 테스트와 운영 보호 점검. Vercel Preview 인증·큐 전달·지연 실행 및 실수집 E2E는 아직 별도입니다.
+
 ### 2026-11-18 — 상단 요약 카드 간소화
 
 - 사용자 우선 요청으로 RequestSummary의 중복 건수와 채널 목록을 제거했습니다. 상태 배지·등록 시각·요청자·예상/실제 USD 비용은 유지하며 RequestProgressStages와 목록/필터는 변경하지 않았습니다.

@@ -34,13 +34,15 @@ test("DataForSEO 실행은 수집 로그 엔진에 SERP API를 명시한다", ()
 
 test("진행 중인 Provider 작업도 원래 질의로 수집 로그 행을 만든다", () => {
   const task = {
-    id: "ptask-1", surface: "google-aio", querySnapshot: "마케팅 자동화 ROI 계산", status: "collecting",
+    id: "ptask-1", collectionRequestId: "creq-1", surface: "google-aio", querySnapshot: "마케팅 자동화 ROI 계산", status: "collecting",
     createdAt: "2026-11-16T01:00:00.000Z",
   } as ProviderTaskRecord;
   const row = toPendingRunListRow(task);
   assert.equal(row.query, "마케팅 자동화 ROI 계산");
   assert.equal(row.state, "pending");
   assert.equal(row.progressStatus, "collecting");
+  assert.equal(row.requestId, "creq-1");
+  assert.equal(row.taskId, "ptask-1");
   assert.equal(engineLabel(row), "구글AIO · SERP API");
 });
 

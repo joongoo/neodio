@@ -83,6 +83,8 @@ export function toPendingRunListRow(task: ProviderTaskRecord): RunListRow {
     citationCount: null,
     state: "pending",
     progressStatus: task.status,
+    requestId: task.collectionRequestId ?? undefined,
+    taskId: task.id,
   };
 }
 

@@ -126,63 +126,23 @@ const PROVIDER_PROGRESS_LABEL: Record<string, string> = {
   projection_failed: "수집 결과 반영을 다시 시도하고 있습니다.",
 };
 
-function PendingRunDetail({ file, brandId, onChanged }: { file: RunListRow; brandId: string; onChanged: () => void }) {
-  const [busy, setBusy] = useState<"submit" | "delete" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function PendingRunDetail({ file }: { file: RunListRow }) {
+  const base = useTenantBase();
+  const pathname = usePathname();
   const reserved = file.progressStatus === "reserved";
-
-  async function submitNow() {
-    setBusy("submit");
-    setError(null);
-    try {
-      const response = await fetch("/api/dataforseo/tasks/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId, taskIds: [file.filename] }),
-      });
-      const data = await response.json().catch(() => ({})) as { error?: string; tasks?: { errorMessage?: string | null }[] };
-      const taskError = data.tasks?.[0]?.errorMessage;
-      if (!response.ok || taskError) throw new Error(taskError ?? data.error ?? "작업을 제출하지 못했습니다.");
-      onChanged();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "작업을 제출하지 못했습니다.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function deleteReservation() {
-    if (!window.confirm("외부 API에 제출되지 않은 이 예약을 삭제할까요?")) return;
-    setBusy("delete");
-    setError(null);
-    try {
-      const response = await fetch(`/api/dataforseo/tasks/${encodeURIComponent(file.filename)}?brandId=${encodeURIComponent(brandId)}`, { method: "DELETE" });
-      const data = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(data.error ?? "예약을 삭제하지 못했습니다.");
-      onChanged();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "예약을 삭제하지 못했습니다.");
-    } finally {
-      setBusy(null);
-    }
-  }
+  const requestHref = file.requestId ? `${base}/collection-runs/${encodeURIComponent(file.requestId)}` : null;
 
   return (
     <div className="flex flex-col gap-3">
       <p className={`text-xs ${reserved ? "text-amber-700" : "text-blue-700"}`}>
         {PROVIDER_PROGRESS_LABEL[file.progressStatus ?? ""] ?? "SERP API 수집이 진행 중입니다."}
       </p>
-      {reserved && file.requestId && <p className="text-xs text-neutral-500">행의 체크박스로 대기 작업을 선택한 뒤 목록 상단에서 실행 요청하거나 취소하세요. 제출·처리 상태는 확인 단계에서 다시 검사합니다.</p>}
+      {reserved && requestHref && (pathname === requestHref
+        ? <p className="text-xs text-neutral-500">행의 체크박스로 대기 작업을 선택한 뒤 목록 상단에서 실행 요청하거나 취소하세요. 제출·처리 상태는 확인 단계에서 다시 검사합니다.</p>
+        : <p className="text-xs text-neutral-500"><Link href={requestHref} className="underline">수집 요청 상세 보기</Link>에서 대기 항목을 선택해 비용 확인 후 실행을 요청하거나 취소하세요. 취소해도 이력은 유지됩니다.</p>)}
       {reserved && !file.requestId && (
-        <EditOnly>
-          <div className="flex items-center gap-2">
-            <Button variant="primary" disabled={busy !== null} onClick={submitNow}>{busy === "submit" ? "제출 중…" : "지금 제출"}</Button>
-            <Button variant="secondary" disabled={busy !== null} onClick={deleteReservation}>{busy === "delete" ? "삭제 중…" : "예약 삭제"}</Button>
-            <span className="text-xs text-neutral-400">외부 task ID가 없어 아직 과금되지 않은 예약입니다.</span>
-          </div>
-        </EditOnly>
+        <p className="text-xs text-neutral-500">수집 요청에 연결되지 않은 과거 예약입니다. 이 화면에서는 직접 실행하거나 삭제할 수 없습니다. 신규 수집이 필요하면 프롬프트 라이브러리에서 비용 확인 후 요청해 주세요.</p>
       )}
-      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );
 }
@@ -239,7 +199,7 @@ function RunDetail({ file }: { file: RunListRow }) {
   );
 }
 
-export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, brandId, onChanged, onPageChange, onPageSizeChange, actions, loading = false }: {
+export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, onPageChange, onPageSizeChange, actions, loading = false }: {
   listPage: RunListPage; total: number; searchValue: string; onSearchChange: (value: string) => void;
   columns: DataTableColumn<RunListRow>[]; brandId: string; onChanged: () => void;
   onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void;
@@ -255,7 +215,7 @@ export function CollectionRunList({ listPage, total, searchValue, onSearchChange
           ? <p className="text-xs text-neutral-600">{file.errorMessage ?? "로컬 수집기가 처리 중입니다. 결과가 반영되면 원문을 확인할 수 있습니다."}</p>
           : file.dir === "provider-task" && file.state !== "pending"
           ? <p className="text-xs text-amber-700">{file.errorMessage ?? "수집 결과가 없습니다. 작업 상태를 확인해 주세요."}</p>
-          : file.state === "pending" ? <PendingRunDetail file={file} brandId={brandId} onChanged={onChanged} /> : <RunDetail file={file} />} />
+          : file.state === "pending" ? <PendingRunDetail file={file} /> : <RunDetail file={file} />} />
       <div className="mt-3"><Pagination page={listPage.page} pageCount={listPage.pageCount} pageSize={listPage.pageSize}
         totalCount={listPage.filteredTotal} pageSizeOptions={RUN_PAGE_SIZES} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} /></div>
     </>}
