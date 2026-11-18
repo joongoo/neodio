@@ -2,7 +2,7 @@
 
 import { EditOnly } from "@/components/auth/PermissionsProvider";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TablePanel } from "@/components/ui/TablePanel";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
@@ -236,13 +236,15 @@ function RunDetail({ file }: { file: RunListRow }) {
   );
 }
 
-export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, brandId, onChanged, onPageChange, onPageSizeChange }: {
+export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, brandId, onChanged, onPageChange, onPageSizeChange, actions }: {
   listPage: RunListPage; total: number; searchValue: string; onSearchChange: (value: string) => void;
   columns: DataTableColumn<RunListRow>[]; brandId: string; onChanged: () => void;
   onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void;
+  actions?: ReactNode;
 }) {
   return <TablePanel title="수집 실행 목록" description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
     count={listPage.filteredTotal} total={total} searchValue={searchValue} onSearchChange={onSearchChange} searchPlaceholder="키워드/엔진/카테고리 검색">
+    {actions && <div className="mb-4 space-y-2">{actions}</div>}
     {listPage.filteredTotal === 0 ? <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p> : <>
       <DataTable columns={columns} rows={listPage.rows} getRowId={file => file.key} renderExpanded={file =>
         file.dir === "legacy-task"

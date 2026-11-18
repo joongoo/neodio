@@ -1,0 +1,45 @@
+import { NextRequest, NextResponse } from "next/server";
+import { guardApi } from "@/lib/backend/auth/guard";
+import { getCurrentTenant } from "@/lib/backend/tenant";
+import { getCurrentUser } from "@/lib/backend/auth/session";
+import { getPromptStore } from "@/lib/backend/database";
+import { retrySelectedItems } from "@/lib/backend/dataforseo/retrySelection";
+import { LegacyRetryConflict } from "@/lib/backend/dataforseo/legacyRetry";
+import { publishDataForSeoWake } from "@/lib/backend/dataforseo/queueWake";
+import { RETRY_FAILURE_STATUSES } from "@/lib/requestRetrySelection";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
+  const tenant = await getCurrentTenant(), id = (await params).requestId;
+  const db = await getPromptStore();
+  const [request] = await db.query("SELECT id FROM collection_requests WHERE id=$1 AND organization_id=$2 AND brand_id=$3", [id, tenant.orgId, tenant.brandId]);
+  if (!request) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
+  const items = await db.query(`SELECT id,execution_kind AS "executionKind",query_snapshot AS query,surface,device,status FROM collection_execution_items
+    WHERE collection_request_id=$1 AND organization_id=$2 AND brand_id=$3 AND status=ANY($4::text[]) ORDER BY created_at,id LIMIT 2001`, [id, tenant.orgId, tenant.brandId, RETRY_FAILURE_STATUSES]);
+  if (items.length > 2000) return NextResponse.json({ error: "한 번에 최대 2,000건까지 선택할 수 있습니다. 개별 선택해 주세요." }, { status: 400 });
+  return NextResponse.json({ items });
+}
+
+export async function POST(request: NextRequest, { params }: { params: Promise<{ requestId: string }> }) {
+  const denied = await guardApi("write");
+  if (denied) return denied;
+  const tenant = await getCurrentTenant(), body = await request.json().catch(() => null);
+  if (body?.confirmed !== true || typeof body.clientRequestId !== "string" || !/^[a-zA-Z0-9:_-]{1,100}$/.test(body.clientRequestId) || !Array.isArray(body.itemIds) || !body.itemIds.length || body.itemIds.length > 2000 || body.itemIds.some((id: unknown) => typeof id !== "string" || !id.length) || new Set(body.itemIds).size !== body.itemIds.length) return NextResponse.json({ error: "선택 항목과 비용 승인을 확인해 주세요." }, { status: 400 });
+  try {
+    const result = await retrySelectedItems(tenant.orgId, tenant.brandId, (await params).requestId, body.clientRequestId, (await getCurrentUser())?.id ?? null, body.itemIds);
+    if (!result) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
+    let notice: string | null = null;
+    if (result.hasSerp) {
+      try { await publishDataForSeoWake({ version: 1, organizationId: tenant.orgId, brandId: tenant.brandId, clientRequestId: body.clientRequestId, idempotencySeed: `retry:${body.clientRequestId}` }); }
+      catch { notice = "작업은 저장되었으나 실행 알림을 보내지 못했습니다. 수집 로그에서 확인해 주세요."; }
+    }
+    return NextResponse.json({ ...result, notice });
+  } catch (error) {
+    if (error instanceof LegacyRetryConflict) return NextResponse.json({ error: error.message }, { status: 409 });
+    throw error;
+  }
+}

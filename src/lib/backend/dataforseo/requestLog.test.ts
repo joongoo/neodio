@@ -8,6 +8,9 @@ import { getPromptStore } from "@/lib/backend/database";
 import { registerLegacyRequest, linkLegacyRun } from "./legacyRequest";
 import type { PromptRunSeed } from "@/lib/db/types";
 import { retryLegacyRequest, LegacyRetryConflict } from "./legacyRetry";
+import { retrySelectedItems } from "./retrySelection";
+import { createMixedFailureFixture } from "./mixedFailureFixture";
+import { isRetryFailure } from "@/lib/requestRetrySelection";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -69,6 +72,31 @@ test("legacy registration is idempotent and links results to the approved reques
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, selectedStart!.requestId))?.retryOfRequestId, selectedRequest.requestId);
       selectedRows = (await listRequestItems(sample.organization_id, sample.brand_id, selectedRequest.requestId, parseRequestItemOptions(new URLSearchParams())))!.rows;
       assert.equal(selectedRows.find(row => row.id === selectedIds[1])?.status, "cancelled");
+      const fixtureId = await createMixedFailureFixture(sample.organization_id, sample.brand_id);
+      assert.equal(await createMixedFailureFixture(sample.organization_id, sample.brand_id), fixtureId, "fixture is idempotent");
+      const mixedPage = (await listRequestItems(sample.organization_id, sample.brand_id, fixtureId, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
+      assert.equal(mixedPage.rows.length, 9);
+      assert.ok(mixedPage.rows.every(item => ["parse_failed", "provider_failed", "cancelled"].includes(item.status)));
+      const failures = mixedPage.rows.filter(isRetryFailure);
+      assert.equal(failures.length, 8);
+      const unsafe = failures.find(item => item.executionKind === "serp-api")!;
+      await store.query("UPDATE provider_tasks SET status='submission_unknown' WHERE id=$1", [unsafe.id]);
+      await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `unsafe-${randomUUID()}`, null, [unsafe.id]), LegacyRetryConflict, "unknown submission cannot be paid for again");
+      await store.query("UPDATE provider_tasks SET status=$2 WHERE id=$1", [unsafe.id, unsafe.status]);
+      assert.equal(await retrySelectedItems("foreign-org", sample.brand_id, fixtureId, `mixed-${randomUUID()}`, null, failures.map(item => item.id)), null);
+      await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `mixed-${randomUUID()}`, null, ["foreign-item"]), LegacyRetryConflict);
+      const mixedClientId = `mixed-${randomUUID()}`;
+      const mixedRetry = await retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, mixedClientId, null, failures.map(item => item.id));
+      assert.equal(mixedRetry?.count, 8);
+      assert.equal(mixedRetry?.steps.filter(step => step.kind === "serp-api").length, 3);
+      assert.equal(mixedRetry?.steps.filter(step => step.kind !== "serp-api").length, 4);
+      const retryPage = (await listRequestItems(sample.organization_id, sample.brand_id, mixedRetry!.requestId!, parseRequestItemOptions(new URLSearchParams("size=50"))))!;
+      assert.equal(retryPage.rows.length, 8);
+      assert.equal(retryPage.rows.filter(item => item.retryOfTaskId).length, 4);
+      assert.ok(retryPage.rows.some(item => item.surface === "google-aio" && item.device === "mobile"), "exact original device retained");
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, mixedRetry!.requestId!))?.counts.total, 8);
+      await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, mixedClientId, null, failures.map(item => item.id)), LegacyRetryConflict);
+      await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, fixtureId, `overlap-${randomUUID()}`, null, failures.map(item => item.id)), LegacyRetryConflict);
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }

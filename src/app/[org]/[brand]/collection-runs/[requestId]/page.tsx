@@ -43,7 +43,7 @@ export default async function RequestLogDetailPage({ params, searchParams }: {
     <header><h1 className="text-2xl font-semibold text-neutral-900">수집 요청 상세</h1><p className="mt-1 break-all text-xs text-neutral-500">{request.id}</p></header>
     <RequestSummary request={request} />
     <div className="rounded-xl border border-neutral-200 bg-white p-4"><RequestFilters path={path} query={query} itemMode /></div>
-    <RequestRunList key={query.toString()} items={items} requestId={requestId} brandId={tenant.brandId} total={request.counts.total} categories={categories.map(c => c.name)} search={options.q} orgName={tenant.org.name} base={tenant.base} serverCollector={!collectionUsesLocalAgent()} downloadPlatforms={collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : []} />
+    <RequestRunList key={requestId} items={items} requestId={requestId} brandId={tenant.brandId} total={request.counts.total} categories={categories.map(c => c.name)} search={options.q} orgName={tenant.org.name} base={tenant.base} serverCollector={!collectionUsesLocalAgent()} downloadPlatforms={collectorDownloadsConfigured() ? COLLECTOR_PLATFORMS : []} />
     <p className="text-xs text-neutral-500">최신 상태는 페이지를 새로고침해 확인하세요.</p>
     <Link className="text-sm underline" href={`${listPath}?view=items`}>이전 개별 수집 이력</Link>
   </section>;

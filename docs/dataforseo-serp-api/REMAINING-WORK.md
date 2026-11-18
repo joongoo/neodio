@@ -15,6 +15,16 @@
 
 ## 최신 인수인계
 
+### 2026-11-18 — 로컬·SERP 통합 선택 재수집
+
+- 별도 미완료 수집 섹션 대신 공유 실행 목록 내부 toolbar에 ‘실패 항목 전체 선택’·‘수집하기’를 배치했습니다. 엔진·수집 방식·기기 고정 확인 및 정확한 선택 건수 기준 SERP 추가 비용 승인 후 기존 `ParallelCollectModal`로 이어집니다.
+- 전체 실패 선택은 `GET /api/collection-requests/{requestId}/retry`로 해당 요청 전체의 `provider_failed`·`parse_failed`를 조회합니다(필터와 무관, 최대 2,000건). 페이지 이동 중 선택을 유지합니다. 취소 건은 개별 선택 가능하며 제출 불명확/아티팩트 복구 대상은 제외합니다.
+- `POST .../retry`는 조직·브랜드 및 원본 소속·상태를 서버에서 다시 확인하고 잠금/트랜잭션으로 로컬·SERP 작업을 새 요청에 함께 생성합니다. 원본 요청과 SERP 원본 작업을 연결하고, 명시적인 비용 확인 없이는 재제출하지 않습니다. SERP 기기는 원본 그대로 복원하며 브랜드 기본 기기로 확장하지 않습니다.
+- 로컬 대기 취소는 기존 `retry-legacy` endpoint를 유지합니다. 내부 legacy 명칭은 호환성을 위한 것으로 UI의 수집 방식 제한을 의미하지 않습니다.
+- fixture 생성: `node --env-file=.env.local --import tsx scripts/seed-collection-failure-fixture.ts neodigm neodigm`. 개발/로컬 executor에서만 실행 가능하며 같은 브랜드에 중복 생성하지 않습니다. 실제 생성 요청: `/neodigm/neodigm/collection-runs/creq-8bee8ed4-84de-4919-85ff-bad7115f2659`.
+- fixture는 로컬 5건(네이버AI·네이버AIO·구글AI·구글AIO 실패, Gemini 취소) + SERP 4건(구글AIO desktop/mobile·구글AI·네이버AIO 실패)입니다. 전체 실패 선택 시 8건, Gemini 취소는 개별 선택합니다. 모든 항목은 terminal 상태로 한 transaction에서 저장하며 API 호출/wake 발행은 하지 않습니다. 사용자가 이후 수집하기를 누르면 실제 설정에 따른 실행이므로 로컬 mock 설정을 확인하세요.
+- DB 롤백 통합 테스트로 혼합 8건 생성·원본 연결·기기 보존·중복 재수집 차단을 검증했습니다. 실제 유료 API 호출은 하지 않았습니다.
+
 ### 2026-11-18 — 로컬 수집 선택 실행
 
 - 직전 혼합 수집 독립 실행·이탈 처리 작업 커밋: `553eb77`.
