@@ -25,7 +25,6 @@ export const fieldClass = "h-9 min-w-0 rounded-md border border-neutral-200 bg-w
 export function RequestSummary({ request }: { request: RequestLogRow }) {
   return <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-2">
     <div className="flex flex-wrap items-center gap-3"><RequestStatusBadge status={request.status} /><span className="text-sm text-neutral-500">{formatKst(request.createdAt)} · {request.requestedBy?.name ?? "요청자 정보 없음"}</span></div>
-    <p className="text-sm text-neutral-600">예상 {usd(request.estimatedCostUsd)} / 실제 {usd(request.actualCostUsd)} USD</p>
   </div>;
 }
 
