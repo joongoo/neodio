@@ -743,12 +743,11 @@ export function PromptLibraryClient({
       {surfaceOpen && (
         <BulkSurfaceModal
           open
-          onClose={() => setSurfaceOpen(false)}
+          onClose={() => { setSurfaceOpen(false); router.refresh(); }}
           ids={selectedRows.map((r) => r.id)}
           initial={commonSurfaces.length > 0 ? commonSurfaces : [...AI_ANSWER_SURFACES]}
           onSaved={(ids, surfaces) => {
             setRows((prev) => prev.map((r) => (ids.includes(r.id) ? { ...r, surfaces } : r)));
-            router.refresh();
           }}
         />
       )}
