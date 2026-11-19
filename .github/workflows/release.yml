@@ -31,7 +31,7 @@ jobs:
             const tag = validateRelease(context.payload.pull_request, tags, context.payload.action === 'closed');
             core.info(`Validated ${tag}; merge staging/hotfix into main using Create a merge commit.`);
 
-  publish-and-sync:
+  publish:
     needs: validate
     concurrency:
       group: publish-main-release
@@ -46,11 +46,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.merge_commit_sha }}
-      - name: Publish version and fast-forward staging
+      - name: Publish version
         uses: actions/github-script@v7
         with:
           script: |
-            const { execFileSync, spawnSync } = require('node:child_process');
+            const { execFileSync } = require('node:child_process');
             const { validateRelease } = require('./.github/scripts/release-policy.cjs');
             const pr = context.payload.pull_request;
             const repo = context.repo;
@@ -75,19 +75,4 @@ jobs:
               const notes = await github.rest.repos.generateReleaseNotes({ ...repo, tag_name: tag, target_commitish: sha, configuration_file_path: '.github/release.yml' });
               await github.rest.repos.createRelease({ ...repo, tag_name: tag, target_commitish: sha, name: tag,
                 body: `${pr.body || ''}\n\n## GitHub 변경 목록\n\n${notes.data.body}`, draft: false, prerelease: false });
-            }
-            await execFileSync('git', ['fetch', 'origin', 'staging', '--no-tags']);
-            const staging = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim();
-            const ancestor = (a, b) => {
-              const result = spawnSync('git', ['merge-base', '--is-ancestor', a, b]);
-              if (result.status !== 0 && result.status !== 1) throw new Error('Unable to verify branch ancestry');
-              return result.status === 0;
-            };
-            if (ancestor(staging, sha)) {
-              await github.rest.git.updateRef({ ...repo, ref: 'heads/staging', sha, force: false });
-              core.info(`staging fast-forwarded to ${tag}.`);
-            } else if (ancestor(sha, staging)) {
-              core.info('staging already contains this release; preserving newer work.');
-            } else {
-              throw new Error('Release published, but staging has diverged. Create a main → staging merge-commit sync PR. No force push was attempted.');
             }
