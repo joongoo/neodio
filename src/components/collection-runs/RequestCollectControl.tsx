@@ -7,7 +7,7 @@ import { EditOnly } from "@/components/auth/PermissionsProvider";
 import { ParallelCollectModal } from "@/components/prompt-library/ParallelCollectModal";
 import type { CollectStep } from "@/lib/collectSteps";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
-import { retrySelectionCost, isPendingSerpSelection, pendingSelectionCost, type RetrySelectionItem } from "@/lib/requestRetrySelection";
+import { retrySelectionCost, isPendingSerpSelection, pendingSelectionCost, selectionAvailableActions, type RetrySelectionItem } from "@/lib/requestRetrySelection";
 import { Modal } from "@/components/ui/Modal";
 
 export function RequestSelectionButtons({ selectedCount, locked, selectableCount, onSelectAll, onClearSelection }: {
@@ -17,7 +17,7 @@ export function RequestSelectionButtons({ selectedCount, locked, selectableCount
   const allSelected = selectableCount !== undefined && selectableCount > 0 && selectedCount === selectableCount;
   return <Button className={`disabled:opacity-40 disabled:cursor-not-allowed ${allSelected ? "ring-2 ring-slate-800 ring-offset-1" : ""}`} variant="secondary"
     aria-pressed={allSelected} disabled={locked || selectableCount === 0}
-    onClick={allSelected ? onClearSelection : onSelectAll}>{allSelected ? "전체 선택 해제" : "전체 선택"}{selectableCount !== undefined && ` (${selectableCount})`}</Button>;
+    onClick={allSelected ? onClearSelection : onSelectAll}>{allSelected ? "전체 선택 해제" : "전체 선택"}</Button>;
 }
 
 export function RequestCollectControl({ requestId, brandId, orgName, base, downloadPlatforms, serverCollector, selected, onChanged, onSelectAll, onClearSelection, selectableCount, selecting }: {
@@ -33,10 +33,10 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
   const [notice, setNotice] = useState<string | null>(null);
   const pendingSerp = isPendingSerpSelection(selected);
   const hasPendingSerp = selected.some(item => item.executionKind === "serp-api" && item.status === "reserved");
-  const waiting = pendingSerp || (selected.length > 0 && selected.every(item => item.executionKind === "legacy" && item.status === "reserved"));
+  const available = selectionAvailableActions(selected);
   const cost = pendingSerp ? pendingSelectionCost(selected) : retrySelectionCost(selected);
   const hasLocal = selected.some(item => item.executionKind === "legacy");
-  const validAction = action === "wake" ? pendingSerp : action === "cancel" ? waiting : action === "retry" ? !hasPendingSerp : false;
+  const validAction = action === "wake" ? pendingSerp : action === "cancel" ? available.canCancel : action === "retry" ? available.canCollect && !pendingSerp : false;
   async function start() {
     if (!action || !validAction || !selected.length || busy || selecting) return;
     setBusy(true); setError(null);
@@ -56,9 +56,9 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
   return <EditOnly>
     <div className="flex flex-wrap items-center gap-2">
         <RequestSelectionButtons selectedCount={selected.length} locked={selecting || busy || !!retry} selectableCount={selectableCount} onSelectAll={onSelectAll} onClearSelection={onClearSelection} />
-        <span className="mr-auto text-xs text-neutral-500">{selected.length}건 선택 · 로컬 / SERP API · 엔진 고정</span>
-        <Button disabled={!selected.length || busy || selecting || !!retry || (hasPendingSerp && !pendingSerp)} onClick={() => { setError(null); setAction(pendingSerp ? "wake" : "retry"); }}>{pendingSerp ? "선택 대기 실행 요청" : "수집하기"}</Button>
-        <Button variant="secondary" disabled={!waiting || busy || selecting || !!retry} onClick={() => setAction("cancel")}>선택 대기 취소</Button>
+        <span className="mr-auto text-xs text-neutral-500">{selected.length}건 선택됨</span>
+        <RequestCollectionActionButtons selected={selected} locked={busy || selecting || !!retry}
+          onCollect={() => { setError(null); setAction(pendingSerp ? "wake" : "retry"); }} onCancel={() => setAction("cancel")} />
       {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
       {hasPendingSerp && !pendingSerp && <p className="text-xs text-amber-700">대기 SERP 작업은 실패·취소·로컬 항목과 구분해서 선택해 주세요.</p>}
       {notice && <p role="status" className="text-xs text-neutral-600">{notice}</p>}
@@ -79,4 +79,15 @@ export function RequestCollectControl({ requestId, brandId, orgName, base, downl
     {retry && <ParallelCollectModal steps={retry.steps} brandId={brandId} orgName={orgName} downloadPlatforms={downloadPlatforms} serverCollector={serverCollector} collectionLogHref={`${base}/collection-runs/${encodeURIComponent(retry.requestId)}`}
       onDone={() => router.refresh()} onClose={() => { const id = retry.requestId; setRetry(null); router.push(`${base}/collection-runs/${encodeURIComponent(id)}`); }} />}
   </EditOnly>;
+}
+
+export function RequestCollectionActionButtons({ selected, locked, onCollect, onCancel }: {
+  selected: RetrySelectionItem[]; locked: boolean; onCollect: () => void; onCancel: () => void;
+}) {
+  const available = selectionAvailableActions(selected);
+  const disabledStyle = "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40 disabled:hover:bg-neutral-100";
+  return <>
+    <Button className={disabledStyle} disabled={locked || !available.canCollect} onClick={onCollect}>{isPendingSerpSelection(selected) ? "선택 대기 실행 요청" : "수집하기"}</Button>
+    <Button className={disabledStyle} variant="secondary" disabled={locked || !available.canCancel} onClick={onCancel}>대기 취소</Button>
+  </>;
 }

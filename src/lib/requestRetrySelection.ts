@@ -17,6 +17,15 @@ export function isPendingSerpSelection(items: RetrySelectionItem[]) {
   return items.length > 0 && items.every(item => item.executionKind === "serp-api" && item.status === "reserved" && item.canManagePending === true && isRetrySelectable(item));
 }
 
+export function selectionAvailableActions(items: RetrySelectionItem[]) {
+  const pendingSerp = isPendingSerpSelection(items);
+  const selectable = items.length > 0 && items.every(isRetrySelectable);
+  return {
+    canCollect: pendingSerp || (selectable && !items.some(item => item.executionKind === "serp-api" && item.status === "reserved")),
+    canCancel: pendingSerp || (selectable && items.every(item => item.executionKind === "legacy" && item.status === "reserved")),
+  };
+}
+
 export function pendingSelectionCost(items: RetrySelectionItem[]) {
   return items.reduce((sum, item) => sum + (item.estimatedCostUsd ?? SERP_API_ESTIMATED_COST_USD[item.surface as SerpApiSurface]), 0);
 }
