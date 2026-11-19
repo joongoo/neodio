@@ -36,9 +36,9 @@ export async function GET(request: NextRequest) {
   );
   const result = await worker.runOnce({
     owner: `vercel-${process.env.VERCEL_REGION ?? "local"}-${randomUUID()}`,
-    submitBatchSize: positiveInteger(process.env.DATAFORSEO_SUBMIT_BATCH_SIZE, 20, 20),
+    submitBatchSize: positiveInteger(process.env.DATAFORSEO_SUBMIT_BATCH_SIZE, 30, 30),
     recoveryBatchSize: positiveInteger(process.env.DATAFORSEO_RECOVERY_BATCH_SIZE, 40, 100),
-    maxInFlight: positiveInteger(process.env.DATAFORSEO_MAX_IN_FLIGHT, 20, 100),
+    maxInFlight: positiveInteger(process.env.DATAFORSEO_MAX_IN_FLIGHT, 30, 30),
     leaseMs: 120_000,
     staleSubmissionAfterMs: Math.max(60, positiveInteger(process.env.DATAFORSEO_SUBMISSION_STALE_SECONDS, 300, 3_600)) * 1_000,
   });

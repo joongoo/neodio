@@ -15,6 +15,12 @@
 
 ## 최신 인수인계
 
+### 2026-11-19 — 큐 실행 상한 30건
+
+- local worker, queue callback, cron의 SUBMIT_BATCH_SIZE/MAX_IN_FLIGHT 기본값·설정 상한을 모두 30으로 변경했습니다. 명시 env가 더 작으면 작은 값이 적용됩니다. RECOVERY_BATCH_SIZE=40 기본은 유지(복구 배치 수로 신규 제출 상한과 별개). 예약 수 자체에는 30건 제한이 없습니다.
+- 기존 실행 중 worker는 재시작, Vercel은 새 배포 후 적용됩니다. 운영에 DATAFORSEO_MAX_IN_FLIGHT=20 또는 DATAFORSEO_SUBMIT_BATCH_SIZE=20이 명시되어 있으면 변경/제거가 필요합니다. 환경 설정 변경이나 worker 실행은 대신하지 않았습니다.
+
+
 ### 2026-11-19 — 요청 전체 취소(일시정지 제외)
 
 - 최상단 카드 우측 ‘취소하기’→확인 모달→write/tenant 검증 POST `/api/collection-requests/[requestId]/cancel`입니다. `cancel_requested`를 재사용하고, 미제출 provider reserved(lease 포함)만 취소합니다. submitting/queued/collecting/저장·반영 재처리는 계속 회수합니다.

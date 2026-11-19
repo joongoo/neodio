@@ -38,9 +38,9 @@ async function main() {
     do {
       const result = await worker.runOnce({
         owner: `local-${randomUUID()}`,
-        submitBatchSize: positive(process.env.DATAFORSEO_SUBMIT_BATCH_SIZE, 20, 20),
+        submitBatchSize: positive(process.env.DATAFORSEO_SUBMIT_BATCH_SIZE, 30, 30),
         recoveryBatchSize: positive(process.env.DATAFORSEO_RECOVERY_BATCH_SIZE, 40, 100),
-        maxInFlight: positive(process.env.DATAFORSEO_MAX_IN_FLIGHT, 20, 100),
+        maxInFlight: positive(process.env.DATAFORSEO_MAX_IN_FLIGHT, 30, 30),
         leaseMs: 120_000,
         staleSubmissionAfterMs: Math.max(60, positive(process.env.DATAFORSEO_SUBMISSION_STALE_SECONDS, 300, 3600)) * 1000,
       });

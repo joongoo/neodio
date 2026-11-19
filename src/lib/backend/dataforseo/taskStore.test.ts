@@ -16,25 +16,25 @@ function inputs(count: number): ReserveProviderTaskInput[] {
   }));
 }
 
-test("multiple workers cannot claim beyond the global in-flight limit", async () => {
+test("multiple workers cannot claim beyond the global 30-task in-flight limit", async () => {
   const store = new MemoryProviderTaskStore();
-  await store.reserveMany(inputs(25));
+  await store.reserveMany(inputs(35));
   const first = await store.claimReserved({
     owner: "worker-a",
-    limit: 20,
-    maxInFlight: 20,
+    limit: 30,
+    maxInFlight: 30,
     leaseMs: 60_000,
     now: "2026-11-17T10:00:00.000Z",
   });
   const second = await store.claimReserved({
     owner: "worker-b",
-    limit: 20,
-    maxInFlight: 20,
+    limit: 30,
+    maxInFlight: 30,
     leaseMs: 60_000,
     now: "2026-11-17T10:00:01.000Z",
   });
 
-  assert.equal(first.length, 20);
+  assert.equal(first.length, 30);
   assert.equal(second.length, 0);
   assert.equal(first.every((task) => task.leaseOwner === "worker-a"), true);
 });
