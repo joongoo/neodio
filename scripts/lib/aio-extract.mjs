@@ -25,7 +25,10 @@ export function extractAioInPage({ ignoreVisibility = false } = {}) {
   const STOP = /^(AI 답변에 오류가 있을 수 있습니다|AI responses may include mistakes)/;
   const norm = (v) => (v || "").replace(/\s+/g, " ").trim();
   const isGoto = (a) => /\/goto\?url=|\/url\?/.test(a.getAttribute("href") || "");
-  const visible = (el) => ignoreVisibility || typeof el.checkVisibility !== "function" || el.checkVisibility();
+  // display:contents has no box, so checkVisibility() is false even when
+  // its children render. Keep walking this wrapper; hidden descendants are
+  // still checked individually.
+  const visible = (el) => ignoreVisibility || typeof el.checkVisibility !== "function" || el.checkVisibility() || getComputedStyle(el).display === "contents";
 
   const bodyText = document.body ? document.body.innerText || "" : "";
   if (location.pathname.startsWith("/sorry") || /unusual traffic|비정상적인 트래픽|reCAPTCHA/i.test(bodyText)) {
