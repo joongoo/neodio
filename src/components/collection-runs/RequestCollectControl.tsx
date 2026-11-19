@@ -14,10 +14,10 @@ export function RequestSelectionButtons({ selectedCount, locked, selectableCount
   selectedCount: number; locked: boolean; selectableCount?: number;
   onSelectAll: () => void; onClearSelection: () => void;
 }) {
-  return <>
-    <Button className="disabled:opacity-40 disabled:cursor-not-allowed" variant="secondary" disabled={locked || selectableCount === 0} onClick={onSelectAll}>전체 선택{selectableCount !== undefined && ` (${selectableCount})`}</Button>
-    <Button variant="ghost" disabled={locked || selectedCount === 0} onClick={onClearSelection}>전체 선택 해제</Button>
-  </>;
+  const allSelected = selectableCount !== undefined && selectableCount > 0 && selectedCount === selectableCount;
+  return <Button className={`disabled:opacity-40 disabled:cursor-not-allowed ${allSelected ? "ring-2 ring-slate-800 ring-offset-1" : ""}`} variant="secondary"
+    aria-pressed={allSelected} disabled={locked || selectableCount === 0}
+    onClick={allSelected ? onClearSelection : onSelectAll}>{allSelected ? "전체 선택 해제" : "전체 선택"}{selectableCount !== undefined && ` (${selectableCount})`}</Button>;
 }
 
 export function RequestCollectControl({ requestId, brandId, orgName, base, downloadPlatforms, serverCollector, selected, onChanged, onSelectAll, onClearSelection, selectableCount, selecting }: {

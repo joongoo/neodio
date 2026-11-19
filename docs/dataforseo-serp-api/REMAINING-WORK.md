@@ -15,6 +15,11 @@
 
 ## 최신 인수인계
 
+### 2026-11-19 — 실행 목록 선택 토글
+
+- RequestSelectionButtons는 버튼 하나만 렌더링합니다. 현재 필터 selectableCount와 선택 수가 일치하면 aria-pressed/강조 테두리와 ‘전체 선택 해제’ 문구로 바뀌며 클릭 시 해제합니다. 부분 선택은 기존 cross-page GET으로 최신 후보를 읽고 전체 선택합니다. 오래된 집계와 다른 경우에도 실제 후보 전체 선택 여부로 toggle하며, 필터 변경 시 선택 초기화·등록 중 잠금은 유지합니다.
+
+
 ### 2026-11-19 — 큐 실행 상한 30건
 
 - local worker, queue callback, cron의 SUBMIT_BATCH_SIZE/MAX_IN_FLIGHT 기본값·설정 상한을 모두 30으로 변경했습니다. 명시 env가 더 작으면 작은 값이 적용됩니다. RECOVERY_BATCH_SIZE=40 기본은 유지(복구 배치 수로 신규 제출 상한과 별개). 예약 수 자체에는 30건 제한이 없습니다.

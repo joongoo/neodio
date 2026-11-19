@@ -9,7 +9,7 @@ import { RequestCollectControl } from "./RequestCollectControl";
 import { useCanEdit } from "@/components/auth/PermissionsProvider";
 import type { CollectorPlatform } from "@/lib/collectorAgent";
 import { requestSelectionScope } from "@/lib/requestItemFilters";
-import { isRetrySelectable, reconcileRetrySelection, mergeRetrySelection, type RetrySelectionItem } from "@/lib/requestRetrySelection";
+import { isRetrySelectable, reconcileRetrySelection, mergeRetrySelection, retryGroupSelected, type RetrySelectionItem } from "@/lib/requestRetrySelection";
 
 export function RequestRunList({ items, requestId, brandId, total, categories, search, orgName, base, serverCollector, downloadPlatforms, loading = false }: {
   items: RequestItemPage; requestId: string; brandId: string; total: number; categories: string[]; search: string;
@@ -37,7 +37,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
       if (requestSelectionScope(new URLSearchParams(window.location.search)) !== filterScope) return;
       if (!response.ok) throw new Error(data.error ?? "선택 항목을 조회하지 못했습니다.");
       const candidates = data.items as RetrySelectionItem[];
-      const next = mergeRetrySelection(effectiveSelected, candidates, true);
+      const next = mergeRetrySelection(effectiveSelected, candidates, !retryGroupSelected(effectiveSelected, candidates));
       setSelected(next);
     } catch (error) { setSelectionError(error instanceof Error ? error.message : "선택 항목을 조회하지 못했습니다."); }
     finally { setSelecting(false); }
