@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -14,13 +18,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
+      - name: Restore static analysis cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            tsconfig.tsbuildinfo
+            .cache/eslint
+          key: ${{ runner.os }}-node22-analysis-v1-${{ hashFiles('package-lock.json', 'tsconfig.json', 'eslint.config.*') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-node22-analysis-v1-${{ hashFiles('package-lock.json', 'tsconfig.json', 'eslint.config.*') }}-
       # LayoutProps 같은 전역 라우트 타입은 next dev/build/typegen이 생성한다 — CI엔 .next가 없으므로 먼저 생성.
       - run: npx next typegen
       - run: npx tsc --noEmit
-      - run: npm run lint -- --quiet
+      - run: npm run lint -- --quiet --cache --cache-strategy content --cache-location .cache/eslint
       - run: npm run test:unit
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps --only-shell chromium
       - run: npm run test:aio-extract
       - run: node --test .github/scripts/release-policy.test.mjs
 
@@ -32,10 +45,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
+      - name: Restore collector runtime cache
+        uses: actions/cache@v4
+        with:
+          path: .tmp/collector-build
+          key: ${{ runner.os }}-collector-runtime-v1-${{ hashFiles('collector/build.mjs') }}
       - run: npm run collector:build -- --origin https://neodio.vercel.app --platform win-x64
       - run: npm run test:collector
-      - run: choco install innosetup --no-progress -y
+      - name: Ensure Inno Setup is available
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - run: npm run collector:build-wizard
       - uses: actions/upload-artifact@v4
         with:
