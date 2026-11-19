@@ -258,6 +258,21 @@ CREATE TABLE IF NOT EXISTS legacy_collection_items (
   UNIQUE(collection_request_id,query_snapshot,surface,device)
 );
 CREATE INDEX IF NOT EXISTS legacy_collection_request ON legacy_collection_items(collection_request_id);
+ALTER TABLE collection_requests ADD COLUMN IF NOT EXISTS attention_reviewed BOOLEAN NOT NULL DEFAULT false;
+-- Acknowledgement is separate from execution history. New actionable failures reopen it.
+CREATE OR REPLACE FUNCTION reopen_collection_attention() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN
+  IF NEW.status IN ('provider_failed','submission_unknown') AND (TG_OP='INSERT' OR OLD.status IS DISTINCT FROM NEW.status) THEN
+    UPDATE collection_requests SET attention_reviewed=false
+      WHERE id=NEW.collection_request_id AND organization_id=NEW.organization_id AND brand_id=NEW.brand_id;
+  END IF;
+  RETURN NEW;
+END
+$body$;
+DROP TRIGGER IF EXISTS provider_attention_reopen ON provider_tasks;
+CREATE TRIGGER provider_attention_reopen AFTER INSERT OR UPDATE OF status ON provider_tasks FOR EACH ROW EXECUTE FUNCTION reopen_collection_attention();
+DROP TRIGGER IF EXISTS legacy_attention_reopen ON legacy_collection_items;
+CREATE TRIGGER legacy_attention_reopen AFTER INSERT OR UPDATE OF status ON legacy_collection_items FOR EACH ROW EXECUTE FUNCTION reopen_collection_attention();
 ALTER TABLE legacy_collection_items ADD COLUMN IF NOT EXISTS last_seen_at TEXT;
 ALTER TABLE legacy_collection_items ADD COLUMN IF NOT EXISTS retry_of_task_id TEXT REFERENCES legacy_collection_items(id);
 CREATE INDEX IF NOT EXISTS legacy_collection_retry_of ON legacy_collection_items(retry_of_task_id);

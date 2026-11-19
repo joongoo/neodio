@@ -11,7 +11,7 @@ import { retryLegacyRequest, LegacyRetryConflict } from "./legacyRetry";
 import { retrySelectedItems, listRetryCandidates } from "./retrySelection";
 import { createMixedFailureFixture } from "./mixedFailureFixture";
 import { isRetryFailure } from "@/lib/requestRetrySelection";
-import { getCollectionActivitySummary, getCollectionActivityFlags } from "./collectionActivity";
+import { getCollectionActivitySummary, getCollectionActivityFlags, getRequestAttentionCount, reviewCollectionRequest } from "./collectionActivity";
 import { managePendingSerpItems } from "./pendingSelection";
 import { CollectionQueueService } from "./collectionQueue";
 import { reportLegacySession } from "./legacySession";
@@ -194,6 +194,20 @@ test("legacy registration is idempotent and links results to the approved reques
       await store.query("UPDATE collection_requests SET cancel_requested=true WHERE id=$1", [pending.request.id]);
       await assert.rejects(pendingAction("wake", [pendingIds[1]]), LegacyRetryConflict);
       assert.equal((await pendingAction("cancel", [pendingIds[1]]))?.count, 1);
+      await store.query("UPDATE provider_tasks SET status='provider_failed' WHERE id=$1", [pendingIds[0]]);
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))?.needsAttention, true);
+      assert.equal(await reviewCollectionRequest("foreign-org", sample.brand_id, pending.request.id), false);
+      assert.equal(await reviewCollectionRequest(sample.organization_id, sample.brand_id, pending.request.id), true);
+      assert.equal(await reviewCollectionRequest(sample.organization_id, sample.brand_id, pending.request.id), true);
+      const reviewed = (await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))!;
+      assert.equal(reviewed.needsAttention, false);
+      assert.equal(reviewed.attentionReviewed, true);
+      assert.equal(reviewed.counts.failed, 1, "acknowledgement preserves failed history");
+      await store.query("UPDATE provider_tasks SET status='provider_failed' WHERE id=$1", [pendingIds[0]]);
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))?.attentionReviewed, true);
+      await store.query("UPDATE provider_tasks SET status='reserved' WHERE id=$1", [pendingIds[0]]);
+      await store.query("UPDATE provider_tasks SET status='provider_failed' WHERE id=$1", [pendingIds[0]]);
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))?.needsAttention, true, "new failure reopens review");
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }
@@ -207,6 +221,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query("BEGIN");
     // Session-local tables shadow real tables. No production rows are changed.
     await client.query(`CREATE TEMP TABLE collection_requests AS SELECT * FROM public.collection_requests WITH NO DATA;
+      ALTER TABLE collection_requests ALTER COLUMN attention_reviewed SET DEFAULT false;
       CREATE TEMP TABLE provider_tasks AS SELECT * FROM public.provider_tasks WITH NO DATA;
       CREATE TEMP TABLE neodio_users AS SELECT * FROM public.neodio_users WITH NO DATA;
       CREATE TEMP TABLE prompt_runs AS SELECT * FROM public.prompt_runs WITH NO DATA;`);
@@ -237,6 +252,8 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.deepEqual((await list()).rows.map(row => row.id), ["b", "a"]);
     assert.deepEqual((await list("q=&status=&surface=&sort=newest&size=25")).rows.map(row => row.id), ["b", "a"], "list form empty filters match no filters");
     assert.equal((await list("status=needs_attention")).rows[0].id, "b");
+    assert.deepEqual((await list("status=completed,partially_failed&surface=google-aio,naver-aio")).rows.map(row => row.id), ["b", "a"]);
+    assert.equal((await list("status=completed&surface=gemini,google-ai-mode")).filteredTotal, 0, "OR within fields, AND between fields");
     assert.equal((await list("q=%27%20OR%201%3D1--")).filteredTotal, 0);
     assert.equal((await list("to=2026-11-18T02%3A00%3A00Z")).filteredTotal, 1);
     assert.equal((await list("q=absent")).pageCount, 1);
@@ -325,6 +342,13 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,provider,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('foreign-retry','other','other-brand','hidden','dataforseo','google-aio','desktop','reserved','hidden','t1')`);
     assert.equal((await items("a"))?.rows.find(item => item.id === "t1")?.retries.length, 0, "item links never expose another tenant's retry request");
+    assert.equal(await getRequestAttentionCount("org", "brand", db), 1);
+    assert.equal(await reviewCollectionRequest("other", "brand", "b", db), false);
+    assert.equal(await reviewCollectionRequest("org", "brand", "b", db), true);
+    assert.equal(await getRequestAttentionCount("org", "brand", db), 0);
+    assert.equal((await list("attention=1")).filteredTotal, 0);
+    assert.equal((await getCollectionActivityFlags("org", "brand", db)).attention, false);
+    assert.equal((await items("b"))?.rows.find(item => item.id === "t3")?.status, "submission_unknown");
   } finally {
     await client.query("ROLLBACK");
     client.release();

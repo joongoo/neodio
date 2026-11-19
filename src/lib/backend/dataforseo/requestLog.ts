@@ -3,6 +3,7 @@ import { PROMPT_SURFACES } from "@/lib/promptSurfaces";
 import type { CollectionRequestDisplayStatus } from "@/lib/collectionRequestProgress";
 import { COLLECTION_ATTENTION_STATUSES } from "@/lib/collectionAttention";
 import { WITHOUT_COLLECTION_RETRY_SQL } from "./collectionActivity";
+import { filterValues } from "@/lib/requestItemFilters";
 
 export class RequestLogInputError extends Error {}
 
@@ -16,12 +17,14 @@ export function parseRequestLogOptions(params: URLSearchParams) {
   const page = integer("page", 1);
   const size = integer("size", 25);
   if (![10, 25, 50].includes(size)) throw new RequestLogInputError("size는 10, 25, 50 중 하나여야 합니다.");
-  const status = params.get("status")?.trim() || null;
+  let statuses = filterValues(params, "status");
   const attention = params.get("attention");
   if (attention !== null && attention !== "1") throw new RequestLogInputError("attention 값이 올바르지 않습니다.");
-  if (status && !["queued", "running", "completed", "partially_failed", "needs_attention", "cancelled"].includes(status)) throw new RequestLogInputError("status 값이 올바르지 않습니다.");
-  const surface = params.get("surface")?.trim() || null;
-  if (surface && !(PROMPT_SURFACES as readonly string[]).includes(surface)) throw new RequestLogInputError("surface 값이 올바르지 않습니다.");
+  if (statuses.some(status => !["queued", "running", "completed", "partially_failed", "needs_attention", "cancelled"].includes(status))) throw new RequestLogInputError("status 값이 올바르지 않습니다.");
+  const legacyAttention = statuses.includes("needs_attention");
+  statuses = statuses.filter(status => status !== "needs_attention");
+  const surfaces = filterValues(params, "surface");
+  if (surfaces.some(surface => !(PROMPT_SURFACES as readonly string[]).includes(surface))) throw new RequestLogInputError("surface 값이 올바르지 않습니다.");
   const sort = params.get("sort") ?? "newest";
   if (!["newest", "oldest"].includes(sort)) throw new RequestLogInputError("sort 값이 올바르지 않습니다.");
   const date = (key: string) => {
@@ -32,7 +35,7 @@ export function parseRequestLogOptions(params: URLSearchParams) {
   };
   const from = date("from"), to = date("to");
   if (from && to && from >= to) throw new RequestLogInputError("from은 to보다 이전이어야 합니다.");
-  return { page, size, status, surface, sort, from, to, attention: attention === "1", q: (params.get("q") ?? "").trim() };
+  return { page, size, status: statuses[0] ?? null, statuses, surface: surfaces[0] ?? null, surfaces, sort, from, to, attention: attention === "1" || legacyAttention, q: (params.get("q") ?? "").trim() };
 }
 
 export interface RequestLogRow {
@@ -52,9 +55,11 @@ export interface RequestLogRow {
   actualCostUsd: number;
   cancelRequested: boolean;
   retryOfRequestId: string | null;
+  attentionReviewed?: boolean;
+  needsAttention?: boolean;
 }
 
-interface RequestLogPage { rows: RequestLogRow[]; filteredTotal: number; page: number; pageSize: number; pageCount: number }
+export interface RequestLogPage { rows: RequestLogRow[]; filteredTotal: number; page: number; pageSize: number; pageCount: number }
 export interface RequestLogDatabase { query<T>(sql: string, params: unknown[]): Promise<T[]> }
 
 /** One SQL statement keeps count, clamped page and summaries on one snapshot. */
@@ -70,19 +75,17 @@ export async function listRequestLogs(
   const direction = options.sort === "oldest" ? "ASC" : "DESC";
   const [result] = await db.query<{ payload: RequestLogPage }>(`
     WITH scoped AS (
-      SELECT r.*, u.name AS requester_name FROM collection_requests r
+      SELECT r.*, u.name AS requester_name, (NOT r.attention_reviewed AND EXISTS (
+          SELECT 1 FROM collection_execution_items p WHERE p.collection_request_id=r.id
+            AND p.organization_id=r.organization_id AND p.brand_id=r.brand_id
+            AND p.status=ANY($12::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL}
+        )) AS needs_attention FROM collection_requests r
       LEFT JOIN neodio_users u ON u.id=r.requested_by
       WHERE r.organization_id=$1 AND r.brand_id=$2
         AND ($10::text IS NULL OR r.id=$10)
         AND ($13::text IS NULL OR r.retry_of_request_id=$13)
         AND ($3::text IS NULL OR r.created_at >= $3)
         AND ($4::text IS NULL OR r.created_at < $4)
-        AND (NOT $11::boolean OR EXISTS (
-          SELECT 1 FROM collection_execution_items p WHERE p.collection_request_id=r.id
-            AND p.organization_id=r.organization_id AND p.brand_id=r.brand_id
-            AND p.status=ANY($12::text[])
-            AND ${WITHOUT_COLLECTION_RETRY_SQL}
-        ))
     ), aggregates AS (
       SELECT r.id, count(t.id)::int AS total,
         count(t.id) FILTER (WHERE t.status='reserved')::int AS waiting,
@@ -105,14 +108,14 @@ export async function listRequestLogs(
       GROUP BY r.id
     ), summaries AS (
       SELECT r.*, a.total,a.waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
-        CASE WHEN a.attention>0 THEN 'needs_attention'
-          WHEN a.total>0 AND a.completed+a.failed+a.cancelled>=a.total THEN
-            CASE WHEN a.failed>0 THEN 'partially_failed' WHEN a.cancelled=a.total THEN 'cancelled' ELSE 'completed' END
+        CASE WHEN a.total>0 AND a.completed+a.failed+a.cancelled+a.attention>=a.total THEN
+            CASE WHEN a.failed+a.attention>0 THEN 'partially_failed' WHEN a.cancelled=a.total THEN 'cancelled' ELSE 'completed' END
           WHEN a.running>0 THEN 'running' ELSE 'queued' END AS display_status
       FROM scoped r JOIN aggregates a ON a.id=r.id
     ), filtered AS (
-      SELECT * FROM summaries WHERE ($6::text IS NULL OR display_status=$6)
-        AND ($7::text IS NULL OR $7=ANY(surfaces))
+      SELECT * FROM summaries WHERE ($6::text[] IS NULL OR display_status=ANY($6))
+        AND ($7::text[] IS NULL OR surfaces && $7)
+        AND (NOT $11::boolean OR needs_attention)
         AND ($5='' OR strpos(lower(id),lower($5))>0 OR strpos(lower(COALESCE(client_request_id,'')),lower($5))>0 OR query_match)
     ), pagination AS (
       SELECT count(*)::int AS total, GREATEST(1,ceil(count(*)::numeric/$8)::int) AS pages FROM filtered
@@ -131,11 +134,12 @@ export async function listRequestLogs(
         'counts',jsonb_build_object('total',p.total,'waiting',p.waiting,'running',p.running,'completed',p.completed,'failed',p.failed,'attention',p.attention,'cancelled',p.cancelled),
         'phases',jsonb_build_object('submitting',p.submitting,'collecting',p.collecting,'processing',p.processing),
         'estimatedCostUsd',p.estimated_cost_usd::float8,'actualCostUsd',p.actual_cost,
-        'cancelRequested',p.cancel_requested,'retryOfRequestId',p.retry_of_request_id
+        'cancelRequested',p.cancel_requested,'retryOfRequestId',p.retry_of_request_id,
+        'attentionReviewed',p.attention_reviewed,'needsAttention',p.needs_attention
       ) ORDER BY p.created_at ${direction},p.id ${direction}) FROM paged p),'[]'::jsonb)) AS payload
     FROM bounds b
   `,
-  [organizationId, brandId, options.from, options.to, options.q, options.status, options.surface, options.size, options.page, requestId ?? null, options.attention, COLLECTION_ATTENTION_STATUSES, retryOfRequestId ?? null]);
+  [organizationId, brandId, options.from, options.to, options.q, options.statuses.length ? options.statuses : null, options.surfaces.length ? options.surfaces : null, options.size, options.page, requestId ?? null, options.attention, COLLECTION_ATTENTION_STATUSES, retryOfRequestId ?? null]);
   return result.payload;
 }
 

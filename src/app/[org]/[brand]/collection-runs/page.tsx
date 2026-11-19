@@ -25,7 +25,7 @@ export default async function CollectionRunsPage({
   const params = await searchParams;
   const tenant = await getCurrentTenant();
   if (params.view !== "items") {
-    const query = new URLSearchParams(Object.entries(params).flatMap(([key, value]) => typeof value === "string" ? [[key, value]] : []));
+    const query = new URLSearchParams(Object.entries(params).flatMap(([key, value]) => (Array.isArray(value) ? value : typeof value === "string" ? [value] : []).map(item => [key, item])));
     return <RequestLogList base={tenant.base} organizationId={tenant.orgId} brandId={tenant.brandId} query={query} />;
   }
   const [runFiles, brandsData, realCategories, providerTasks] = await Promise.all([

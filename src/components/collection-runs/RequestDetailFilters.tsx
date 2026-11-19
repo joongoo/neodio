@@ -6,7 +6,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { filterValues, REQUEST_ITEM_STATUSES, REQUEST_ITEM_SURFACES, type RequestItemFacets } from "@/lib/requestItemFilters";
 import { REQUEST_STATUS_LABEL, surfaceLabel } from "./RequestLogViews";
 
-export function RequestDetailFilters({ query, facets, loading = false, onChange }: { query: string; facets?: RequestItemFacets; loading?: boolean; onChange: (changes: Record<string, string>) => void }) {
+export function RequestDetailFilters({ query, facets, loading = false, onChange, mode = "items" }: { query: string; facets?: RequestItemFacets; loading?: boolean; mode?: "items" | "requests"; onChange: (changes: Record<string, string>) => void }) {
   const params = new URLSearchParams(query);
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -18,7 +18,7 @@ export function RequestDetailFilters({ query, facets, loading = false, onChange 
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, []);
   return <div ref={root} className="flex flex-wrap items-end gap-3" aria-label="수집 항목 필터">
-    {([{ key: "status", label: "상태", values: REQUEST_ITEM_STATUSES, labelFor: (value: string) => REQUEST_STATUS_LABEL[value] },
+    {([{ key: "status", label: "상태", values: mode === "requests" ? ["queued", "running", "completed", "partially_failed", "cancelled"] : REQUEST_ITEM_STATUSES, labelFor: (value: string) => REQUEST_STATUS_LABEL[value] },
       { key: "surface", label: "플랫폼", values: REQUEST_ITEM_SURFACES, labelFor: surfaceLabel }] as const).map(field => {
       const selected = filterValues(params, field.key);
       return <div key={field.key} className="relative flex flex-col gap-1.5" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(current => current === field.key ? null : current); }}
@@ -40,6 +40,6 @@ export function RequestDetailFilters({ query, facets, loading = false, onChange 
           </div>
       </div>;
     })}
-    <div className="flex flex-col gap-1.5" onFocus={() => setOpen(null)} onPointerDown={() => setOpen(null)}><span className="text-xs text-neutral-500">정렬</span><Dropdown variant="solid" label="" value={params.get("sort") === "newest" ? "최신순" : "오래된순"} options={["오래된순", "최신순"]} onChange={label => onChange({ sort: label === "최신순" ? "newest" : "oldest", page: "1" })} /></div>
+    <div className="flex flex-col gap-1.5" onFocus={() => setOpen(null)} onPointerDown={() => setOpen(null)}><span className="text-xs text-neutral-500">정렬</span><Dropdown variant="solid" label="" value={(params.get("sort") ?? (mode === "requests" ? "newest" : "oldest")) === "newest" ? "최신순" : "오래된순"} options={["오래된순", "최신순"]} onChange={label => onChange({ sort: label === "최신순" ? "newest" : "oldest", page: "1" })} /></div>
   </div>;
 }

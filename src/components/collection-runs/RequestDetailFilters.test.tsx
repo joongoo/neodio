@@ -4,6 +4,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { RequestDetailFilters } from "./RequestDetailFilters";
 import { requestSelectionScope, filterValues } from "@/lib/requestItemFilters";
 
+test("request filters use execution statuses, multi-checkboxes, newest sort and no keyword field", () => {
+  const html = renderToStaticMarkup(<RequestDetailFilters mode="requests" query="status=completed,cancelled&surface=gemini,google-aio" onChange={() => {}} />);
+  assert.ok(!html.includes("확인 필요"));
+  assert.ok(!html.includes("<form"));
+  assert.ok(!html.includes("<input"));
+  assert.ok(html.includes("최신순"));
+  assert.equal((html.match(/aria-checked="true"/g) ?? []).length, 4);
+});
+
 test("detail filters reuse library dropdowns without a GET submit form", () => {
   const html = renderToStaticMarkup(<RequestDetailFilters query="status=cancelled&surface=gemini&sort=newest" onChange={() => {}} />);
   for (const label of ["상태", "플랫폼", "정렬", "취소", "Gemini", "최신순"]) assert.ok(html.includes(label), label);
