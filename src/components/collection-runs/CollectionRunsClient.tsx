@@ -41,8 +41,8 @@ export function StatusBadge({ file }: { file: RunListRow }) {
   return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
 }
 
-export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
-  return [
+export function runColumns(onAnalyze: (file: RunListRow) => void, { showDevice = false }: { showDevice?: boolean } = {}): DataTableColumn<RunListRow>[] {
+  const columns: DataTableColumn<RunListRow>[] = [
     {
       key: "runAt",
       label: "수집 시각 (KST)",
@@ -98,8 +98,9 @@ export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColu
     },
     {
       key: "analyze",
-      label: "",
+      label: "분석",
       width: "w-[90px]",
+      align: "right",
       render: (file) => (
         file.state === "pending" || file.dir === "provider-task" || file.dir === "legacy-task" ? null : <EditOnly>
           <button
@@ -108,7 +109,7 @@ export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColu
               e.stopPropagation();
               onAnalyze(file);
             }}
-            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+            className="shrink-0 whitespace-nowrap rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
           >
             분석
           </button>
@@ -116,6 +117,11 @@ export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColu
       ),
     },
   ];
+  if (showDevice) columns.splice(columns.findIndex(column => column.key === "engine") + 1, 0, {
+    key: "device", label: "디바이스", width: "w-[80px]",
+    render: file => <span className="whitespace-nowrap text-neutral-600">{file.device === "mobile" ? "모바일" : file.device === "desktop" ? "PC" : "—"}</span>,
+  });
+  return columns;
 }
 
 const PROVIDER_PROGRESS_LABEL: Record<string, string> = {

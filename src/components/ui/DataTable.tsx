@@ -40,7 +40,7 @@ export function DataTable<T>({ columns, rows, getRowId, renderExpanded }: DataTa
 
   return (
     <div className="w-full overflow-x-auto rounded-lg border border-neutral-200">
-      <div className="min-w-[720px]">
+      <div className="w-max min-w-[max(720px,100%)]">
         <div className="flex items-center gap-2 border-b border-neutral-200 px-5 py-3">
           {columns.map((col) => (
             <div

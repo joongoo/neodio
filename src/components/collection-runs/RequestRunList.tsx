@@ -54,7 +54,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
     const terminalFailure = ["provider_failed", "parse_failed", "submission_unknown", "cancelled"].includes(item.status);
     return {
       key: item.id, dir: result?.dir ?? (item.executionKind === "legacy" ? "legacy-task" : "provider-task"), filename: result?.filename ?? item.id,
-      runAt: item.completedAt ?? item.submittedAt ?? item.createdAt,
+      runAt: item.completedAt ?? item.submittedAt ?? item.createdAt, device: item.device,
       source: ({ "google-aio": "google-aio", "google-ai-mode": "google-ai-overview", "naver-aio": "naver-overview", "naver-ai": "naver-ai-search", gemini: "api" } as Record<string, string>)[item.surface] ?? item.surface,
       collectedBy: item.executionKind === "serp-api" ? "dataforseo" : item.surface === "gemini" ? "gemini-api" : "collector", query: item.query, category: result?.category ?? undefined, topic: result?.topic ?? undefined,
       answerLength: result?.answerLength ?? null, citationCount: result?.citationCount ?? null,
@@ -63,7 +63,7 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
       retryRequests: item.retries.map(retry => ({ href: `${base}/collection-runs/${encodeURIComponent(retry.requestId)}`, status: retry.status })),
     };
   });
-  const columns = runColumns(setAnalyzing);
+  const columns = runColumns(setAnalyzing, { showDevice: true });
   if (canEdit) columns.unshift({
     key: "select", width: "w-[45px]",
     label: <input type="checkbox" aria-label="현재 페이지 수집 항목 전체 선택" disabled={!selectable.length || selecting || loading}
