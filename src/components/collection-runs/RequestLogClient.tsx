@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCanEdit } from "@/components/auth/PermissionsProvider";
 import { Pagination } from "@/components/ui/Pagination";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 import type { RequestLogPage } from "@/lib/backend/dataforseo/requestLog";
 import { formatKst } from "@/lib/backend/collectionRunsTypes";
 import { RequestDetailFilters } from "./RequestDetailFilters";
@@ -24,6 +26,8 @@ export function RequestLogClient({ path, initial, initialQuery }: { path: string
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(() => {
@@ -46,12 +50,12 @@ export function RequestLogClient({ path, initial, initialQuery }: { path: string
   const setAttention = (active: boolean) => change({ attention: active ? "1" : "", status: (params.get("status") ?? "").split(",").filter(value => value && value !== "needs_attention").join(","), page: "1" });
   const review = async (id: string) => {
     if (reviewing) return;
-    setReviewing(id); setError("");
+    setReviewing(id); setReviewError("");
     try {
       const response = await fetch(`/api/collection-requests/${encodeURIComponent(id)}/review`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewed: true }) });
       if (!response.ok) throw new Error("확인 완료를 저장하지 못했습니다.");
-      setRevision(value => value + 1); router.refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "저장에 실패했습니다."); }
+      setReviewTarget(null); setRevision(value => value + 1); router.refresh();
+    } catch (cause) { setReviewError(cause instanceof Error ? cause.message : "저장에 실패했습니다."); }
     finally { setReviewing(null); }
   };
   const atInitial = query === initialQuery && revision === 0;
@@ -74,11 +78,22 @@ export function RequestLogClient({ path, initial, initialQuery }: { path: string
           <td className="whitespace-nowrap px-5 py-3">{formatKst(row.createdAt)}</td><td className="whitespace-nowrap px-5 py-3">{row.requestedBy?.name ?? "-"}</td>
           <td className="min-w-36 px-5 py-3">{row.surfaces.map(surfaceLabel).join(", ")}</td><td className="whitespace-nowrap px-5 py-3"><RequestStatusBadge status={row.status} /></td>
           <td className="whitespace-nowrap px-5 py-3">{row.counts.completed} / {row.counts.total}</td><td className="whitespace-nowrap px-5 py-3">{row.counts.failed} / {row.counts.attention}</td>
-          <td className="whitespace-nowrap px-5 py-3">{row.needsAttention ? <div className="flex items-center gap-2"><span className="text-amber-700">확인 필요</span>{canEdit && <button type="button" disabled={!!reviewing} onClick={() => void review(row.id)} className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-50 disabled:opacity-40">{reviewing === row.id ? "저장 중…" : "확인 완료"}</button>}</div> : row.attentionReviewed ? "확인 완료" : "-"}</td>
+          <td className="whitespace-nowrap px-5 py-3">{row.needsAttention ? <div className="flex items-center gap-2"><span className="text-amber-700">확인 필요</span>{canEdit && <button type="button" disabled={!!reviewing} onClick={() => { setReviewError(""); setReviewTarget(row.id); }} className="cursor-pointer rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40">{reviewing === row.id ? "저장 중…" : "확인 완료"}</button>}</div> : row.attentionReviewed ? "확인 완료" : "-"}</td>
           <td className="whitespace-nowrap px-5 py-3">{usd(row.estimatedCostUsd)} / {usd(row.actualCostUsd)}</td>
         </RequestRowLink>;
       })}
       {!pending && !error && data.rows.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-neutral-500">조건에 맞는 수집 요청이 없습니다.</td></tr>}
     </tbody></table></div><div className="border-t border-neutral-200 px-5 py-2"><Pagination page={data.page} pageCount={data.pageCount} pageSize={data.pageSize} totalCount={data.filteredTotal} onPageChange={page => change({ page: String(page) })} onPageSizeChange={size => change({ size: String(size), page: "1" })} /></div></div>
+    <Modal open={reviewTarget !== null} onClose={() => { if (!reviewing) setReviewTarget(null); }}>
+      <h2 className="text-lg font-semibold text-neutral-900">확인 완료로 처리할까요?</h2>
+      <p className="mt-3 text-sm leading-6 text-neutral-600">이 요청을 확인 필요 목록과 알림에서 제외합니다. 실패 이력은 그대로 유지되며, 재수집이나 작업 취소는 실행되지 않습니다.</p>
+      <p className="mt-2 text-sm leading-6 text-neutral-600">이후 새로운 제출 실패가 발생하면 다시 확인 필요로 표시됩니다.</p>
+      <p className="mt-3 break-all text-xs text-neutral-400">{reviewTarget}</p>
+      {reviewError && <p role="alert" className="mt-3 text-sm text-red-700">{reviewError}</p>}
+      <div className="mt-6 flex justify-end gap-2">
+        <Button disabled={!!reviewing} onClick={() => setReviewTarget(null)} className="disabled:cursor-not-allowed disabled:opacity-40">취소</Button>
+        <Button variant="primary" disabled={!!reviewing} onClick={() => { if (reviewTarget) void review(reviewTarget); }} className="disabled:cursor-not-allowed disabled:opacity-40">{reviewing ? "저장 중…" : "확인 완료"}</Button>
+      </div>
+    </Modal>
   </section>;
 }

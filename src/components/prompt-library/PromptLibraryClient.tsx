@@ -34,6 +34,10 @@ import { importPromptCsv } from "@/lib/importPromptCsv";
 import { deleteLibraryRows } from "@/lib/deleteLibraryRows";
 import { downloadCsv } from "@/lib/csv";
 import { formatKst } from "@/lib/backend/collectionRunsTypes";
+import { allFilteredSelected, toggleFilteredSelection } from "@/lib/promptLibrarySelection";
+
+// Temporarily hide the daily-load badge; set true to restore its existing UI.
+const SHOW_AIO_DAILY_LOAD_BADGE = false;
 
 type ActiveCollectionConflict = {
   id: string;
@@ -122,6 +126,8 @@ export function PromptLibraryClient({
   }, [rows, category, topic, search, surfaceFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const filteredIds = filtered.map(row => row.id);
+  const allFilteredAreSelected = allFilteredSelected(selected, filteredIds);
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // 현재 필터(검색어/카테고리/토픽) 적용된 결과만 내보낸다 — 화면에
@@ -361,7 +367,7 @@ export function PromptLibraryClient({
             드롭다운(US-en/KR-ko, 클릭해도 아무 동작 안 함) 대신 실제 서비스
             시장(KR)을 있는 그대로 보여준다. */}
         <div className="flex flex-wrap items-center gap-2">
-          {aioLoad.prompts > 0 && (
+          {SHOW_AIO_DAILY_LOAD_BADGE && aioLoad.prompts > 0 && (
             <span
               title="구글AIO가 켜진 프롬프트 × AIO 수집 디바이스 수 — AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있습니다."
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${aioLoad.over ? "bg-amber-100 text-amber-800" : "bg-blue-50 text-blue-700"}`}
@@ -476,10 +482,12 @@ export function PromptLibraryClient({
         {canEdit && filtered.length > 0 && (
           <Button
             variant="secondary"
-            onClick={() => setSelected(new Set(filtered.map((r) => r.id)))}
-            title="검색·카테고리·토픽·플랫폼 조건에 맞는 프롬프트를 페이지와 상관없이 모두 선택합니다"
+            aria-pressed={allFilteredAreSelected}
+            className={allFilteredAreSelected ? "ring-2 ring-slate-800 ring-offset-1" : undefined}
+            onClick={() => setSelected(previous => toggleFilteredSelection(previous, filteredIds))}
+            title="현재 조건에 맞는 프롬프트를 모든 페이지에서 선택하거나 해제합니다. 다른 조건에서 선택한 항목은 유지합니다."
           >
-            조건에 맞는 {filtered.length}개 모두 선택
+            조건에 맞는 {filtered.length}개 {allFilteredAreSelected ? "선택 해제" : "모두 선택"}
           </Button>
         )}
         <div className="flex-1" />
