@@ -328,7 +328,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query("UPDATE provider_tasks SET status='submitting' WHERE id='t1'");
     await client.query("UPDATE provider_tasks SET status='raw_saved' WHERE id='t2'");
     const phases = (await getRequestLog("org", "brand", "a", db))!.phases;
-    assert.deepEqual(phases, { submitting: 1, collecting: 0, processing: 1 }, "progress phases come only from scoped DB states");
+    assert.deepEqual(phases, { submitting: 1, collecting: 0, processing: 1, serpWaiting: 0 }, "progress phases come only from scoped DB states");
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
       VALUES ('local-waiting','org','brand','a','gemini','desktop','reserved','waiting'),
         ('local-running','org','brand','a','naver-ai','desktop','collecting','running');

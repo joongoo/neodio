@@ -3,19 +3,23 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RequestProgressStages, RequestRefreshIndicator } from "./RequestDetailLive";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
-import { RequestSummary, REQUEST_STATUS_LABEL } from "./RequestLogViews";
+import { RequestSummary, requestItemStatusLabel } from "./RequestLogViews";
 import { PendingRunDetail, StatusBadge } from "./CollectionRunsClient";
 import { toPendingRunListRow } from "@/lib/collectionRunList";
 import type { ProviderTaskRecord } from "@/lib/backend/dataforseo/types";
 import type { RunListRow } from "@/lib/collectionRunList";
 import { REQUEST_ITEM_STATUSES } from "@/lib/requestItemFilters";
 
-test("item table badges use the exact same detailed labels as status filters", () => {
+test("item table badges simplify queue phases without changing internal failure labels", () => {
   for (const status of REQUEST_ITEM_STATUSES) {
     const html = renderToStaticMarkup(<StatusBadge file={{ progressStatus: status, state: "failed" } as RunListRow} />);
-    assert.ok(html.includes(`>${REQUEST_STATUS_LABEL[status]}</span>`), status);
+    assert.ok(html.includes(`>${requestItemStatusLabel(status, false)}</span>`), status);
     assert.ok(!html.includes(">실패</span>"));
   }
+  const serp = renderToStaticMarkup(<StatusBadge file={{ progressStatus: "reserved", collectedBy: "dataforseo", state: "pending" } as RunListRow} />);
+  assert.ok(serp.includes(">제출 중</span>"));
+  assert.equal(requestItemStatusLabel("reserved", false), "수집 대기");
+  assert.equal(requestItemStatusLabel("queued", true), "수집 중");
 });
 
 test("older pending history links to request controls instead of direct-submit/delete actions", () => {
@@ -41,8 +45,11 @@ test("progress shows independent stages including partial results and uncertain 
   const request = { counts: { total: 20, waiting: 2, running: 6, completed: 8, failed: 2, attention: 1, cancelled: 1 },
     phases: { submitting: 1, collecting: 3, processing: 2 }, actualCostUsd: 0.0126, estimatedCostUsd: 0.5 } as RequestLogRow;
   const html = renderToStaticMarkup(<RequestProgressStages request={request} />);
-  for (const label of ["수집 대기", "제출 중", "수집·회수 중", "결과 반영 중", "완료", "실패", "제출 확인 필요", "취소"]) assert.ok(html.includes(label), label);
-  assert.match(html, /수집·회수 중<\/dt><dd[^>]*>3<\/dd>/);
+  for (const label of ["수집 대기", "제출 중", "수집 중", "결과 반영 중", "완료", "실패", "제출 확인 필요", "취소"]) assert.ok(html.includes(label), label);
+  assert.match(html, /수집 중<\/dt><dd[^>]*>3<\/dd>/);
+  const queued = renderToStaticMarkup(<RequestProgressStages request={{ ...request, phases: { ...request.phases!, serpWaiting: 2 } }} />);
+  assert.match(queued, /제출 중<\/dt><dd[^>]*>3<\/dd>/);
+  assert.match(queued, /수집 대기<\/dt><dd[^>]*>0<\/dd>/);
   assert.ok(html.includes("전체 완료를 기다리지 않고"));
   assert.ok(html.includes("실제 발생 예상 비용"));
   assert.ok(html.includes("$0.0126"));

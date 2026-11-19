@@ -4,6 +4,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { RequestDetailFilters } from "./RequestDetailFilters";
 import { requestSelectionScope, filterValues } from "@/lib/requestItemFilters";
 
+test("item filters group queued submission and collection stages without duplicate options", () => {
+  const html = renderToStaticMarkup(<RequestDetailFilters query="status=reserved,submitting,queued,collecting" onChange={() => {}} />);
+  assert.equal((html.match(/role="checkbox" aria-checked="true"/g) ?? []).length, 2);
+  assert.ok(html.includes("수집 대기 / 제출 중"));
+  assert.ok(html.includes("수집 중"));
+  assert.ok(!html.includes("결과 회수 중"));
+});
+
 test("request filters use execution statuses, multi-checkboxes, newest sort and no keyword field", () => {
   const html = renderToStaticMarkup(<RequestDetailFilters mode="requests" query="status=completed,cancelled&surface=gemini,google-aio" onChange={() => {}} />);
   assert.ok(!html.includes("확인 필요"));

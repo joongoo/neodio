@@ -6,10 +6,15 @@ import type { PromptSurface } from "@/lib/promptSurfaces";
 
 export const REQUEST_STATUS_LABEL: Record<string, string> = {
   queued: "대기", running: "진행 중", completed: "완료", partially_failed: "일부 실패", needs_attention: "확인 필요", cancelled: "취소",
-  reserved: "수집 대기", submitting: "제출 중", submission_unknown: "제출 확인 필요", collecting: "결과 회수 중",
+  reserved: "수집 대기", submitting: "제출 중", submission_unknown: "제출 확인 필요", collecting: "수집 중",
   raw_saved: "원본 저장 완료", normalized: "결과 반영 중", provider_failed: "제출 실패", artifact_failed: "원본 저장 재처리 중", projection_failed: "결과 반영 재처리 중", parse_failed: "분석 실패",
 };
 export const surfaceLabel = (surface: string) => SURFACE_LABEL[surface as PromptSurface] ?? surface;
+export function requestItemStatusLabel(status: string, serpApi: boolean): string {
+  if (serpApi && status === "reserved") return "제출 중";
+  if (status === "queued") return "수집 중";
+  return REQUEST_STATUS_LABEL[status] ?? status;
+}
 export const usd = (cost: number) => cost === 0 ? "-" : `$${cost.toFixed(4)}`;
 
 export function RequestStatusBadge({ status }: { status: string }) {

@@ -22,11 +22,13 @@ export function RequestRefreshIndicator({ state }: { state: RequestRefreshState 
 
 export function RequestProgressStages({ request, refreshState }: Pick<RequestDetailSnapshot, "request"> & { refreshState?: RequestRefreshState }) {
   const c = request.counts, p = request.phases;
-  const cards = [["수집 대기", c.waiting], ["제출 중", p?.submitting ?? 0], ["수집·회수 중", p?.collecting ?? c.running],
+  const serpWaiting = p?.serpWaiting ?? 0;
+  const cards = [["수집 대기", Math.max(0, c.waiting - serpWaiting)], ["제출 중", serpWaiting + (p?.submitting ?? 0)], ["수집 중", p?.collecting ?? c.running],
     ["결과 반영 중", p?.processing ?? 0], ["완료", c.completed], ["실패", c.failed], ["제출 확인 필요", c.attention], ["취소", c.cancelled]] as const;
   return <section aria-label="수집 단계별 현황" className="rounded-xl border border-neutral-200 bg-white p-5">
     <div className="flex flex-wrap items-start justify-between gap-3"><h2 className="text-sm font-semibold text-neutral-900">수집 진행 현황</h2>{refreshState && <RequestRefreshIndicator state={refreshState} />}</div>
     <p className="mt-1 text-xs text-neutral-500">항목마다 독립적으로 처리됩니다. 전체 완료를 기다리지 않고 완료된 결과를 확인할 수 있습니다.</p>
+    <p className="mt-1 text-xs text-neutral-500">제출 중에는 SERP API 큐 대기를 포함합니다. 수집 중은 처리 단계에 진입한 항목 수이며, 실제 동시 실행 수는 아닙니다. 로컬 수집 대기는 별도로 표시합니다.</p>
     <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{cards.map(([label, count]) => <div key={label} className="rounded-lg bg-neutral-50 px-3 py-2"><dt className="text-xs text-neutral-500">{label}</dt><dd className={`mt-1 text-xl font-semibold tabular-nums ${label === "실패" ? "text-red-700" : label === "제출 확인 필요" ? "text-orange-700" : "text-neutral-900"}`}>{count}</dd></div>)}
       <div className="rounded-lg bg-neutral-50 px-3 py-2"><dt className="text-xs text-neutral-500">실제 발생 예상 비용</dt><dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">{usd(request.actualCostUsd)}{request.actualCostUsd > 0 && <span className="ml-1 text-xs font-normal text-neutral-500">USD</span>}</dd></div>
     </dl>

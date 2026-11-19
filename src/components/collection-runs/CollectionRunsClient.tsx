@@ -17,7 +17,7 @@ import { engineLabel, RUN_PAGE_SIZES, type RunListPage, type RunListRow } from "
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
 import Link from "next/link";
-import { REQUEST_STATUS_LABEL } from "./RequestLogViews";
+import { REQUEST_STATUS_LABEL, requestItemStatusLabel } from "./RequestLogViews";
 
 export function StatusBadge({ file }: { file: RunListRow }) {
   if (file.progressStatus && REQUEST_STATUS_LABEL[file.progressStatus]) {
@@ -27,7 +27,7 @@ export function StatusBadge({ file }: { file: RunListRow }) {
       : ["provider_failed", "parse_failed"].includes(status) ? "bg-red-100 text-red-700"
       : status === "completed" ? "bg-emerald-100 text-emerald-700"
       : status === "reserved" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700";
-    return <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${color}`}>{REQUEST_STATUS_LABEL[status]}</span>;
+    return <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${color}`}>{requestItemStatusLabel(status, file.collectedBy === "dataforseo")}</span>;
   }
   if (file.state === "pending") {
     return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{file.dir === "legacy-task" ? "수집 중" : "진행 중"}</span>;

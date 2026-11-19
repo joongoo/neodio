@@ -50,7 +50,7 @@ export interface RequestLogRow {
   surfaces: string[];
   devices: string[];
   counts: { total: number; waiting: number; running: number; completed: number; failed: number; attention: number; cancelled: number };
-  phases?: { submitting: number; collecting: number; processing: number };
+  phases?: { submitting: number; collecting: number; processing: number; serpWaiting?: number };
   estimatedCostUsd: number;
   actualCostUsd: number;
   cancelRequested: boolean;
@@ -89,6 +89,7 @@ export async function listRequestLogs(
     ), aggregates AS (
       SELECT r.id, count(t.id)::int AS total,
         count(t.id) FILTER (WHERE t.status='reserved')::int AS waiting,
+        count(t.id) FILTER (WHERE t.status='reserved' AND t.execution_kind='serp-api')::int AS serp_waiting,
         count(t.id) FILTER (WHERE t.status IN ('submitting','queued','collecting','raw_saved','normalized','artifact_failed','projection_failed'))::int AS running,
         count(t.id) FILTER (WHERE t.status='submitting')::int AS submitting,
         count(t.id) FILTER (WHERE t.status IN ('queued','collecting'))::int AS collecting,
@@ -107,7 +108,7 @@ export async function listRequestLogs(
         AND t.organization_id=r.organization_id AND t.brand_id=r.brand_id
       GROUP BY r.id
     ), summaries AS (
-      SELECT r.*, a.total,a.waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
+      SELECT r.*, a.total,a.waiting,a.serp_waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
         CASE WHEN a.total>0 AND a.completed+a.failed+a.cancelled+a.attention>=a.total THEN
             CASE WHEN a.failed+a.attention>0 THEN 'partially_failed' WHEN a.cancelled=a.total THEN 'cancelled' ELSE 'completed' END
           WHEN a.running>0 THEN 'running' ELSE 'queued' END AS display_status
@@ -132,7 +133,7 @@ export async function listRequestLogs(
         'createdAt',p.created_at,'approvedAt',p.approved_at,'completedAt',p.finished_at,'status',p.display_status,
         'surfaces',p.surfaces,'devices',p.devices,
         'counts',jsonb_build_object('total',p.total,'waiting',p.waiting,'running',p.running,'completed',p.completed,'failed',p.failed,'attention',p.attention,'cancelled',p.cancelled),
-        'phases',jsonb_build_object('submitting',p.submitting,'collecting',p.collecting,'processing',p.processing),
+        'phases',jsonb_build_object('submitting',p.submitting,'collecting',p.collecting,'processing',p.processing,'serpWaiting',p.serp_waiting),
         'estimatedCostUsd',p.estimated_cost_usd::float8,'actualCostUsd',p.actual_cost,
         'cancelRequested',p.cancel_requested,'retryOfRequestId',p.retry_of_request_id,
         'attentionReviewed',p.attention_reviewed,'needsAttention',p.needs_attention
