@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Check, ChevronDown } from "lucide-react";
-import { filterValues, REQUEST_ITEM_STATUSES, REQUEST_ITEM_SURFACES, type RequestItemFacets } from "@/lib/requestItemFilters";
+import { filterValues, REQUEST_ITEM_DEVICES, REQUEST_ITEM_STATUSES, REQUEST_ITEM_SURFACES, type RequestItemFacets } from "@/lib/requestItemFilters";
 import { REQUEST_STATUS_LABEL, surfaceLabel } from "./RequestLogViews";
 
 export function RequestDetailFilters({ query, facets, loading = false, onChange, mode = "items" }: { query: string; facets?: RequestItemFacets; loading?: boolean; mode?: "items" | "requests"; onChange: (changes: Record<string, string>) => void }) {
@@ -19,7 +19,8 @@ export function RequestDetailFilters({ query, facets, loading = false, onChange,
   }, []);
   return <div ref={root} className="flex flex-wrap items-end gap-3" aria-label="수집 항목 필터">
     {([{ key: "status", label: "상태", values: mode === "requests" ? ["queued", "running", "completed", "partially_failed", "cancelled"] : REQUEST_ITEM_STATUSES.filter(value => value !== "submitting" && value !== "queued"), labelFor: (value: string) => mode === "items" && ["reserved", "submitting"].includes(value) ? "수집 대기 / 제출 중" : mode === "items" && ["queued", "collecting"].includes(value) ? "수집 중" : REQUEST_STATUS_LABEL[value] },
-      { key: "surface", label: "플랫폼", values: REQUEST_ITEM_SURFACES, labelFor: surfaceLabel }] as const).map(field => {
+      { key: "surface", label: mode === "items" ? "엔진" : "플랫폼", values: REQUEST_ITEM_SURFACES, labelFor: surfaceLabel },
+      ...(mode === "items" ? [{ key: "device" as const, label: "디바이스", values: REQUEST_ITEM_DEVICES, labelFor: (value: string) => value === "mobile" ? "모바일" : "PC" }] : [])] as const).map(field => {
       const selected = filterValues(params, field.key);
       return <div key={field.key} className="relative flex flex-col gap-1.5" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(current => current === field.key ? null : current); }}
         onKeyDown={event => { if (event.key === "Escape") { setOpen(null); event.currentTarget.querySelector("button")?.focus(); } }}><span className="text-xs text-neutral-500">{field.label}</span>
@@ -28,8 +29,8 @@ export function RequestDetailFilters({ query, facets, loading = false, onChange,
             <button type="button" className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-50" onClick={() => onChange({ [field.key]: "", page: "1" })}>전체</button>
             {field.values.map(value => {
               const group = mode === "items" && field.key === "status" && value === "reserved" ? ["reserved", "submitting"] : mode === "items" && field.key === "status" && value === "collecting" ? ["queued", "collecting"] : [value];
-              const checked = group.some(item => selected.includes(item)), count = group.reduce((total, item) => total + (facets?.[field.key][item] ?? 0), 0);
-              const empty = !!facets && count === 0 && !checked;
+              const checked = group.some(item => selected.includes(item)), count = group.reduce((total, item) => total + (facets?.[field.key]?.[item] ?? 0), 0);
+              const empty = !!facets?.[field.key] && count === 0 && !checked;
               const disabled = loading || empty;
               return <button type="button" role="checkbox" aria-checked={checked} aria-disabled={disabled} disabled={empty} key={value}
                 onClick={() => { if (!disabled) onChange({ [field.key]: (checked ? selected.filter(item => !group.includes(item)) : [...selected, ...group]).join(","), page: "1" }); }}
@@ -41,6 +42,7 @@ export function RequestDetailFilters({ query, facets, loading = false, onChange,
           </div>
       </div>;
     })}
-    <div className="flex flex-col gap-1.5" onFocus={() => setOpen(null)} onPointerDown={() => setOpen(null)}><span className="text-xs text-neutral-500">정렬</span><Dropdown variant="solid" label="" value={(params.get("sort") ?? (mode === "requests" ? "newest" : "oldest")) === "newest" ? "최신순" : "오래된순"} options={["오래된순", "최신순"]} onChange={label => onChange({ sort: label === "최신순" ? "newest" : "oldest", page: "1" })} /></div>
+    {/* 상세 항목의 정렬 UI는 임시로 숨긴다. 요청 목록의 정렬은 유지한다. */}
+    {mode === "requests" && <div className="flex flex-col gap-1.5" onFocus={() => setOpen(null)} onPointerDown={() => setOpen(null)}><span className="text-xs text-neutral-500">정렬</span><Dropdown variant="solid" label="" value={(params.get("sort") ?? "newest") === "newest" ? "최신순" : "오래된순"} options={["오래된순", "최신순"]} onChange={label => onChange({ sort: label === "최신순" ? "newest" : "oldest", page: "1" })} /></div>}
   </div>;
 }

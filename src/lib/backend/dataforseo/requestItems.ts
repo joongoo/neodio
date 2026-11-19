@@ -1,11 +1,13 @@
 import { getPromptStore } from "@/lib/backend/database";
 import { parseRequestLogOptions, RequestLogInputError, type RequestLogDatabase } from "./requestLog";
 import type { ProviderTaskStatus } from "./types";
-import { filterValues, REQUEST_ITEM_STATUSES, REQUEST_ITEM_SURFACES, type RequestItemFacets } from "@/lib/requestItemFilters";
+import { filterValues, REQUEST_ITEM_DEVICES, REQUEST_ITEM_STATUSES, REQUEST_ITEM_SURFACES, type RequestItemFacets } from "@/lib/requestItemFilters";
 import { WITHOUT_COLLECTION_RETRY_SQL } from "./collectionActivity";
 
 export function parseRequestItemOptions(params: URLSearchParams) {
   const statuses = filterValues(params, "status"), surfaces = filterValues(params, "surface");
+  const devices = filterValues(params, "device");
+  if (devices.some(value => !REQUEST_ITEM_DEVICES.includes(value))) throw new RequestLogInputError("device 값이 올바르지 않습니다.");
   if (statuses.some(value => !REQUEST_ITEM_STATUSES.includes(value)) || surfaces.some(value => !REQUEST_ITEM_SURFACES.includes(value))) {
     throw new RequestLogInputError("status 값이 올바르지 않습니다.");
   }
@@ -13,7 +15,7 @@ export function parseRequestItemOptions(params: URLSearchParams) {
   shared.delete("status");
   shared.delete("surface");
   if (!shared.has("sort")) shared.set("sort", "oldest");
-  return { ...parseRequestLogOptions(shared), status: statuses[0] ?? null, surface: surfaces[0] ?? null, statuses, surfaces };
+  return { ...parseRequestLogOptions(shared), status: statuses[0] ?? null, surface: surfaces[0] ?? null, statuses, surfaces, devices };
 }
 
 export interface RequestItemRow {
@@ -54,6 +56,7 @@ export async function listRequestItems(organizationId: string, brandId: string, 
         AND ($9::text IS NULL OR t.created_at >= $9) AND ($10::text IS NULL OR t.created_at < $10)
     ), filtered AS (
       SELECT * FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) AND ($5::text[] IS NULL OR surface=ANY($5))
+        AND ($12::text[] IS NULL OR device=ANY($12))
     ), pagination AS (
       SELECT count(*)::int AS total, GREATEST(1,ceil(count(*)::numeric/$7)::int) AS pages FROM filtered
     ), bounds AS (
@@ -65,8 +68,9 @@ export async function listRequestItems(organizationId: string, brandId: string, 
     SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM request) THEN NULL ELSE jsonb_build_object(
       'filteredTotal',b.total,'page',b.current_page,'pageSize',$7::int,'pageCount',b.pages,
       'facets',jsonb_build_object(
-        'status',COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::int n FROM scoped WHERE ($5::text[] IS NULL OR surface=ANY($5)) GROUP BY status) s),'{}'::jsonb),
-        'surface',COALESCE((SELECT jsonb_object_agg(surface,n) FROM (SELECT surface,count(*)::int n FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) GROUP BY surface) s),'{}'::jsonb),
+        'status',COALESCE((SELECT jsonb_object_agg(status,n) FROM (SELECT status,count(*)::int n FROM scoped WHERE ($5::text[] IS NULL OR surface=ANY($5)) AND ($12::text[] IS NULL OR device=ANY($12)) GROUP BY status) s),'{}'::jsonb),
+        'surface',COALESCE((SELECT jsonb_object_agg(surface,n) FROM (SELECT surface,count(*)::int n FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) AND ($12::text[] IS NULL OR device=ANY($12)) GROUP BY surface) s),'{}'::jsonb),
+        'device',COALESCE((SELECT jsonb_object_agg(device,n) FROM (SELECT device,count(*)::int n FROM scoped WHERE ($4::text[] IS NULL OR status=ANY($4)) AND ($5::text[] IS NULL OR surface=ANY($5)) GROUP BY device) s),'{}'::jsonb),
         'retry',(SELECT jsonb_build_object('failed',count(*) FILTER (WHERE p.status='provider_failed')::int,'cancelled',count(*) FILTER (WHERE p.status='cancelled')::int,
           'selectable',count(*) FILTER (WHERE p.status IN ('provider_failed','cancelled') OR (p.execution_kind='legacy' AND p.status IN ('reserved','collecting')) OR (p.execution_kind='serp-api' AND p.status='reserved' AND EXISTS (SELECT 1 FROM provider_tasks pending WHERE pending.id=p.id AND pending.provider_task_id IS NULL AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $11))))::int) FROM filtered p WHERE ${WITHOUT_COLLECTION_RETRY_SQL})
       ),
@@ -96,6 +100,6 @@ export async function listRequestItems(organizationId: string, brandId: string, 
         SELECT p.* FROM prompt_runs p WHERE (p.provider_task_id=t.id OR p.id=t.run_id) AND p.organization_id=$1
         ORDER BY p.run_at DESC,p.id DESC LIMIT 1
       ) run ON true),'[]'::jsonb)) END AS payload FROM bounds b
-  `, [organizationId, brandId, requestId, options.statuses.length ? options.statuses : null, options.surfaces.length ? options.surfaces : null, options.q, options.size, options.page, options.from, options.to, new Date().toISOString()]);
+  `, [organizationId, brandId, requestId, options.statuses.length ? options.statuses : null, options.surfaces.length ? options.surfaces : null, options.q, options.size, options.page, options.from, options.to, new Date().toISOString(), options.devices.length ? options.devices : null]);
   return result.payload;
 }

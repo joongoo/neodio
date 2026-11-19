@@ -12,6 +12,7 @@ export interface RunListRow {
   filename: string;
   runAt: string;
   source: string;
+  device?: string;
   collectedBy?: string;
   query: string;
   category?: string;
