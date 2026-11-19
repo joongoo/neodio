@@ -20,8 +20,7 @@
 | 단기 기능·수정 브랜치 → staging | 기본 Squash and merge | 작업 중 커밋을 사용자에게 의미 있는 기능 PR 하나로 묶음 |
 | 여러 독립 변경과 검증 이력을 보존할 큰 기능 브랜치 → staging | 필요 시 Create a merge commit | 개별 변경 추적·이력 보존. 이 PR에서 사용하는 방식을 본문에 명시 |
 | staging → main | 반드시 Create a merge commit | staging 커밋을 main의 조상으로 보존해 다음 릴리스에서도 변경 이력 유지 |
-| main → staging 동기화 | main에만 있는 수정이 있을 때 merge commit | hotfix 등 staging에 없는 실제 변경 전달 |
-| 긴급 hotfix → main | Create a merge commit | 긴급 수정 이력 보존. main 변경을 staging에도 반영해야 함 |
+| 긴급 hotfix → main | Create a merge commit | 긴급 수정 이력 보존 |
 
 staging→main 또는 main→staging에는 squash/rebase를 사용하지 않습니다. 장기 브랜치를 squash하면 변경 내용이 같아도 커밋 연결이 끊겨 이후 PR에 과거 변경이 다시 나타나거나 충돌·중복 릴리스 기록이 생길 수 있습니다.
 
@@ -62,7 +61,7 @@ CI 통과, staging에서의 핵심 동작 검증, 출시 버전·환경 설정·
 
 일반 릴리스 후에는 staging에서 다음 기능 작업을 계속합니다. main에만 릴리스 병합 커밋이 있는 것은 정상이며, 브랜치 SHA를 맞추기 위한 동기화 PR은 만들지 않습니다. staging → main 릴리스에는 계속 merge commit을 사용합니다.
 
-긴급 수정은 main에서 `hotfix/<주제>`로 분기하고 main 대상 `release: vX.Y.Z` PR로 검증·승인 후 merge commit으로 반영합니다. 같은 자동화로 버전과 Release를 기록합니다. main에만 반영된 긴급 수정은 main → staging 동기화 PR로 전달하고 merge commit으로 병합합니다. 이 동기화 PR은 예외적으로 squash하지 않습니다. 진행 중인 릴리스 PR은 hotfix 이후 버전으로 갱신합니다.
+긴급 수정은 main에서 `hotfix/<주제>`로 분기하고 main 대상 `release: vX.Y.Z` PR로 검증·승인 후 merge commit으로 반영합니다. 같은 자동화로 버전과 Release를 기록합니다. hotfix·선별 릴리스를 포함해 출시 후 main → staging 동기화는 필수 절차가 아니며 자동으로 PR을 만들지 않습니다. staging에 실제 수정이 빠져 있다면 해당 변경의 필요성을 별도로 판단합니다. 진행 중인 릴리스 PR은 hotfix 이후 버전으로 갱신합니다.
 
 취소·롤백은 릴리스 태그를 옮기는 것이 아니라 revert PR과 새 PATCH 릴리스로 처리합니다. 긴급 배포 롤백이 먼저 필요하더라도 소스 수정·DB 호환성·후속 릴리스 기록을 별도로 남깁니다.
 
