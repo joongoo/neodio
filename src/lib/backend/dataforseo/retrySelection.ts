@@ -21,7 +21,7 @@ export async function listRetryCandidates(org: string, brand: string, requestId:
       AND ($5::text[] IS NULL OR p.status=ANY($5)) AND ($6::text[] IS NULL OR p.surface=ANY($6))
       AND ($7='' OR strpos(lower(p.query_snapshot),lower($7))>0)
       AND ($8::text IS NULL OR p.created_at >= $8) AND ($9::text IS NULL OR p.created_at < $9)
-      ORDER BY p.created_at,p.id LIMIT 2001`,
+      ORDER BY p.created_at,p.id`,
   [requestId, org, brand, group === "all" ? [...RETRY_FAILURE_STATUSES, "cancelled"] : group === "cancelled" ? ["cancelled"] : RETRY_FAILURE_STATUSES, filters?.statuses.length ? filters.statuses : null, filters?.surfaces.length ? filters.surfaces : null, filters?.q ?? "", filters?.from ?? null, filters?.to ?? null, new Date().toISOString(), group === "all"]);
 }
 

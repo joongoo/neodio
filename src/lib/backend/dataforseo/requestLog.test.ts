@@ -208,6 +208,15 @@ test("legacy registration is idempotent and links results to the approved reques
       await store.query("UPDATE provider_tasks SET status='reserved' WHERE id=$1", [pendingIds[0]]);
       await store.query("UPDATE provider_tasks SET status='provider_failed' WHERE id=$1", [pendingIds[0]]);
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))?.needsAttention, true, "new failure reopens review");
+      const large = await new CollectionQueueService().enqueueApproved({ organizationId: sample.organization_id, brandId: sample.brand_id,
+        clientRequestId: randomUUID(), requestKind: "manual", tasks: Array.from({ length: 2501 }, (_, index) => ({
+          query: `large rollback-only ${index}`, surface: "google-aio" as const, device: "desktop" as const,
+          marketId: "market-kr", scheduledWindow: `large:${pending.request.id}` })) });
+      await managePendingSerpItems(sample.organization_id, sample.brand_id, large.request.id, large.tasks.map(task => task.id), "cancel");
+      const largeRetry = await retrySelectedItems(sample.organization_id, sample.brand_id, large.request.id, randomUUID(), null, large.tasks.map(task => task.id));
+      assert.equal(largeRetry?.count, 2501, "bulk retry above the previous cap registers one new request");
+      assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, largeRetry!.requestId!))?.counts.waiting, 2501);
+      await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, large.request.id, randomUUID(), null, large.tasks.map(task => task.id)), LegacyRetryConflict);
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }
@@ -249,6 +258,14 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal(page.rows[0].counts.total, 2);
     assert.equal(page.rows[0].actualCostUsd, 0.3);
     assert.equal(page.rows[0].completedAt, "2026-11-18T05:00:00.000Z");
+    assert.equal(page.rows[0].durations?.serpApi.finished, true);
+    assert.equal(page.rows[0].durations?.serpApi.startedAt, null, "historical missing starts must not be guessed");
+    assert.equal(page.rows[0].durations?.local.hasItems, false);
+    assert.equal(Date.parse(page.rows[0].durations!.total.completedAt!) - Date.parse(page.rows[0].durations!.total.startedAt!), 4 * 60 * 60 * 1000);
+    await client.query("UPDATE provider_tasks SET submitted_at='2026-11-18T02:00:00Z',submission_attempted_at='2026-11-18T01:59:00Z' WHERE id='t1'");
+    const timing = (await list("status=completed")).rows[0].durations!.serpApi;
+    assert.equal(Date.parse(timing.startedAt!), Date.parse("2026-11-18T01:59:00Z"));
+    assert.equal(Date.parse(timing.completedAt!), Date.parse("2026-11-18T05:00:00Z"));
     assert.deepEqual((await list()).rows.map(row => row.id), ["b", "a"]);
     assert.deepEqual((await list("q=&status=&surface=&sort=newest&size=25")).rows.map(row => row.id), ["b", "a"], "list form empty filters match no filters");
     assert.equal((await list("status=needs_attention")).rows[0].id, "b");
@@ -354,6 +371,10 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.ok((await getCollectionActivitySummary("org", "brand", db)).runningCount > 0, "pending work stays visible to queue recovery");
     await client.query("UPDATE provider_tasks SET status='queued' WHERE id='t1'");
     assert.equal((await getCollectionActivityFlags("org", "brand", db)).running, true, "provider-accepted queued work remains active");
+    await client.query(`INSERT INTO provider_tasks(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
+      SELECT 'large-'||n,'org','brand','a','google-aio','desktop','provider_failed','large selection '||n FROM generate_series(1,2501) n`);
+    const largeSelection = await listRetryCandidates("org", "brand", "a", "failed", db, parseRequestItemOptions(new URLSearchParams("surface=google-aio")));
+    assert.equal(largeSelection?.filter(item => item.id.startsWith("large-")).length, 2501, "cross-page selection is not truncated at 2000/2001");
   } finally {
     await client.query("ROLLBACK");
     client.release();

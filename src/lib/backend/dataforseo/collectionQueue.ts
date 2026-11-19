@@ -104,17 +104,13 @@ export class CollectionQueueService {
         throw new Error("사용자 수집 실행 ID의 대상이 기존 요청과 일치하지 않습니다.");
       }
 
-      const reservations = [];
-      for (const task of input.tasks) {
-        const reserve = input.reuseActive
-          ? this.providerTasks.reserveActive.bind(this.providerTasks)
-          : this.providerTasks.reserve.bind(this.providerTasks);
-        reservations.push(await reserve({
-          ...task,
-          organizationId: input.organizationId,
-          brandId: input.brandId,
-          collectionRequestId: null,
-        }));
+      const planned = input.tasks.map(task => ({ ...task, organizationId: input.organizationId, brandId: input.brandId, collectionRequestId: null }));
+      let reservations: AppendedCollection["reservations"] = [];
+      if (!input.reuseActive) {
+        // Explicit retries already validate each original; bulk insert avoids N DB round-trips.
+        reservations = await this.providerTasks.reserveMany(planned);
+      } else {
+        for (const task of planned) reservations.push(await this.providerTasks.reserveActive(task));
       }
       const created = reservations.filter((item) => item.created);
       if (created.length === 0) return { request, reservations };

@@ -4,6 +4,7 @@ import type { CollectionRequestDisplayStatus } from "@/lib/collectionRequestProg
 import { COLLECTION_ATTENTION_STATUSES } from "@/lib/collectionAttention";
 import { WITHOUT_COLLECTION_RETRY_SQL } from "./collectionActivity";
 import { filterValues } from "@/lib/requestItemFilters";
+import type { CollectionDuration } from "@/lib/collectionDuration";
 
 export class RequestLogInputError extends Error {}
 
@@ -57,6 +58,7 @@ export interface RequestLogRow {
   retryOfRequestId: string | null;
   attentionReviewed?: boolean;
   needsAttention?: boolean;
+  durations?: { serpApi: CollectionDuration; local: CollectionDuration; total: CollectionDuration };
 }
 
 export interface RequestLogPage { rows: RequestLogRow[]; filteredTotal: number; page: number; pageSize: number; pageCount: number }
@@ -73,6 +75,13 @@ export async function listRequestLogs(
 ): Promise<RequestLogPage> {
   const db = database ?? await getPromptStore();
   const direction = options.sort === "oldest" ? "ASC" : "DESC";
+  const durationSql = (kind: "serp-api" | "legacy") => `jsonb_build_object(
+    'hasItems',count(t.id) FILTER (WHERE t.execution_kind='${kind}')>0,
+    'finished',COALESCE(bool_and(t.status IN ('completed','provider_failed','parse_failed','cancelled')) FILTER (WHERE t.execution_kind='${kind}'),false),
+    'startedAt',min(COALESCE(t.submission_attempted_at,t.submitted_at)::timestamptz) FILTER (WHERE t.execution_kind='${kind}'),
+    'completedAt',CASE WHEN bool_and(t.status IN ('completed','provider_failed','parse_failed','cancelled') AND t.completed_at IS NOT NULL) FILTER (WHERE t.execution_kind='${kind}')
+      THEN max(t.completed_at::timestamptz) FILTER (WHERE t.execution_kind='${kind}') ELSE NULL END,
+    'measuredAt',CURRENT_TIMESTAMP)`;
   const [result] = await db.query<{ payload: RequestLogPage }>(`
     WITH scoped AS (
       SELECT r.*, u.name AS requester_name, (NOT r.attention_reviewed AND EXISTS (
@@ -88,6 +97,7 @@ export async function listRequestLogs(
         AND ($4::text IS NULL OR r.created_at < $4)
     ), aggregates AS (
       SELECT r.id, count(t.id)::int AS total,
+        ${durationSql("serp-api")} AS serp_duration, ${durationSql("legacy")} AS local_duration,
         count(t.id) FILTER (WHERE t.status='reserved')::int AS waiting,
         count(t.id) FILTER (WHERE t.status='reserved' AND t.execution_kind='serp-api')::int AS serp_waiting,
         count(t.id) FILTER (WHERE t.status IN ('submitting','queued','collecting','raw_saved','normalized','artifact_failed','projection_failed'))::int AS running,
@@ -108,7 +118,7 @@ export async function listRequestLogs(
         AND t.organization_id=r.organization_id AND t.brand_id=r.brand_id
       GROUP BY r.id
     ), summaries AS (
-      SELECT r.*, a.total,a.waiting,a.serp_waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
+      SELECT r.*, a.serp_duration,a.local_duration,a.total,a.waiting,a.serp_waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
         CASE WHEN a.total>0 AND a.completed+a.failed+a.cancelled+a.attention>=a.total THEN
             CASE WHEN a.failed+a.attention>0 THEN 'partially_failed' WHEN a.cancelled=a.total THEN 'cancelled' ELSE 'completed' END
           WHEN a.running>0 THEN 'running' ELSE 'queued' END AS display_status
@@ -137,6 +147,9 @@ export async function listRequestLogs(
         'estimatedCostUsd',p.estimated_cost_usd::float8,'actualCostUsd',p.actual_cost,
         'cancelRequested',p.cancel_requested,'retryOfRequestId',p.retry_of_request_id,
         'attentionReviewed',p.attention_reviewed,'needsAttention',p.needs_attention
+        ,'durations',jsonb_build_object('serpApi',p.serp_duration,'local',p.local_duration,'total',jsonb_build_object(
+          'hasItems',p.total>0,'finished',p.total>0 AND p.completed+p.failed+p.cancelled>=p.total,
+          'startedAt',p.approved_at,'completedAt',p.finished_at,'measuredAt',CURRENT_TIMESTAMP))
       ) ORDER BY p.created_at ${direction},p.id ${direction}) FROM paged p),'[]'::jsonb)) AS payload
     FROM bounds b
   `,

@@ -57,6 +57,7 @@ export class DataForSeoOrchestrator {
       const requestError = error instanceof DataForSeoRequestError ? error : null;
       return this.tasks.update(submitting.id, "submitting", {
         status: requestError?.submissionMayHaveSucceeded ? "submission_unknown" : "provider_failed",
+        completedAt: requestError?.submissionMayHaveSucceeded ? null : new Date().toISOString(),
         leaseOwner: null,
         leaseExpiresAt: null,
         errorCode: requestError?.kind ?? "unknown",

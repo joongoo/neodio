@@ -38,7 +38,6 @@ export function RequestRunList({ items, requestId, brandId, total, categories, s
       if (!response.ok) throw new Error(data.error ?? "선택 항목을 조회하지 못했습니다.");
       const candidates = data.items as RetrySelectionItem[];
       const next = mergeRetrySelection(effectiveSelected, candidates, true);
-      if (next.size > 2000) throw new Error("한 번에 최대 2,000건까지 선택할 수 있습니다.");
       setSelected(next);
     } catch (error) { setSelectionError(error instanceof Error ? error.message : "선택 항목을 조회하지 못했습니다."); }
     finally { setSelecting(false); }

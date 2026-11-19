@@ -14,13 +14,13 @@ export async function registerLegacyRequest(org: string, brand: string, clientId
     let request = await requests.getByClientRequestId(org, clientId);
     if (request && request.brandId !== brand) throw new Error("수집 요청의 브랜드가 일치하지 않습니다.");
     if (!request) request = await requests.create({ organizationId: org, brandId: brand, clientRequestId: clientId, requestedBy: actor, requestKind: retryOfRequestId ? "retry" : "manual", retryOfRequestId, totalTaskCount: items.length, estimatedCostUsd: 0 });
-    let created = 0;
-    for (const item of items) {
-      const rows = await db.query(`INSERT INTO legacy_collection_items(id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,created_at,last_seen_at,retry_of_task_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10) ON CONFLICT(collection_request_id,query_snapshot,surface,device) DO NOTHING RETURNING id`,
-      [`legacy-${randomUUID()}`, org, brand, request.id, item.promptId ?? null, item.query, item.surface, item.device, new Date().toISOString(), item.retryOfTaskId ?? null]);
-      created += rows.length;
-    }
+    const now = new Date().toISOString();
+    const rows = await db.query(`INSERT INTO legacy_collection_items(id,organization_id,brand_id,collection_request_id,prompt_id,query_snapshot,surface,device,created_at,last_seen_at,retry_of_task_id)
+      SELECT input.id,$1,$2,$3,input.prompt_id,input.query,input.surface,input.device,$4,$4,input.retry_of_task_id
+      FROM jsonb_to_recordset($5::jsonb) AS input(id text,prompt_id text,query text,surface text,device text,retry_of_task_id text)
+      ON CONFLICT(collection_request_id,query_snapshot,surface,device) DO NOTHING RETURNING id`,
+      [org, brand, request.id, now, JSON.stringify(items.map(item => ({ id: `legacy-${randomUUID()}`, prompt_id: item.promptId ?? null, query: item.query, surface: item.surface, device: item.device, retry_of_task_id: item.retryOfTaskId ?? null })))]);
+    const created = rows.length;
     // New requests already include their planned item count.
     await db.query(`UPDATE collection_requests SET total_task_count=(SELECT count(*) FROM collection_execution_items WHERE collection_request_id=$1) WHERE id=$1`, [request.id]);
     return { requestId: request.id, created };

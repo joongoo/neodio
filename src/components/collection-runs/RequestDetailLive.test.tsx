@@ -55,6 +55,10 @@ test("progress shows independent stages including partial results and uncertain 
   assert.ok(html.includes("$0.0126"));
   assert.ok(html.includes("USD"));
   assert.ok(!html.includes("$0.5000"));
+  for (const label of ["SERP API 소요 시간", "로컬 수집기 소요 시간", "총 요청 처리 소요 시간"]) assert.ok(html.includes(label));
+  const timing = { hasItems: true, finished: true, startedAt: "2026-11-19T00:00:00Z", completedAt: "2026-11-19T00:02:03Z", measuredAt: "2026-11-20T00:00:00Z" };
+  const timed = renderToStaticMarkup(<RequestProgressStages request={{ ...request, durations: { serpApi: timing, local: { ...timing, hasItems: false }, total: timing } }} />);
+  assert.ok(timed.includes("2분 3초"));
   const free = renderToStaticMarkup(<RequestProgressStages request={{ ...request, actualCostUsd: 0 }} />);
   assert.match(free, /실제 발생 예상 비용<\/dt><dd[^>]*>-<\/dd>/);
 });

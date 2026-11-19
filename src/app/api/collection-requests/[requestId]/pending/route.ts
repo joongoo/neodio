@@ -11,7 +11,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const denied = await guardApi("write");
   if (denied) return denied;
   const tenant = await getCurrentTenant(), body = await request.json().catch(() => null);
-  if (body?.confirmed !== true || !["wake", "cancel"].includes(body.action) || typeof body.clientRequestId !== "string" || !/^[a-zA-Z0-9:_-]{1,100}$/.test(body.clientRequestId) || !Array.isArray(body.itemIds) || !body.itemIds.length || body.itemIds.length > 2000 || body.itemIds.some((id: unknown) => typeof id !== "string" || !id.length) || new Set(body.itemIds).size !== body.itemIds.length) return NextResponse.json({ error: "선택 항목과 실행·취소 확인을 확인해 주세요." }, { status: 400 });
+  if (body?.confirmed !== true || !["wake", "cancel"].includes(body.action) || typeof body.clientRequestId !== "string" || !/^[a-zA-Z0-9:_-]{1,100}$/.test(body.clientRequestId) || !Array.isArray(body.itemIds) || !body.itemIds.length || body.itemIds.some((id: unknown) => typeof id !== "string" || !id.length) || new Set(body.itemIds).size !== body.itemIds.length) return NextResponse.json({ error: "선택 항목과 실행·취소 확인을 확인해 주세요." }, { status: 400 });
   try {
     const result = await managePendingSerpItems(tenant.orgId, tenant.brandId, (await params).requestId, body.itemIds, body.action);
     if (!result) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });

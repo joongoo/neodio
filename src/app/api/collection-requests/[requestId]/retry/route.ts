@@ -22,7 +22,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   catch (error) { if (error instanceof RequestLogInputError) return NextResponse.json({ error: error.message }, { status: 400 }); throw error; }
   const items = await listRetryCandidates(tenant.orgId, tenant.brandId, id, group, undefined, filters);
   if (!items) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
-  if (items.length > 2000) return NextResponse.json({ error: "한 번에 최대 2,000건까지 선택할 수 있습니다. 개별 선택해 주세요." }, { status: 400 });
   return NextResponse.json({ items }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
@@ -30,7 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const denied = await guardApi("write");
   if (denied) return denied;
   const tenant = await getCurrentTenant(), body = await request.json().catch(() => null);
-  if (body?.confirmed !== true || typeof body.clientRequestId !== "string" || !/^[a-zA-Z0-9:_-]{1,100}$/.test(body.clientRequestId) || !Array.isArray(body.itemIds) || !body.itemIds.length || body.itemIds.length > 2000 || body.itemIds.some((id: unknown) => typeof id !== "string" || !id.length) || new Set(body.itemIds).size !== body.itemIds.length) return NextResponse.json({ error: "선택 항목과 비용 승인을 확인해 주세요." }, { status: 400 });
+  if (body?.confirmed !== true || typeof body.clientRequestId !== "string" || !/^[a-zA-Z0-9:_-]{1,100}$/.test(body.clientRequestId) || !Array.isArray(body.itemIds) || !body.itemIds.length || body.itemIds.some((id: unknown) => typeof id !== "string" || !id.length) || new Set(body.itemIds).size !== body.itemIds.length) return NextResponse.json({ error: "선택 항목과 비용 승인을 확인해 주세요." }, { status: 400 });
   try {
     const result = await retrySelectedItems(tenant.orgId, tenant.brandId, (await params).requestId, body.clientRequestId, (await getCurrentUser())?.id ?? null, body.itemIds);
     if (!result) return NextResponse.json({ error: "수집 요청을 찾을 수 없습니다." }, { status: 404 });
