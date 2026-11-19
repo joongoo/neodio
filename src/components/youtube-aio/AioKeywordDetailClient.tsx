@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { AioHistoryState, AioSourceType } from "@/lib/db";
 import type { AioKeywordDetailPageData, AioOwnVideoDetail } from "@/lib/backend/aio/pageData";
 import { AioCollectButton } from "./AioCollectButton";
+import { AioMarkdown } from "./AioMarkdown";
 import { COUNTRY_LABEL, DEVICE_LABEL, GROUP_LABEL, LANGUAGE_LABEL, formatKstDateTime, formatPercent, formatTimestamp, shortDate } from "./labels";
 
 const SOURCE_TAG: Record<AioSourceType, { label: string; className: string }> = {
@@ -119,8 +120,10 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
                 {latest.paragraphs.map((p, i) => {
                   const backedByOwn = p.sources.some((s) => ownPositions.has(s));
                   return (
-                    <p key={i} className="text-sm leading-relaxed text-neutral-800">
-                      <span className={cn(backedByOwn && "bg-blue-50 underline decoration-blue-500 decoration-2 underline-offset-4")}>{p.text}</span>
+                    <div key={i}>
+                      <div className={cn(backedByOwn && "bg-blue-50 underline decoration-blue-500 decoration-2 underline-offset-4")}>
+                        <AioMarkdown text={p.text} />
+                      </div>
                       {p.sources.length > 0 && (
                         <sup className="ml-1 text-[10px] font-semibold text-neutral-500">
                           {p.sources.map((s) => (
@@ -130,7 +133,7 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
                           ))}
                         </sup>
                       )}
-                    </p>
+                    </div>
                   );
                 })}
               </div>
