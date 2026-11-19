@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import type { ProviderTaskActivitySummary } from "@/lib/backend/dataforseo/taskStore";
+import type { ReactNode } from "react";
 
 // Matches Figma "LNB / Sidebar_ko" (node 646:29832, Korean page) — a flat,
 // always-expanded nav tree with no collapse affordance, so no client state
@@ -110,22 +110,13 @@ function resolveHref(href: string, base: string): string {
 export function Sidebar({
   base,
   showUsers = false,
-  initialCollectionActivity,
+  collectionIndicator,
 }: {
   base: string;
   showUsers?: boolean;
-  initialCollectionActivity: ProviderTaskActivitySummary;
+  collectionIndicator?: ReactNode;
 }) {
   const pathname = usePathname();
-
-  const collectionBadges = [
-    initialCollectionActivity.attentionCount > 0
-      ? { label: `확인 필요 ${initialCollectionActivity.attentionCount > 99 ? "99+" : initialCollectionActivity.attentionCount}`, className: "bg-orange-100 text-orange-700" }
-      : null,
-    initialCollectionActivity.runningCount > 0
-      ? { label: `진행 ${initialCollectionActivity.runningCount > 99 ? "99+" : initialCollectionActivity.runningCount}`, className: "bg-blue-100 text-blue-700" }
-      : null,
-  ].filter((badge): badge is { label: string; className: string } => badge !== null);
 
   return (
     <aside className="flex h-full w-[260px] shrink-0 flex-col overflow-y-auto bg-[#fbfbfb] pb-2 print:hidden">
@@ -144,7 +135,7 @@ export function Sidebar({
                   href={childHref}
                   indent
                   active={pathname === childHref || pathname.startsWith(`${childHref}/`)}
-                  badges={child.href === "/collection-runs" ? collectionBadges : undefined}
+                  indicator={child.href === "/collection-runs" ? collectionIndicator : undefined}
                 />
               );
             })}
@@ -161,14 +152,14 @@ function NavRow({
   href,
   indent,
   active,
-  badges,
+  indicator,
 }: {
   icon?: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   href: string;
   indent?: boolean;
   active?: boolean;
-  badges?: Array<{ label: string; className: string }>;
+  indicator?: ReactNode;
 }) {
   return (
     <a
@@ -181,11 +172,7 @@ function NavRow({
     >
       {Icon && <Icon size={16} className={active ? "text-slate-800" : "text-slate-500"} />}
       <span className="flex-1 whitespace-nowrap">{label}</span>
-      {!!badges?.length && <span className="flex max-w-[120px] flex-wrap justify-end gap-1">{badges.map((badge) => (
-        <span key={badge.label} className={`shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold ${badge.className}`}>
-          {badge.label}
-        </span>
-      ))}</span>}
+      {indicator}
     </a>
   );
 }

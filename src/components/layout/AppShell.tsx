@@ -1,19 +1,17 @@
-import { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import { PermissionsProvider } from "@/components/auth/PermissionsProvider";
 import { canManageUsers } from "@/lib/auth/userManagement";
-import { PostgresProviderTaskStore } from "@/lib/backend/dataforseo/taskStore";
+import { CollectionActivitySlot } from "./CollectionActivitySlot";
+import { CollectionActivityIndicator } from "./CollectionActivityIndicator";
 
 // 헤더 + 사이드바 + 본문. 조직·브랜드 화면([org]/[brand]/layout.tsx)과 조직 무관
 // 화면((global)/layout.tsx)이 함께 쓴다. 사이드바 링크는 현재 조직·브랜드 주소
 // (/{조직}/{브랜드})를 앞에 붙인다 — 조직 무관 화면에서는 마지막으로 본 조직·브랜드.
 export async function AppShell({ children }: { children: ReactNode }) {
   const tenant = await getCurrentTenant();
-  const collectionActivity = tenant.brandId
-    ? await new PostgresProviderTaskStore().getActivitySummary(tenant.orgId, tenant.brandId)
-    : { runningCount: 0, attentionCount: 0 };
   return (
     <PermissionsProvider canEdit={tenant.canEdit} canManageOrg={tenant.canManageOrg}>
       <TopBar />
@@ -21,7 +19,9 @@ export async function AppShell({ children }: { children: ReactNode }) {
         <Sidebar
           base={tenant.base}
           showUsers={!!tenant.principal && canManageUsers(tenant.principal)}
-          initialCollectionActivity={collectionActivity}
+          collectionIndicator={tenant.brandId ? <Suspense fallback={<CollectionActivityIndicator state={{ status: "loading" }} />}>
+            <CollectionActivitySlot orgId={tenant.orgId} brandId={tenant.brandId} />
+          </Suspense> : null}
         />
         <main data-app-main className="flex-1 overflow-y-auto bg-neutral-50">
           {/* 로그인한 사용자가 이 브랜드를 볼 수만 있을 때 안내한다. */}

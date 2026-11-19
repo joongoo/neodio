@@ -10,6 +10,18 @@ export const WITHOUT_COLLECTION_RETRY_SQL = `NOT EXISTS (
     AND retry.organization_id=p.organization_id AND retry.brand_id=p.brand_id
 )`;
 
+/** Sidebar only needs existence, not a count of every matching task. */
+export async function getCollectionActivityFlags(organizationId: string, brandId: string, database?: RequestLogDatabase): Promise<{ running: boolean; attention: boolean }> {
+  const db = database ?? await getPromptStore();
+  const [row] = await db.query<{ running: boolean; attention: boolean }>(`SELECT
+    EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
+      AND p.execution_kind='serp-api' AND p.status=ANY($3::text[])) AS running,
+    EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
+      AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL}) AS attention`,
+  [organizationId, brandId, ["reserved", "submitting", "queued", "collecting", "raw_saved", "normalized", "artifact_failed", "projection_failed"], COLLECTION_ATTENTION_STATUSES]);
+  return { running: !!row?.running, attention: !!row?.attention };
+}
+
 export async function getCollectionActivitySummary(organizationId: string, brandId: string, database?: RequestLogDatabase): Promise<ProviderTaskActivitySummary> {
   const db = database ?? await getPromptStore();
   const [row] = await db.query<{ running_count: number; attention_count: number }>(`SELECT

@@ -11,7 +11,7 @@ import { retryLegacyRequest, LegacyRetryConflict } from "./legacyRetry";
 import { retrySelectedItems, listRetryCandidates } from "./retrySelection";
 import { createMixedFailureFixture } from "./mixedFailureFixture";
 import { isRetryFailure } from "@/lib/requestRetrySelection";
-import { getCollectionActivitySummary } from "./collectionActivity";
+import { getCollectionActivitySummary, getCollectionActivityFlags } from "./collectionActivity";
 import { managePendingSerpItems } from "./pendingSelection";
 import { CollectionQueueService } from "./collectionQueue";
 import { reportLegacySession } from "./legacySession";
@@ -285,6 +285,8 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query("UPDATE legacy_items_test SET status='provider_failed' WHERE id='legacy-1'");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b", "a"], "local failures match the same attention filter");
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "local failure and unknown SERP counted, retried original excluded");
+    assert.deepEqual(await getCollectionActivityFlags("org", "brand", db), { running: true, attention: true });
+    assert.deepEqual(await getCollectionActivityFlags("foreign-org", "brand", db), { running: false, attention: false });
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
       VALUES ('gemini-failed','org','brand','a','gemini','desktop','parse_failed','gemini'),
         ('gemini-cancelled','org','brand','a','gemini','desktop','cancelled','cancelled')`);
@@ -297,6 +299,9 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
       VALUES ('local-retry','org','brand','b','naver-ai','desktop','reserved','retry','legacy-1'),
         ('gemini-retry','org','brand','b','gemini','desktop','reserved','retry gemini','gemini-failed')`);
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 1, "local and Gemini retried originals excluded");
+    await client.query("UPDATE provider_tasks SET status='completed' WHERE id='t3'");
+    assert.equal((await getCollectionActivityFlags("org", "brand", db)).attention, false, "same analysis-failure and retried-original exclusion as the log card");
+    await client.query("UPDATE provider_tasks SET status='submission_unknown' WHERE id='t3'");
     assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1, selectable: 1 }, "selection counts exclude retried originals");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b"]);
     await client.query("UPDATE legacy_items_test SET status='parse_failed' WHERE id='gemini-retry'");
