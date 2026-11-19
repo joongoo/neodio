@@ -2,7 +2,7 @@
 
 import { EditOnly } from "@/components/auth/PermissionsProvider";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Download, Plus, Settings2 } from "lucide-react";
@@ -39,6 +39,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [addOpen, setAddOpen] = useState(false);
+  const [tableLoading, startTableTransition] = useTransition();
   const promptTable = aioPromptTable(overview.rows, new URLSearchParams(searchParams.toString()));
   const promptFacets = aioPromptFacets(overview.rows, new URLSearchParams(searchParams.toString()));
 
@@ -50,7 +51,10 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
       if (value) params.set(key, value);
       else params.delete(key);
     }
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    startTableTransition(() => {
+      if ("q" in changes) router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      else router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   function setParam(key: string, value: string | null) {
@@ -230,7 +234,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
               <h2 className="text-base font-bold text-neutral-900">프롬프트별 인용 현황</h2>
               <p className="text-xs text-neutral-500">선택 기간 내 최신 수집 기준 · 행을 누르면 AIO 스냅샷으로 이동합니다.</p>
             </div>
-            <AioPromptFilters query={searchParams.toString()} facets={promptFacets} onChange={setTableParams} />
+            <AioPromptFilters query={searchParams.toString()} facets={promptFacets} loading={tableLoading} onChange={setTableParams} />
             <p className="text-xs text-neutral-500">전체 {overview.rows.length.toLocaleString("ko-KR")}개 중 {promptTable.filteredTotal.toLocaleString("ko-KR")}개</p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[880px] text-sm">

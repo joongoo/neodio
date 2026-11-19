@@ -15,3 +15,15 @@ test("filter options show counts, prioritize own channel, and disable only unsel
   assert.ok(html.includes("lucide-rotate-ccw"));
   assert.ok(html.includes("ml-auto flex items-end gap-2"));
 });
+
+test("search has no submit button and shows a spinner inside the input while results load", () => {
+  const facets = { aio: {}, youtube: {} };
+  const idle = renderToStaticMarkup(<AioPromptFilters query="q=CRM" facets={facets} onChange={() => {}} />);
+  assert.ok(!idle.includes('type="submit"'));
+  assert.ok(idle.includes('value="CRM"'));
+  assert.ok(!idle.includes('aria-label="검색 결과 불러오는 중"'));
+  const loading = renderToStaticMarkup(<AioPromptFilters query="q=CRM" facets={facets} loading onChange={() => {}} />);
+  assert.ok(loading.includes('aria-busy="true"'));
+  assert.ok(loading.includes('role="status" aria-label="검색 결과 불러오는 중"'));
+  assert.ok(loading.includes('absolute right-3'));
+});
