@@ -20,6 +20,7 @@ import {
   mentionsByMarketByOrg,
   mentionsByModelByOrg,
   topicCategoriesByOrg,
+  defaultTopicCategories,
   topicsByOrgAndCategory,
 } from "./data/visibilityOverview";
 import {
@@ -204,11 +205,22 @@ export const db = {
     // P0-safe subset only (docs/product/p0-scope-spec.md §2): agentic interactions
     // and LLM referral traffic both need CDN/analytics logs we don't have,
     // so they're dropped here even though Overview still shows them.
-    getStatCards: async (orgId: string, range: DateRange = "4w") =>
-      (await getStatCards(orgId, range)).filter((stat) =>
+    getStatCards: async (orgId: string, range: DateRange = "4w") => {
+      const cards = (await getStatCards(orgId, range)).filter((stat) =>
         ["visibility-score", "brand-mentions", "citations"].includes(stat.id)
-      ),
-    getTopicCategories: async (orgId: string) => topicCategoriesByOrg[orgId] ?? [],
+      );
+      // Real metrics replace these values in the page. Keep the card structure
+      // available even when this organization has no demo snapshots.
+      return cards.length ? cards : [
+        { id: "visibility-score", label: "가시성 점수" },
+        { id: "brand-mentions", label: "브랜드 언급" },
+        { id: "citations", label: "인용 수" },
+      ].map(({ id, label }): StatCard => ({
+        id, label, description: STAT_DESCRIPTIONS[id], value: 0,
+        trend: { direction: "flat", percent: 0 }, sparkline: [],
+      }));
+    },
+    getTopicCategories: async (orgId: string) => topicCategoriesByOrg[orgId] ?? defaultTopicCategories,
     getMentionsByModel: async (orgId: string) => mentionsByModelByOrg[orgId] ?? {},
     getMentionsByMarket: async (orgId: string) => mentionsByMarketByOrg[orgId] ?? {},
     getTopics: async (orgId: string, categoryId: string) =>

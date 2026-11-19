@@ -12,6 +12,11 @@ export const topicCategoriesByOrg: Record<string, TopicCategory[]> = {
   ],
 };
 
+// Tabs describe the screen, so organizations without demo data need them too.
+export const defaultTopicCategories: TopicCategory[] = topicCategoriesByOrg.neodigm.map(
+  (category) => ({ ...category, badge: 0 })
+);
+
 // Mentions-by-model / mentions-by-market ranked lists (node 646:11620 / 646:11657).
 export const mentionsByModelByOrg: Record<string, Record<string, RankedRow[]>> = {
   neodigm: {
