@@ -15,7 +15,7 @@ export const WITHOUT_REVIEWED_REQUEST_SQL = `NOT EXISTS (
     AND reviewed.organization_id=p.organization_id AND reviewed.brand_id=p.brand_id AND reviewed.attention_reviewed
 )`;
 
-/** Sidebar only needs existence, not a count of every matching task. */
+/** Sidebar excludes unsubmitted reservations; worker activity below still includes them. */
 export async function getCollectionActivityFlags(organizationId: string, brandId: string, database?: RequestLogDatabase): Promise<{ running: boolean; attention: boolean }> {
   const db = database ?? await getPromptStore();
   const [row] = await db.query<{ running: boolean; attention: boolean }>(`SELECT
@@ -23,7 +23,7 @@ export async function getCollectionActivityFlags(organizationId: string, brandId
       AND p.execution_kind='serp-api' AND p.status=ANY($3::text[])) AS running,
     EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
       AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL} AND ${WITHOUT_REVIEWED_REQUEST_SQL}) AS attention`,
-  [organizationId, brandId, ["reserved", "submitting", "queued", "collecting", "raw_saved", "normalized", "artifact_failed", "projection_failed"], COLLECTION_ATTENTION_STATUSES]);
+  [organizationId, brandId, ["submitting", "queued", "collecting", "raw_saved", "normalized", "artifact_failed", "projection_failed"], COLLECTION_ATTENTION_STATUSES]);
   return { running: !!row?.running, attention: !!row?.attention };
 }
 

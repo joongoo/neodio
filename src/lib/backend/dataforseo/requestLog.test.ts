@@ -302,7 +302,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     await client.query("UPDATE legacy_items_test SET status='provider_failed' WHERE id='legacy-1'");
     assert.deepEqual((await list("attention=1")).rows.map(row => row.id), ["b", "a"], "local failures match the same attention filter");
     assert.equal((await getCollectionActivitySummary("org", "brand", db)).attentionCount, 2, "local failure and unknown SERP counted, retried original excluded");
-    assert.deepEqual(await getCollectionActivityFlags("org", "brand", db), { running: true, attention: true });
+    assert.deepEqual(await getCollectionActivityFlags("org", "brand", db), { running: false, attention: true });
     assert.deepEqual(await getCollectionActivityFlags("foreign-org", "brand", db), { running: false, attention: false });
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot)
       VALUES ('gemini-failed','org','brand','a','gemini','desktop','parse_failed','gemini'),
@@ -349,6 +349,11 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal((await list("attention=1")).filteredTotal, 0);
     assert.equal((await getCollectionActivityFlags("org", "brand", db)).attention, false);
     assert.equal((await items("b"))?.rows.find(item => item.id === "t3")?.status, "submission_unknown");
+    await client.query("UPDATE provider_tasks SET status='reserved' WHERE organization_id='org' AND brand_id='brand'");
+    assert.equal((await getCollectionActivityFlags("org", "brand", db)).running, false, "unsubmitted reservations do not spin the menu");
+    assert.ok((await getCollectionActivitySummary("org", "brand", db)).runningCount > 0, "pending work stays visible to queue recovery");
+    await client.query("UPDATE provider_tasks SET status='queued' WHERE id='t1'");
+    assert.equal((await getCollectionActivityFlags("org", "brand", db)).running, true, "provider-accepted queued work remains active");
   } finally {
     await client.query("ROLLBACK");
     client.release();
