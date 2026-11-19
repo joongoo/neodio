@@ -45,10 +45,22 @@ export async function POST(request: NextRequest) {
   }
   // 하나 또는 골라서 수집하는 건 오늘 이미 수집했어도 다시 보려는 것이다.
   const explicit = Boolean(selectedIds);
+  const devices = Array.isArray(body?.devices) && body.devices.length ? body.devices : undefined;
+  if (devices?.some((device: unknown) => device !== "desktop" && device !== "mobile")) return NextResponse.json({ error: "기기가 올바르지 않습니다." }, { status: 400 });
+  let targets: { keywordId: string; device: "desktop" | "mobile" }[] | undefined;
+  if (body?.targets !== undefined) {
+    if (!Array.isArray(body.targets) || !body.targets.length || body.targets.length > 2000) return NextResponse.json({ error: "수집 대상이 올바르지 않습니다." }, { status: 400 });
+    targets = [];
+    for (const target of body.targets) {
+      if (typeof target?.promptId !== "string" || (target.device !== "desktop" && target.device !== "mobile")) return NextResponse.json({ error: "수집 대상이 올바르지 않습니다." }, { status: 400 });
+      const ids = await aioKeywordIdsForPrompts(brandId, [target.promptId]);
+      for (const keywordId of ids) targets.push({ keywordId, device: target.device });
+    }
+  }
   const label = keyword ? keyword.keyword : selectedIds ? `선택한 프롬프트 ${selectedIds.length}개` : "전체 프롬프트";
 
   if (collectionUsesLocalAgent()) {
-    const planned = await planAioRun({ brandId, keywordIds: selectedIds, force: explicit ? true : body?.force === true });
+    const planned = await planAioRun({ brandId, keywordIds: selectedIds, devices, targets, force: explicit ? true : body?.force === true });
     if ("skippedReason" in planned) return NextResponse.json({ error: planned.skippedReason }, { status: 400 });
     const { plan } = planned;
     if (plan.tasks.length === 0) {
@@ -74,6 +86,9 @@ export async function POST(request: NextRequest) {
 
   // 키워드 하나를 "지금" 수집하는 건 오늘 이미 수집했어도 다시 보려는 것이다.
   const job = startAioJob({
+    devices,
+    targets,
+    requestId: typeof body?.requestId === "string" ? body.requestId : undefined,
     brandId,
     keywordIds: selectedIds,
     label,

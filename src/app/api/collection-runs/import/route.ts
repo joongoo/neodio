@@ -3,6 +3,7 @@ import { getPromptStore } from "@/lib/backend/database";
 import { getCurrentTenant } from "@/lib/backend/tenant";
 import type { PromptRunSeed } from "@/lib/db/types";
 import { guardApi } from "@/lib/backend/auth/guard";
+import { linkLegacyRun } from "@/lib/backend/dataforseo/legacyRequest";
 
 const MAX_RUNS_PER_REQUEST = 50;
 // 수집 스크립트가 rawMetadata.source에 쓰는 값 → 저장 위치(dir). 로컬 수집 결과 폴더 이름과 같다.
@@ -44,11 +45,15 @@ export async function POST(request: NextRequest) {
     files.push({ dir: SOURCE_DIRS[source as string], filename: filename as string, promptRun: promptRun as PromptRunSeed });
   }
 
-  const orgId = (await getCurrentTenant()).orgId;
+  const tenant = await getCurrentTenant();
+  const orgId = tenant.orgId;
   const store = await getPromptStore();
   try {
     await store.transaction(async () => {
-      for (const file of files) await store.importRun(orgId, file, null);
+      for (const file of files) {
+        await store.importRun(orgId, file, null);
+        await linkLegacyRun(orgId, tenant.brandId, typeof body?.requestId === "string" ? body.requestId : undefined, file.promptRun);
+      }
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

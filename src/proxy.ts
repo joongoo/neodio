@@ -37,10 +37,14 @@ function authorized(request: NextRequest): boolean {
 // 소개·개인정보처리방침·서비스 약관은 Google OAuth 동의 화면에 등록하는 공개 주소라 로그인 없이 열려야 한다.
 const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/signup", "/about", "/privacy", "/terms"];
 const isPublicPath = (pathname: string) => PUBLIC_PATHS.includes(pathname);
+const CRON_PATHS = new Set(["/api/cron/youtube-videos", "/api/cron/dataforseo-queue"]);
+const QUEUE_CALLBACK_PATHS = new Set(["/api/queue/dataforseo"]);
 
 export default function proxy(request: NextRequest) {
+  // Queue trigger가 이 route를 운영에서 비공개 함수로 만들며, 로컬 callback도 앱 세션·Basic Auth 대상이 아니다.
+  if (QUEUE_CALLBACK_PATHS.has(request.nextUrl.pathname)) return NextResponse.next();
   // Vercel Cron은 세션 쿠키 없이 호출한다. 정확한 경로와 전용 비밀값을 확인한 뒤 통과시킨다.
-  if (request.nextUrl.pathname === "/api/cron/youtube-videos" && process.env.CRON_SECRET &&
+  if (CRON_PATHS.has(request.nextUrl.pathname) && process.env.CRON_SECRET &&
       request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.next();
   }

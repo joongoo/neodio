@@ -40,7 +40,7 @@ test("old unprefixed page URLs redirect into the current tenant", () => {
 });
 
 test("global pages and static files pass through", () => {
-  for (const path of ["/", "/help", "/help/youtube-aio", "/organizations", "/favicon.ico", "/file.svg", "/_next/static/x.js"]) {
+  for (const path of ["/", "/help", "/help/youtube-aio", "/organizations", "/dataforseo-poc", "/favicon.ico", "/file.svg", "/_next/static/x.js"]) {
     assert.deepEqual(resolveTenantRoute(path, "", null, cookie), { kind: "pass" }, path);
   }
 });

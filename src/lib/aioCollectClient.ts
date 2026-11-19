@@ -50,7 +50,7 @@ function toAioJob(agentJob: CollectorJob, results: AioJobResult[]): AioCollectJo
   };
 }
 
-export async function startAioCollect(input: { brandId: string; keywordId?: string; promptIds?: string[]; force: boolean }): Promise<AioStart> {
+export async function startAioCollect(input: { brandId: string; keywordId?: string; promptIds?: string[]; devices?: ("desktop" | "mobile")[]; targets?: { promptId: string; device: "desktop" | "mobile" }[]; requestId?: string; force: boolean }): Promise<AioStart> {
   const res = await fetch("/api/youtube-aio/collect", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -69,6 +69,10 @@ export async function startAioCollect(input: { brandId: string; keywordId?: stri
   const { label, ...spec } = data.agent as CollectorAioSpec & { label: string };
   try {
     const job = await createAgentAioJob(spec, label);
+    if (input.requestId) {
+      requestIds.set(job.id, input.requestId);
+      if (typeof sessionStorage !== "undefined") sessionStorage.setItem(`collection-request:${job.id}`, input.requestId);
+    }
     return { ok: true, job: toAioJob(job, []) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "수집기에 수집을 시키지 못했습니다.", handled: false };
@@ -77,6 +81,8 @@ export async function startAioCollect(input: { brandId: string; keywordId?: stri
 
 // 검색 결과 한 건은 한 번만 올린다 — 같은 작업을 폴링이 겹쳐 부르거나 화면을 다시 열어도 중복 저장하지 않는다.
 const uploads = new Map<string, Promise<AioJobResult>>();
+
+const requestIds = new Map<string, string>();
 
 function uploadResult(agentJob: CollectorJob, index: number, raw: unknown): Promise<AioJobResult> {
   const key = `${agentJob.id}:${index}`;
@@ -89,7 +95,7 @@ function uploadResult(agentJob: CollectorJob, index: number, raw: unknown): Prom
       const res = await fetch("/api/youtube-aio/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: spec.brandId, keywordId: task.keywordId, device: task.device, result: raw }),
+        body: JSON.stringify({ brandId: spec.brandId, keywordId: task.keywordId, device: task.device, result: raw, requestId: requestIds.get(agentJob.id) ?? (typeof sessionStorage !== "undefined" ? sessionStorage.getItem(`collection-request:${agentJob.id}`) : undefined) }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {

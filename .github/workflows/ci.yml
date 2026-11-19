@@ -20,6 +20,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run test:unit
+      - run: node --test .github/scripts/release-policy.test.mjs
 
   collector-windows:
     runs-on: windows-latest

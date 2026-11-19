@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import type { ReactNode } from "react";
 
 // Matches Figma "LNB / Sidebar_ko" (node 646:29832, Korean page) — a flat,
 // always-expanded nav tree with no collapse affordance, so no client state
@@ -106,7 +107,15 @@ function resolveHref(href: string, base: string): string {
 }
 
 // 유저 관리는 직원·오너·admin에게만 보인다(유저/viewer와 로그인이 꺼진 상태에서는 숨김).
-export function Sidebar({ base, showUsers = false }: { base: string; showUsers?: boolean }) {
+export function Sidebar({
+  base,
+  showUsers = false,
+  collectionIndicator,
+}: {
+  base: string;
+  showUsers?: boolean;
+  collectionIndicator?: ReactNode;
+}) {
   const pathname = usePathname();
 
   return (
@@ -126,6 +135,7 @@ export function Sidebar({ base, showUsers = false }: { base: string; showUsers?:
                   href={childHref}
                   indent
                   active={pathname === childHref || pathname.startsWith(`${childHref}/`)}
+                  indicator={child.href === "/collection-runs" ? collectionIndicator : undefined}
                 />
               );
             })}
@@ -142,12 +152,14 @@ function NavRow({
   href,
   indent,
   active,
+  indicator,
 }: {
   icon?: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   href: string;
   indent?: boolean;
   active?: boolean;
+  indicator?: ReactNode;
 }) {
   return (
     <a
@@ -159,7 +171,8 @@ function NavRow({
       )}
     >
       {Icon && <Icon size={16} className={active ? "text-slate-800" : "text-slate-500"} />}
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 whitespace-nowrap">{label}</span>
+      {indicator}
     </a>
   );
 }

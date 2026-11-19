@@ -83,7 +83,7 @@ Google AI Overview는 실제 Chrome으로 검색해야 해서 운영에서는 �
 
 - 127.0.0.1에서만 연다. `Host`가 127.0.0.1/localhost가 아니면 거절한다(DNS rebinding 방지).
 - 브라우저 요청은 허용된 화면 주소(`Origin`)에서만 받는다 — 빌드할 때 `--origin`으로 넣은 운영 주소 + 로컬 개발
-  주소(localhost:3000). 설치 때 `install --origin <주소>`로 더할 수 있다(`config.json`).
+  주소(localhost:3000), 개발 배포 주소(`https://neodio-dev.vercel.app`). 설치 때 `install --origin <주소>`로 더할 수 있다(`config.json`).
 - 수집 명령은 `Content-Type: application/json`만 받아, 다른 사이트의 폼 전송으로 수집을 시킬 수 없다.
 - `/shutdown`은 `Origin`이 없는 요청(같은 PC의 설치 명령)만 받는다.
 - Chrome의 사설망 접근 제한에 맞춰 사전 요청에 `Access-Control-Allow-Private-Network: true`를 준다.

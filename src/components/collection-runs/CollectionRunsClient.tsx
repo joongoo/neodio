@@ -2,7 +2,7 @@
 
 import { EditOnly } from "@/components/auth/PermissionsProvider";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { DataTable, DataTableColumn } from "@/components/ui/DataTable";
 import { TablePanel } from "@/components/ui/TablePanel";
 import { SimpleStatCard } from "@/components/ui/SimpleStatCard";
@@ -10,15 +10,28 @@ import { InfoBanner } from "@/components/ui/InfoBanner";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { FaviconIcon } from "@/components/ui/FaviconIcon";
 import { Button } from "@/components/ui/Button";
-import { CollectionRunForm } from "@/components/collection-runs/CollectionRunForm";
 import { Pagination } from "@/components/ui/Pagination";
 import { formatKst } from "@/lib/backend/collectionRunsTypes";
 import type { CollectedRunDetail } from "@/lib/backend/collectionRuns";
 import { engineLabel, RUN_PAGE_SIZES, type RunListPage, type RunListRow } from "@/lib/collectionRunList";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantBase } from "@/lib/useTenantBase";
+import Link from "next/link";
+import { REQUEST_STATUS_LABEL, requestItemStatusLabel } from "./RequestLogViews";
 
-function StatusBadge({ file }: { file: RunListRow }) {
+export function StatusBadge({ file }: { file: RunListRow }) {
+  if (file.progressStatus && REQUEST_STATUS_LABEL[file.progressStatus]) {
+    const status = file.progressStatus;
+    const color = status === "cancelled" ? "bg-neutral-100 text-neutral-600"
+      : status === "submission_unknown" ? "bg-orange-100 text-orange-700"
+      : ["provider_failed", "parse_failed"].includes(status) ? "bg-red-100 text-red-700"
+      : status === "completed" ? "bg-emerald-100 text-emerald-700"
+      : status === "reserved" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700";
+    return <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${color}`}>{requestItemStatusLabel(status, file.collectedBy === "dataforseo")}</span>;
+  }
+  if (file.state === "pending") {
+    return <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{file.dir === "legacy-task" ? "수집 중" : "진행 중"}</span>;
+  }
   if (file.state === "blocked") {
     return <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">차단됨(캡차)</span>;
   }
@@ -28,7 +41,7 @@ function StatusBadge({ file }: { file: RunListRow }) {
   return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
 }
 
-function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
+export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
   return [
     {
       key: "runAt",
@@ -39,7 +52,7 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
     {
       key: "engine",
       label: "엔진",
-      width: "w-[150px]",
+      width: "w-[190px]",
       render: (file) => (
         <span className="rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
           {engineLabel(file)}
@@ -56,19 +69,19 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       key: "status",
       label: "상태",
       width: "w-[110px]",
-      render: (file) => <StatusBadge file={file} />,
+      render: (file) => <div className="space-y-1"><StatusBadge file={file} />{file.retryRequests?.map((retry, index) => <Link key={retry.href} href={retry.href} onClick={event => event.stopPropagation()} className="block text-[11px] text-slate-700 underline" title={`재수집 요청 상세 · ${REQUEST_STATUS_LABEL[retry.status] ?? retry.status}`}>재수집 요청됨{index > 0 ? ` ${index + 1}` : ""} · {REQUEST_STATUS_LABEL[retry.status] ?? retry.status}</Link>)}</div>,
     },
     {
       key: "length",
       label: "답변 길이",
       width: "w-[90px]",
-      render: (file) => file.answerLength,
+      render: (file) => file.answerLength ?? <span className="text-neutral-400">—</span>,
     },
     {
       key: "citations",
       label: "인용 수",
       width: "w-[80px]",
-      render: (file) => file.citationCount,
+      render: (file) => file.citationCount ?? <span className="text-neutral-400">—</span>,
     },
     {
       key: "category",
@@ -88,7 +101,7 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
       label: "",
       width: "w-[90px]",
       render: (file) => (
-        <EditOnly>
+        file.state === "pending" || file.dir === "provider-task" || file.dir === "legacy-task" ? null : <EditOnly>
           <button
             type="button"
             onClick={(e) => {
@@ -105,13 +118,46 @@ function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunL
   ];
 }
 
+const PROVIDER_PROGRESS_LABEL: Record<string, string> = {
+  reserved: "API 제출을 기다리고 있습니다.",
+  submitting: "SERP API에 작업을 제출하고 있습니다.",
+  queued: "SERP API가 작업을 처리하고 있습니다.",
+  collecting: "완료 여부를 확인하고 있습니다.",
+  raw_saved: "수집 원본을 저장했습니다. 결과 반영 중입니다.",
+  normalized: "수집 결과를 분석 데이터로 반영하고 있습니다.",
+  artifact_failed: "수집 원본 저장을 다시 시도하고 있습니다.",
+  projection_failed: "수집 결과 반영을 다시 시도하고 있습니다.",
+};
+
+export function PendingRunDetail({ file }: { file: RunListRow }) {
+  const base = useTenantBase();
+  const pathname = usePathname();
+  const reserved = file.progressStatus === "reserved";
+  const requestHref = file.requestId ? `${base}/collection-runs/${encodeURIComponent(file.requestId)}` : null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className={`text-xs ${reserved ? "text-amber-700" : "text-blue-700"}`}>
+        {PROVIDER_PROGRESS_LABEL[file.progressStatus ?? ""] ?? "SERP API 수집이 진행 중입니다."}
+      </p>
+      {reserved && requestHref && (pathname === requestHref
+        ? <p className="text-xs text-neutral-500">행의 체크박스로 대기 작업을 선택한 뒤 목록 상단에서 실행 요청하거나 취소하세요. 제출·처리 상태는 확인 단계에서 다시 검사합니다.</p>
+        : <p className="text-xs text-neutral-500"><Link href={requestHref} className="underline">수집 요청 상세 보기</Link>에서 대기 항목을 선택해 비용 확인 후 실행을 요청하거나 취소하세요. 취소해도 이력은 유지됩니다.</p>)}
+      {reserved && !file.requestId && (
+        <p className="text-xs text-neutral-500">수집 요청에 연결되지 않은 과거 예약입니다. 이 화면에서는 직접 실행하거나 삭제할 수 없습니다. 신규 수집이 필요하면 프롬프트 라이브러리에서 비용 확인 후 요청해 주세요.</p>
+      )}
+    </div>
+  );
+}
+
 // 원문·인용은 행을 펼칠 때 처음 불러온다(목록 payload에는 싣지 않는다).
 function RunDetail({ file }: { file: RunListRow }) {
   const [state, setState] = useState<{ detail?: CollectedRunDetail; error?: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/collection-runs/detail?dir=${encodeURIComponent(file.dir)}&filename=${encodeURIComponent(file.filename)}`)
+    const scope = file.requestId && file.taskId ? `&requestId=${encodeURIComponent(file.requestId)}&taskId=${encodeURIComponent(file.taskId)}` : "";
+    fetch(`/api/collection-runs/detail?dir=${encodeURIComponent(file.dir)}&filename=${encodeURIComponent(file.filename)}${scope}`)
       .then(async (res) => (res.ok ? { detail: (await res.json()) as CollectedRunDetail } : { error: (await res.json().catch(() => null))?.error ?? "원문을 불러오지 못했습니다." }))
       .catch(() => ({ error: "원문을 불러오지 못했습니다." }))
       .then((result) => {
@@ -120,7 +166,7 @@ function RunDetail({ file }: { file: RunListRow }) {
     return () => {
       cancelled = true;
     };
-  }, [file.dir, file.filename]);
+  }, [file.dir, file.filename, file.requestId, file.taskId]);
 
   if (!state) return <p className="text-xs text-neutral-400">원문을 불러오는 중…</p>;
   if (!state.detail) return <p className="text-xs text-red-600">{state.error}</p>;
@@ -156,15 +202,43 @@ function RunDetail({ file }: { file: RunListRow }) {
   );
 }
 
+export function CollectionRunList({ listPage, total, searchValue, onSearchChange, columns, onPageChange, onPageSizeChange, actions, loading = false }: {
+  listPage: RunListPage; total: number; searchValue: string; onSearchChange: (value: string) => void;
+  columns: DataTableColumn<RunListRow>[]; brandId: string; onChanged: () => void;
+  onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void;
+  actions?: ReactNode;
+  loading?: boolean;
+}) {
+  return <TablePanel title="수집 실행 목록" description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
+    count={listPage.filteredTotal} total={total} searchValue={searchValue} onSearchChange={onSearchChange} searchPlaceholder="키워드/엔진/카테고리 검색">
+    {actions && <div className="mb-4 space-y-2">{actions}</div>}
+    {loading ? <p role="status" className="p-6 text-center text-sm text-neutral-500">목록을 불러오는 중…</p> : listPage.filteredTotal === 0 ? <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p> : <>
+      <DataTable columns={columns} rows={listPage.rows} getRowId={file => file.key} renderExpanded={file =>
+        file.dir === "legacy-task"
+          ? <p className="text-xs text-neutral-600">{file.errorMessage ?? "로컬 수집기가 처리 중입니다. 결과가 반영되면 원문을 확인할 수 있습니다."}</p>
+          : file.dir === "provider-task" && file.state !== "pending"
+          ? <p className="text-xs text-amber-700">{file.errorMessage ?? "수집 결과가 없습니다. 작업 상태를 확인해 주세요."}</p>
+          : file.state === "pending" ? <PendingRunDetail file={file} /> : <RunDetail file={file} />} />
+      <div className="mt-3"><Pagination page={listPage.page} pageCount={listPage.pageCount} pageSize={listPage.pageSize}
+        totalCount={listPage.filteredTotal} pageSizeOptions={RUN_PAGE_SIZES} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} /></div>
+    </>}
+  </TablePanel>;
+}
+
+
 export function CollectionRunsClient({
   listPage,
   search,
+  brandId,
+  pollingTaskIds,
   stats,
   categories,
 }: {
   listPage: RunListPage;
   search: string;
-  stats: { total: number; success: number; ownMentions: number; ownCitations: number };
+  brandId: string;
+  pollingTaskIds: string[];
+  stats: { total: number; pending: number; success: number; ownMentions: number; ownCitations: number };
   categories: string[];
 }) {
   const router = useRouter();
@@ -174,6 +248,42 @@ export function CollectionRunsClient({
   const [analyzingFile, setAnalyzingFile] = useState<RunListRow | null>(null);
   const [searchText, setSearchText] = useState(search);
   const columns = runColumns((file) => setAnalyzingFile(file));
+  const pollingProviderTasks = useRef(false);
+  const pollingTaskKey = pollingTaskIds.join(",");
+
+  useEffect(() => {
+    if (!brandId || pollingTaskIds.length === 0) return;
+    let stopped = false;
+    const poll = async () => {
+      if (stopped || pollingProviderTasks.current) return;
+      pollingProviderTasks.current = true;
+      try {
+        for (let index = 0; index < pollingTaskIds.length; index += 20) {
+          const response = await fetch("/api/dataforseo/tasks/status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ brandId, taskIds: pollingTaskIds.slice(index, index + 20) }),
+          });
+          if (!response.ok) return;
+        }
+        if (!stopped) router.refresh();
+      } catch {
+        // 일시적인 네트워크 오류는 다음 15초 폴링이나 창 포커스 때 다시 시도한다.
+      } finally {
+        pollingProviderTasks.current = false;
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 15_000);
+    window.addEventListener("focus", poll);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", poll);
+    };
+    // pollingTaskKey는 task ID 목록이 바뀔 때만 폴링 대상을 다시 설정한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId, pollingTaskKey, router]);
 
   // 페이지·검색은 주소(쿼리)에 두어 서버가 한 페이지만 보낸다.
   function navigate(changes: Record<string, string | null>) {
@@ -202,24 +312,23 @@ export function CollectionRunsClient({
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <div>
-        <h1 className="text-2xl font-semibold text-neutral-900">수집 로그</h1>
+        <h1 className="text-2xl font-semibold text-neutral-900">이전 개별 수집 이력</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          네이버 AI검색·구글AI모드·구글AIO 수집(설치형 수집기, `collect:naver-ai` / `collect:google-ai` / YouTube AIO 트래커)과 LLM API 수집(`collect:llm`)이 저장한 실행을 그대로 나열합니다.
+          수집 요청에 연결되지 않은 과거 실행만 표시합니다. 신규 수집 요청과 결과는 이 이력에 추가되지 않으며, 수집 요청 목록에서 확인할 수 있습니다.
         </p>
       </div>
 
-      <EditOnly><CollectionRunForm /></EditOnly>
-
       <div className="h-px w-full bg-neutral-200" />
+
 
       {stats.total === 0 ? (
         <p className="rounded-xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-500">
-          아직 수집된 실행이 없습니다.<EditOnly> 위에서 키워드를 입력해 수집을 시작해 보세요.</EditOnly>
+          이전 개별 수집 이력이 없습니다. 신규 수집 요청과 결과는 수집 요청 목록에서 확인해 주세요.
         </p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <SimpleStatCard label="수집 실행 수" value={stats.total} tooltip="지금까지 저장된 수집 실행 수입니다." />
+            <SimpleStatCard label="수집 실행 수" value={stats.total} tooltip={`저장된 실행과 현재 진행 중인 실행 수입니다${stats.pending ? ` · 진행 중 ${stats.pending}건` : ""}.`} />
             <SimpleStatCard
               label="성공한 실행"
               value={stats.success}
@@ -229,34 +338,17 @@ export function CollectionRunsClient({
             <SimpleStatCard label="브랜드 인용" value={stats.ownCitations} tooltip="수집된 답변이 우리 도메인을 인용한 횟수입니다." />
           </div>
 
-          <TablePanel
-            title="수집 실행 목록"
-            description="행을 클릭하면 저장된 원문과 인용 소스를 볼 수 있습니다."
-            count={listPage.filteredTotal}
+          <CollectionRunList
+            listPage={listPage}
             total={stats.total}
             searchValue={searchText}
             onSearchChange={setSearchText}
-            searchPlaceholder="키워드/엔진/카테고리 검색"
-          >
-            {listPage.filteredTotal === 0 ? (
-              <p className="p-6 text-center text-sm text-neutral-500">검색 결과가 없습니다.</p>
-            ) : (
-              <>
-                <DataTable columns={columns} rows={listPage.rows} getRowId={(file) => file.key} renderExpanded={(file) => <RunDetail file={file} />} />
-                <div className="mt-3">
-                  <Pagination
-                    page={listPage.page}
-                    pageCount={listPage.pageCount}
-                    pageSize={listPage.pageSize}
-                    totalCount={listPage.filteredTotal}
-                    pageSizeOptions={RUN_PAGE_SIZES}
-                    onPageChange={(page) => navigate({ page: page === 1 ? null : String(page) })}
-                    onPageSizeChange={(size) => navigate({ size: String(size), page: null })}
-                  />
-                </div>
-              </>
-            )}
-          </TablePanel>
+            columns={columns}
+            brandId={brandId}
+            onChanged={() => router.refresh()}
+            onPageChange={(page) => navigate({ page: page === 1 ? null : String(page) })}
+            onPageSizeChange={(size) => navigate({ size: String(size), page: null })}
+          />
 
           <InfoBanner
             title="이 원문·인용 데이터가 다음 LLM 분석 단계의 입력입니다"
@@ -285,7 +377,7 @@ export function CollectionRunsClient({
 // (키워드만 입력), 여기서 사후에 태그를 붙여야 Overview의 카테고리 필터가 실 데이터에
 // 적용될 수 있다. LLM 기반 프롬프트 제안 생성은 이 모달의 다음 단계로 남겨둠 — 실제 LLM
 // 호출에 필요한 API 키가 아직 설정돼 있지 않음.
-function CategorizeRunModal({
+export function CategorizeRunModal({
   file,
   categories,
   onClose,

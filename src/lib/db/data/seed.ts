@@ -34,6 +34,13 @@ export const seedLlmModels: LlmModelSeed[] = [
   { id: "model-perplexity", name: "Perplexity", provider: "Perplexity", modelKey: "sonar", answerSurface: "chat" },
   { id: "model-copilot", name: "Copilot", provider: "Microsoft", modelKey: "copilot-web", answerSurface: "chat" },
   {
+    id: "model-google-aio",
+    name: "Google AI Overview",
+    provider: "Google",
+    modelKey: "google-aio",
+    answerSurface: "ai_overview",
+  },
+  {
     id: "model-google-ai-overview",
     name: "Google AI 모드",
     provider: "Google",

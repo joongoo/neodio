@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pageRunList, toRunListRow, type RunListRow } from "./collectionRunList";
+import { engineLabel, pageRunList, toPendingRunListRow, toRunListRow, type RunListRow } from "./collectionRunList";
 import type { CollectedRunFile } from "@/lib/backend/collectionRunsTypes";
+import type { ProviderTaskRecord } from "@/lib/backend/dataforseo/types";
 
 const file = (n: number, extra: Record<string, unknown> = {}): CollectedRunFile => ({
   dir: ".tmp/google-ai",
@@ -24,6 +25,25 @@ test("행에는 원문이 없고 길이·인용 수만 있다", () => {
 
 test("캡차로 막힌 실행은 blocked", () => {
   assert.equal(toRunListRow(file(1, { finalUrl: "https://google.com/sorry/index" })).state, "blocked");
+});
+
+test("DataForSEO 실행은 수집 로그 엔진에 SERP API를 명시한다", () => {
+  const row = toRunListRow(file(1, { source: "google-aio", collectedBy: "dataforseo" }));
+  assert.equal(engineLabel(row), "구글AIO · SERP API");
+});
+
+test("진행 중인 Provider 작업도 원래 질의로 수집 로그 행을 만든다", () => {
+  const task = {
+    id: "ptask-1", collectionRequestId: "creq-1", surface: "google-aio", querySnapshot: "마케팅 자동화 ROI 계산", status: "collecting",
+    createdAt: "2026-11-16T01:00:00.000Z",
+  } as ProviderTaskRecord;
+  const row = toPendingRunListRow(task);
+  assert.equal(row.query, "마케팅 자동화 ROI 계산");
+  assert.equal(row.state, "pending");
+  assert.equal(row.progressStatus, "collecting");
+  assert.equal(row.requestId, "creq-1");
+  assert.equal(row.taskId, "ptask-1");
+  assert.equal(engineLabel(row), "구글AIO · SERP API");
 });
 
 const rows: RunListRow[] = Array.from({ length: 60 }, (_, i) => toRunListRow(file(i + 1)));
