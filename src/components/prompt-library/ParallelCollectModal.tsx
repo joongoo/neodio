@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CircleCheck, Clock3, Loader2, TriangleAlert } from "lucide-react";
+import { Ban, CircleCheck, Clock3, ExternalLink, Loader2, TriangleAlert } from "lucide-react";
 import { Modal, ModalCloseButton } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { CollectorProblem, type Problem } from "./AgentCollectionModal";
@@ -57,7 +57,6 @@ export function ParallelCollectModal({
   serverCollector?: boolean;
   collectionLogHref?: string;
 }) {
-  const router = useRouter();
   const tenantBase = useTenantBase();
   const needsAgent = !serverCollector && steps.some((s) => s.kind === "ai" || s.kind === "aio");
   const [gate, setGate] = useState<"checking" | "ready" | { problem: Problem; status: CollectorAgentStatus | null }>(needsAgent ? "checking" : "ready");
@@ -200,9 +199,16 @@ export function ParallelCollectModal({
           </p>
           {serpFailureNotes.map((note) => <p key={note} className="mt-1 text-xs font-medium">{note}</p>)}
           {serpRegistered && (
-            <button type="button" className="mt-2 text-xs font-semibold underline underline-offset-2" onClick={() => { if (close()) router.push(collectionLogHref ?? `${tenantBase}/collection-runs`); }}>
+            <a
+              href={collectionLogHref ?? `${tenantBase}/collection-runs`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="수집 로그 보기 (새 탭에서 열기)"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
+            >
               수집 로그 보기
-            </button>
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
           )}
         </div>
       )}

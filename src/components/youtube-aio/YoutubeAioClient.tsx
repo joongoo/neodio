@@ -2,7 +2,7 @@
 
 import { EditOnly } from "@/components/auth/PermissionsProvider";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Download, Plus, Settings2 } from "lucide-react";
@@ -10,6 +10,9 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { Pagination } from "@/components/ui/Pagination";
+import { aioPromptFacets, aioPromptTable } from "@/lib/aioPromptTable";
+import { AioPromptFilters } from "./AioPromptFilters";
 import { cn } from "@/lib/cn";
 import { AioCitedVideo, AioKeywordRow, AioRate } from "@/lib/db";
 import type { AioOverviewPageData } from "@/lib/backend/aio/pageData";
@@ -36,11 +39,29 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [addOpen, setAddOpen] = useState(false);
+  const [tableLoading, startTableTransition] = useTransition();
+  const promptTable = aioPromptTable(overview.rows, new URLSearchParams(searchParams.toString()));
+  const promptFacets = aioPromptFacets(overview.rows, new URLSearchParams(searchParams.toString()));
+
+  function setTableParams(changes: Record<string, string>) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("from");
+    params.delete("to");
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    startTableTransition(() => {
+      if ("q" in changes) router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      else router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
+  }
 
   function setParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
     if (value === null) params.delete(key);
     else params.set(key, value);
+    params.delete("page");
     router.push(`${pathname}?${params.toString()}`);
   }
 
@@ -209,10 +230,12 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
           </div>
 
           <Card className="flex flex-col gap-3 p-5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-bold text-neutral-900">프롬프트별 인용 현황</h2>
-              <p className="text-xs text-neutral-500">AIO에서 YouTube가 인용됐을 때 어떤 프롬프트에서 어떤 영상이 인용됐는지 보여 줍니다. 행을 누르면 그 프롬프트의 AIO 스냅샷(상세)으로 이동합니다</p>
+              <p className="text-xs text-neutral-500">선택 기간 내 최신 수집 기준 · 행을 누르면 AIO 스냅샷으로 이동합니다.</p>
             </div>
+            <AioPromptFilters query={searchParams.toString()} facets={promptFacets} loading={tableLoading} onChange={setTableParams} />
+            <p className="text-xs text-neutral-500">전체 {overview.rows.length.toLocaleString("ko-KR")}개 중 {promptTable.filteredTotal.toLocaleString("ko-KR")}개</p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[880px] text-sm">
                 <thead>
@@ -224,12 +247,16 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {overview.rows.map((row) => (
+                  {promptTable.rows.map((row) => (
                     <PromptRow key={row.keywordId} row={row} href={`${base}/youtube-aio/${row.keywordId}?device=${device}`} />
                   ))}
+                  {promptTable.rows.length === 0 && <tr><td colSpan={4} className="px-3 py-10 text-center text-sm text-neutral-500">조건에 맞는 프롬프트가 없습니다. 검색어나 필터를 변경해 주세요.</td></tr>}
                 </tbody>
               </table>
             </div>
+            <Pagination page={promptTable.page} pageCount={promptTable.pageCount} pageSize={promptTable.pageSize} totalCount={promptTable.filteredTotal}
+              onPageChange={page => setTableParams({ page: String(page) })}
+              onPageSizeChange={size => setTableParams({ size: String(size), page: "1" })} />
           </Card>
         </>
       )}

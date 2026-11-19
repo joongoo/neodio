@@ -41,8 +41,8 @@ export function StatusBadge({ file }: { file: RunListRow }) {
   return <span className="rounded bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700">실패</span>;
 }
 
-export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColumn<RunListRow>[] {
-  return [
+export function runColumns(onAnalyze: (file: RunListRow) => void, { showDevice = false }: { showDevice?: boolean } = {}): DataTableColumn<RunListRow>[] {
+  const columns: DataTableColumn<RunListRow>[] = [
     {
       key: "runAt",
       label: "수집 시각 (KST)",
@@ -86,36 +86,37 @@ export function runColumns(onAnalyze: (file: RunListRow) => void): DataTableColu
     {
       key: "category",
       label: "카테고리",
-      width: "w-[130px]",
-      render: (file) =>
-        file.category ? (
-          <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+      width: "w-[190px]",
+      render: (file) => (
+        <div className="flex min-w-0 w-full items-center justify-between gap-3">
+        {file.category ? (
+          <span title={file.category} className="min-w-0 truncate rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
             {file.category}
           </span>
         ) : (
           <span className="text-[11px] text-neutral-400">미분류</span>
-        ),
-    },
-    {
-      key: "analyze",
-      label: "",
-      width: "w-[90px]",
-      render: (file) => (
-        file.state === "pending" || file.dir === "provider-task" || file.dir === "legacy-task" ? null : <EditOnly>
+        )}
+        {file.state === "pending" || file.dir === "provider-task" || file.dir === "legacy-task" ? null : <EditOnly>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onAnalyze(file);
             }}
-            className="rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
+            className="shrink-0 whitespace-nowrap rounded border-[1.5px] border-slate-800 px-2 py-1 text-[11px] font-bold text-slate-800 cursor-pointer"
           >
-            분석
+            수정
           </button>
-        </EditOnly>
+        </EditOnly>}
+        </div>
       ),
     },
   ];
+  if (showDevice) columns.splice(columns.findIndex(column => column.key === "engine") + 1, 0, {
+    key: "device", label: "디바이스", width: "w-[80px]",
+    render: file => <span className="whitespace-nowrap text-neutral-600">{file.device === "mobile" ? "모바일" : file.device === "desktop" ? "PC" : "—"}</span>,
+  });
+  return columns;
 }
 
 const PROVIDER_PROGRESS_LABEL: Record<string, string> = {

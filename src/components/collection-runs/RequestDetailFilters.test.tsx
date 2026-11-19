@@ -23,7 +23,8 @@ test("request filters use execution statuses, multi-checkboxes, newest sort and 
 
 test("detail filters reuse library dropdowns without a GET submit form", () => {
   const html = renderToStaticMarkup(<RequestDetailFilters query="status=cancelled&surface=gemini&sort=newest" onChange={() => {}} />);
-  for (const label of ["상태", "플랫폼", "정렬", "취소", "Gemini", "최신순"]) assert.ok(html.includes(label), label);
+  for (const label of ["상태", "엔진", "디바이스", "모바일", "PC", "취소", "Gemini"]) assert.ok(html.includes(label), label);
+  for (const label of ["플랫폼", "정렬", "최신순", "오래된순"]) assert.ok(!html.includes(label), label);
   assert.ok(!html.includes("<form")); assert.ok(!html.includes("<select")); assert.ok(!html.includes(">조회<"));
 });
 
@@ -53,4 +54,16 @@ test("selection scope follows filters but not pagination or sorting", () => {
   assert.equal(requestSelectionScope(next), before);
   next.set("surface", "google-aio");
   assert.notEqual(requestSelectionScope(next), before);
+  const engineScope = requestSelectionScope(next);
+  next.set("device", "mobile");
+  assert.notEqual(requestSelectionScope(next), engineScope);
+});
+
+test("device counts disable empty options and allow selected devices to be cleared", () => {
+  const html = renderToStaticMarkup(<RequestDetailFilters query="device=desktop" facets={{ status: {}, surface: {}, device: { mobile: 2 }, retry: { failed: 0, cancelled: 0 } }} onChange={() => {}} />);
+  assert.match(html, /role="checkbox" aria-checked="true" aria-disabled="false"[^>]*>[\s\S]*?<span>PC<\/span>/);
+  assert.ok(html.indexOf(">엔진<") < html.indexOf(">디바이스<"));
+  assert.ok(html.includes('tabular-nums text-neutral-500">2</span>'));
+  const empty = renderToStaticMarkup(<RequestDetailFilters query="" facets={{ status: {}, surface: {}, device: {}, retry: { failed: 0, cancelled: 0 } }} onChange={() => {}} />);
+  assert.match(empty, /aria-disabled="true" disabled=""[^>]*>[\s\S]*?<span>모바일<\/span>/);
 });

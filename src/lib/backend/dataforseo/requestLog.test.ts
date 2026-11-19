@@ -30,6 +30,9 @@ test("request filters reject invalid inputs and normalize time zones", () => {
   assert.equal(parseRequestLogOptions(formQuery).status, null);
   assert.equal(parseRequestLogOptions(formQuery).surface, null);
   assert.equal(parseRequestItemOptions(formQuery).surface, null);
+  assert.deepEqual(parseRequestItemOptions(new URLSearchParams("device=mobile,desktop&device=mobile")).devices, ["mobile", "desktop"]);
+  assert.deepEqual(parseRequestItemOptions(formQuery).devices, []);
+  assert.throws(() => parseRequestItemOptions(new URLSearchParams("device=tablet")));
 });
 
 test("legacy registration is idempotent and links results to the approved request", { skip: !process.env.POSTGRES_URL && !process.env.POSTGRES_URL_NON_POOLING }, async () => {
@@ -318,7 +321,7 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     assert.equal((await items("a", "surface=naver-aio&page=99"))?.page, 1);
     const multi = await items("a", "status=completed,cancelled&surface=google-aio&surface=naver-aio");
     assert.equal(multi?.filteredTotal, 2);
-    assert.deepEqual(multi?.facets, { status: { completed: 2 }, surface: { "google-aio": 1, "naver-aio": 1 }, retry: { failed: 0, cancelled: 0, selectable: 0 } });
+    assert.deepEqual(multi?.facets, { status: { completed: 2 }, surface: { "google-aio": 1, "naver-aio": 1 }, device: { desktop: 1, mobile: 1 }, retry: { failed: 0, cancelled: 0, selectable: 0 } });
     const emptyStatus = await items("a", "status=cancelled&surface=google-aio");
     assert.equal(emptyStatus?.filteredTotal, 0);
     assert.deepEqual(emptyStatus?.facets?.status, { completed: 1 }, "status facet ignores its own filter");
@@ -331,6 +334,13 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
       VALUES ('run-legacy','org','2026-11-18T06:00:00.000Z','legacy answer','.tmp/naver-ai','legacy.json','{}');`);
     assert.equal((await getRequestLog("org", "brand", "a", db))?.counts.total, 3);
     const mixed = await items("a");
+    const mobile = await items("a", "device=mobile");
+    const desktop = await items("a", "device=desktop");
+    assert.ok(mobile?.rows.every(row => row.device === "mobile"));
+    assert.ok(desktop?.rows.every(row => row.device === "desktop"));
+    assert.equal(mobile!.filteredTotal + desktop!.filteredTotal, mixed!.filteredTotal);
+    assert.equal((await items("a", "device=mobile,desktop"))?.filteredTotal, mixed!.filteredTotal);
+    assert.deepEqual(mobile!.facets!.device, desktop!.facets!.device, "device counts ignore their own selection");
     assert.equal(mixed?.rows.length, 3);
     assert.equal(mixed?.rows.find(row => row.id === "legacy-1")?.executionKind, "legacy");
     assert.equal(mixed?.rows.find(row => row.id === "legacy-1")?.result?.filename, "legacy.json");
@@ -355,6 +365,8 @@ test("Postgres request list scopes, aggregates before filtering and clamps pages
     const geminiFilter = "status=parse_failed,cancelled&surface=gemini";
     assert.deepEqual((await items("a", geminiFilter))?.facets?.retry, { failed: 0, cancelled: 1, selectable: 1 });
     assert.equal((await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 1);
+    assert.equal((await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams(`${geminiFilter}&device=mobile`))))?.length, 0);
+    assert.equal((await listRetryCandidates("org", "brand", "a", "all", db, parseRequestItemOptions(new URLSearchParams(`${geminiFilter}&device=desktop`))))?.length, 1);
     assert.equal((await listRetryCandidates("org", "brand", "a", "failed", db, parseRequestItemOptions(new URLSearchParams(geminiFilter))))?.length, 0);
     await client.query(`INSERT INTO legacy_items_test(id,organization_id,brand_id,collection_request_id,surface,device,status,query_snapshot,retry_of_task_id)
       VALUES ('local-retry','org','brand','b','naver-ai','desktop','reserved','retry','legacy-1'),
