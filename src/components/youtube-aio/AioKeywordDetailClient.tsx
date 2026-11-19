@@ -122,17 +122,8 @@ export function AioKeywordDetailClient({ data }: { data: AioKeywordDetailPageDat
                   return (
                     <div key={i}>
                       <div className={cn(backedByOwn && "bg-blue-50 underline decoration-blue-500 decoration-2 underline-offset-4")}>
-                        <AioMarkdown text={p.text} />
+                        <AioMarkdown text={p.text} sources={p.sources} ownSources={[...ownPositions]} />
                       </div>
-                      {p.sources.length > 0 && (
-                        <sup className="ml-1 text-[10px] font-semibold text-neutral-500">
-                          {p.sources.map((s) => (
-                            <span key={s} className={cn(ownPositions.has(s) && "text-blue-600")}>
-                              [{s}]
-                            </span>
-                          ))}
-                        </sup>
-                      )}
                     </div>
                   );
                 })}

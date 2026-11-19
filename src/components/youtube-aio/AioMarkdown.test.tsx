@@ -17,3 +17,13 @@ test("collected HTML and unsafe markdown URLs cannot execute", () => {
   assert.ok(!html.includes("<script"));
   assert.ok(!html.includes("javascript:"));
 });
+
+test("citations stay inside the final paragraph or list item", () => {
+  for (const text of ["첫 문단\n\n마지막 **문장**", "- 첫 항목\n- 마지막 **문장**", "1. 첫 항목\n2. 마지막 **문장**", "> 마지막 **문장**"]) {
+    const html = renderToStaticMarkup(<AioMarkdown text={text} sources={[1, 2]} ownSources={[2]} />);
+    assert.match(html, /<strong>문장<\/strong><sup[^>]*>/);
+    assert.ok(html.includes('<span class="text-blue-600">[2]</span>'));
+    assert.equal((html.match(/<sup/g) ?? []).length, 1);
+    assert.match(html, /<\/sup><\/(p|li)>/);
+  }
+});
