@@ -18,7 +18,9 @@ import { SurfaceChips } from "@/components/prompt-library/SurfacePicker";
 import { BulkSurfaceModal } from "@/components/prompt-library/BulkSurfaceModal";
 import { AioCollectButton } from "@/components/youtube-aio/AioCollectButton";
 import { SelectionCollectModal } from "@/components/prompt-library/SelectionCollectModal";
+import { SerpApiCostConfirmModal } from "@/components/prompt-library/SerpApiCostConfirmModal";
 import { buildCollectSteps, surfacesOf, type CollectStep } from "@/lib/collectSteps";
+import type { SerpApiSurface } from "@/lib/dataforseoPricing";
 import { AI_ANSWER_SURFACES, PROMPT_SURFACES, SURFACE_LABEL, aioDailyLoad, type PromptSurface } from "@/lib/promptSurfaces";
 import { PromptLibraryOptimizeModal } from "@/components/prompt-library/PromptLibraryOptimizeModal";
 import { GeminiCollectModal } from "@/components/prompt-library/GeminiCollectModal";
@@ -31,6 +33,21 @@ import { PromptLibraryHealth, PromptLibraryRow } from "@/lib/db";
 import { importPromptCsv } from "@/lib/importPromptCsv";
 import { deleteLibraryRows } from "@/lib/deleteLibraryRows";
 import { downloadCsv } from "@/lib/csv";
+import { formatKst } from "@/lib/backend/collectionRunsTypes";
+import { allFilteredSelected, toggleFilteredSelection } from "@/lib/promptLibrarySelection";
+
+// Temporarily hide the daily-load badge; set true to restore its existing UI.
+const SHOW_AIO_DAILY_LOAD_BADGE = false;
+
+type ActiveCollectionConflict = {
+  id: string;
+  promptId: string | null;
+  query: string;
+  surface: SerpApiSurface;
+  device: "desktop" | "mobile";
+  status: string;
+  startedAt: string;
+};
 
 const ORIGIN_LABEL: Record<PromptLibraryRow["origin"], string> = {
   ai_generated: "AI 생성",
@@ -84,6 +101,8 @@ export function PromptLibraryClient({
   const [surfaceFilter, setSurfaceFilter] = useState<"전체" | PromptSurface>("전체");
   // 선택 수집: 플랫폼 고르기 창 → 플랫폼별 수집 단계(queue)를 차례로.
   const [chooseOpen, setChooseOpen] = useState(false);
+  const [pendingCollection, setPendingCollection] = useState<{ enabled: Set<PromptSurface>; serpApiEnabled: Set<SerpApiSurface> } | null>(null);
+  const [activeCollectionConflicts, setActiveCollectionConflicts] = useState<ActiveCollectionConflict[] | null>(null);
   const [queue, setQueue] = useState<CollectStep[]>([]);
   const stepDoneRef = useRef(false);
   const [visibleCols, setVisibleCols] = useState<Set<string>>(
@@ -107,6 +126,8 @@ export function PromptLibraryClient({
   }, [rows, category, topic, search, surfaceFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const filteredIds = filtered.map(row => row.id);
+  const allFilteredAreSelected = allFilteredSelected(selected, filteredIds);
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // 현재 필터(검색어/카테고리/토픽) 적용된 결과만 내보낸다 — 화면에
@@ -267,8 +288,62 @@ export function PromptLibraryClient({
 
   // 선택한 프롬프트 중 구글AIO가 켜진 것 — AIO 수집 대상.
   const selectedRows = rows.filter((r) => selected.has(r.id));
-  const parallel = Boolean(collectionAgent && brandId);
+  const parallel = Boolean(brandId);
   const step = parallel ? undefined : queue[0];
+
+  async function startPendingCollection(forceSerpDuplicate: boolean) {
+    if (!pendingCollection) return;
+    const requestId = crypto.randomUUID();
+    stepDoneRef.current = false;
+    const steps = buildCollectSteps(
+      selectedRows,
+      pendingCollection.enabled,
+      pendingCollection.serpApiEnabled,
+      requestId,
+      forceSerpDuplicate,
+    );
+    const legacyItems = steps.flatMap(s => {
+      if (s.kind === "serp-api") return [];
+      if (s.kind === "aio") return selectedRows.filter(row => row.promptId && s.promptIds.includes(row.promptId)).map(row => ({ query: row.prompt, surface: "google-aio" }));
+      if (s.kind === "gemini") return s.keywords.map(query => ({ query, surface: "gemini" }));
+      return s.keywords.flatMap(query => s.engines.map(engine => ({ query, surface: engine === "naver" ? "naver-ai" : engine === "naver-overview" ? "naver-aio" : "google-ai-mode" })));
+    });
+    if (legacyItems.length) {
+      try {
+        const response = await fetch("/api/collection-requests/legacy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, items: legacyItems }) });
+        if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? "수집 요청을 등록하지 못했습니다.");
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "수집 요청을 등록하지 못했습니다.");
+        return;
+      }
+    }
+    setQueue(steps);
+    setActiveCollectionConflicts(null);
+    setPendingCollection(null);
+  }
+
+  async function checkActiveCollections() {
+    if (!pendingCollection || pendingCollection.serpApiEnabled.size === 0) {
+      startPendingCollection(false);
+      return;
+    }
+    const response = await fetch("/api/dataforseo/tasks/active", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brandId,
+        prompts: selectedRows.map((row) => ({ promptId: row.promptId, query: row.prompt })),
+        surfaces: [...pendingCollection.serpApiEnabled],
+      }),
+    });
+    const data = await response.json().catch(() => ({})) as { error?: string; tasks?: ActiveCollectionConflict[] };
+    if (!response.ok) throw new Error(data.error ?? "진행 중인 수집을 확인하지 못했습니다.");
+    if (data.tasks?.length) {
+      setActiveCollectionConflicts(data.tasks);
+      return;
+    }
+    startPendingCollection(false);
+  }
   // 단계 창을 닫을 때: 끝까지 수집해 반영했으면 다음 단계로, 중간에 닫았으면 남은 단계를 모두 접는다.
   function finishStep() {
     if (!parallel && stepDoneRef.current && queue.length > 1) {
@@ -292,7 +367,7 @@ export function PromptLibraryClient({
             드롭다운(US-en/KR-ko, 클릭해도 아무 동작 안 함) 대신 실제 서비스
             시장(KR)을 있는 그대로 보여준다. */}
         <div className="flex flex-wrap items-center gap-2">
-          {aioLoad.prompts > 0 && (
+          {SHOW_AIO_DAILY_LOAD_BADGE && aioLoad.prompts > 0 && (
             <span
               title="구글AIO가 켜진 프롬프트 × AIO 수집 디바이스 수 — AIO는 검색 1건이 느리고 캡차 때문에 하루 수집 상한이 있습니다."
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${aioLoad.over ? "bg-amber-100 text-amber-800" : "bg-blue-50 text-blue-700"}`}
@@ -407,10 +482,12 @@ export function PromptLibraryClient({
         {canEdit && filtered.length > 0 && (
           <Button
             variant="secondary"
-            onClick={() => setSelected(new Set(filtered.map((r) => r.id)))}
-            title="검색·카테고리·토픽·플랫폼 조건에 맞는 프롬프트를 페이지와 상관없이 모두 선택합니다"
+            aria-pressed={allFilteredAreSelected}
+            className={allFilteredAreSelected ? "ring-2 ring-slate-800 ring-offset-1" : undefined}
+            onClick={() => setSelected(previous => toggleFilteredSelection(previous, filteredIds))}
+            title="현재 조건에 맞는 프롬프트를 모든 페이지에서 선택하거나 해제합니다. 다른 조건에서 선택한 항목은 유지합니다."
           >
-            조건에 맞는 {filtered.length}개 모두 선택
+            조건에 맞는 {filtered.length}개 {allFilteredAreSelected ? "선택 해제" : "모두 선택"}
           </Button>
         )}
         <div className="flex-1" />
@@ -536,22 +613,75 @@ export function PromptLibraryClient({
       {chooseOpen && (
         <SelectionCollectModal
           open
-          onClose={() => setChooseOpen(false)}
-          rows={selectedRows}
-          aioDeviceCount={aioDeviceCount}
-          onStart={(enabled) => {
+          onClose={() => {
             setChooseOpen(false);
-            stepDoneRef.current = false;
-            setQueue(buildCollectSteps(selectedRows, enabled));
+            setPendingCollection(null);
+          }}
+          rows={selectedRows}
+          brandId={brandId}
+          aioDeviceCount={aioDeviceCount}
+          initialEnabled={pendingCollection?.enabled}
+          initialSerpApiEnabled={pendingCollection?.serpApiEnabled}
+          onReview={(enabled, serpApiEnabled) => {
+            setChooseOpen(false);
+            setPendingCollection({ enabled, serpApiEnabled });
           }}
         />
       )}
-      {parallel && collectionAgent && queue.length > 0 && (
+      {pendingCollection && !chooseOpen && !activeCollectionConflicts && (
+        <SerpApiCostConfirmModal
+          rows={selectedRows}
+          enabled={pendingCollection.enabled}
+          serpApiEnabled={pendingCollection.serpApiEnabled}
+          aioDeviceCount={aioDeviceCount}
+          onBack={() => {
+            setChooseOpen(true);
+          }}
+          onConfirm={checkActiveCollections}
+        />
+      )}
+      {pendingCollection && activeCollectionConflicts && (
+        <Modal open onClose={() => setActiveCollectionConflicts(null)}>
+          <h2 className="text-lg font-bold text-neutral-900">이미 수집 중인 프롬프트가 있습니다</h2>
+          <p className="mt-2 text-sm text-neutral-600">
+            선택한 프롬프트 중 아래 작업이 아직 진행 중입니다. 계속하면 동일 프롬프트와 엔진으로 새 작업을 추가하며 비용이 다시 발생할 수 있습니다.
+          </p>
+          <div className="mt-4 max-h-72 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50">
+            {activeCollectionConflicts.map((conflict) => (
+              <div key={conflict.id} className="flex flex-col gap-1 border-b border-amber-100 px-3 py-2.5 last:border-b-0">
+                <span className="text-sm font-medium text-neutral-900">{conflict.query}</span>
+                <span className="text-xs text-amber-800">
+                  {SURFACE_LABEL[conflict.surface]} · {conflict.device === "mobile" ? "모바일" : "데스크톱"} · {formatKst(conflict.startedAt)} 시작
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setActiveCollectionConflicts(null)}>돌아가기</Button>
+            <Button variant="primary" onClick={() => startPendingCollection(true)}>그래도 중복 수집 시작</Button>
+          </div>
+        </Modal>
+      )}
+      {parallel && queue.length > 0 && (
         <ParallelCollectModal
           steps={queue}
-          orgName={collectionAgent.orgName}
+          orgName={collectionAgent?.orgName ?? ""}
+          serverCollector={!collectionAgent}
           brandId={brandId}
-          downloadPlatforms={collectionAgent.downloadPlatforms}
+          downloadPlatforms={collectionAgent?.downloadPlatforms ?? []}
+          onDone={() => {
+            stepDoneRef.current = true;
+          }}
+          onClose={finishStep}
+        />
+      )}
+      {!parallel && step?.kind === "serp-api" && (
+        <ParallelCollectModal
+          key={`serp-${queue.length}`}
+          steps={[step]}
+          orgName=""
+          brandId={brandId}
+          downloadPlatforms={[]}
           onDone={() => {
             stepDoneRef.current = true;
           }}
@@ -621,12 +751,11 @@ export function PromptLibraryClient({
       {surfaceOpen && (
         <BulkSurfaceModal
           open
-          onClose={() => setSurfaceOpen(false)}
+          onClose={() => { setSurfaceOpen(false); router.refresh(); }}
           ids={selectedRows.map((r) => r.id)}
           initial={commonSurfaces.length > 0 ? commonSurfaces : [...AI_ANSWER_SURFACES]}
           onSaved={(ids, surfaces) => {
             setRows((prev) => prev.map((r) => (ids.includes(r.id) ? { ...r, surfaces } : r)));
-            router.refresh();
           }}
         />
       )}

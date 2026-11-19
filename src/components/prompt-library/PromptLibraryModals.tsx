@@ -372,9 +372,11 @@ export function ImportPromptsModal({
   const [parsed, setParsed] = useState<ImportedPromptRow[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [importing, setImporting] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function handleFile(file: File | undefined) {
+    if (importing) return;
     if (!file) {
       setFileName(null);
       setParsed([]);
@@ -383,6 +385,17 @@ export function ImportPromptsModal({
       return;
     }
     setFileName(file.name);
+    setParsed([]);
+    setDuplicateCount(0);
+    setError(null);
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setError("CSV 파일을 선택해 주세요.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("파일 크기는 최대 10MB까지 가능합니다.");
+      return;
+    }
     file.text().then((text) => {
       const { rows, error } = parseImportFile(text);
       // 라이브러리에 이미 있거나(existingPrompts) 파일 안에서 스스로 반복되는
@@ -403,6 +416,9 @@ export function ImportPromptsModal({
       setParsed(unique);
       setDuplicateCount(duplicates);
       setError(error);
+    }).catch(() => {
+      setParsed([]);
+      setError("파일을 읽지 못했습니다. 다시 선택해 주세요.");
     });
   }
 
@@ -437,7 +453,28 @@ export function ImportPromptsModal({
         <code className="rounded bg-neutral-100 px-1">topic</code> · 최대 10MB
       </p>
 
-      <label className="mt-4 flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 px-6 py-10 text-center hover:border-neutral-400">
+      <label
+        className={`mt-4 flex flex-col items-center gap-2 rounded-lg border-2 border-dashed px-6 py-10 text-center ${importing ? "cursor-not-allowed opacity-50 border-neutral-300" : dragging ? "cursor-copy border-emerald-500 bg-emerald-50" : "cursor-pointer border-neutral-300 hover:border-neutral-400"}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = importing ? "none" : "copy";
+          if (!importing) setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (importing) return;
+          if (e.dataTransfer.files.length > 1) {
+            setParsed([]);
+            setError("CSV 파일은 한 번에 하나만 가져올 수 있습니다.");
+            return;
+          }
+          if (e.dataTransfer.files.length === 1) handleFile(e.dataTransfer.files[0]);
+        }}
+      >
         <Upload size={20} className="text-neutral-400" />
         <span className="text-sm font-medium text-neutral-700">
           {fileName ?? "클릭하거나 파일을 끌어다 놓으세요"}

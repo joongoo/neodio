@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 결과 파일은 지금 선택된 조직으로 들어간다(작업 기록에 조직을 남김).
-  const job = startCollectionJob((await getCurrentTenant()).orgId, keyword, engines);
+  const tenant = await getCurrentTenant();
+  const job = startCollectionJob(tenant.orgId, keyword, engines, typeof body?.requestId === "string" ? { clientId: body.requestId, brandId: tenant.brandId } : undefined);
   return NextResponse.json({ jobId: job.id });
 }

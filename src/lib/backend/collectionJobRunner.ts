@@ -1,4 +1,6 @@
 import { ChildProcess, spawn } from "node:child_process";
+import { linkLegacyRun } from "./dataforseo/legacyRequest";
+import type { PromptRunSeed } from "@/lib/db/types";
 import { CollectionJob } from "./collectionJobTypes";
 import { getPersistedCollectionJob, getPromptStore, persistCollectionJob, syncCollectedFiles } from "./database";
 
@@ -19,7 +21,10 @@ const isWindows = process.platform === "win32";
 
 function runCommand(command: string, args: string[], onLog: (line: string) => void, jobId?: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: process.cwd(), shell: isWindows,
+    // Windows에서도 node.exe는 셸을 거치지 않아야 공백이 든 질의가 한 인자로 유지된다.
+    // npx.cmd처럼 cmd/bat 실행 파일만 cmd.exe가 필요하다.
+    const shell = isWindows && /\.(cmd|bat)$/i.test(command);
+    const child = spawn(command, args, { cwd: process.cwd(), shell,
       env: { ...process.env, NEODIO_COLLECTION_JOB_ID: jobId ?? "" } });
     if (jobId) runningChildren.set(jobId, child);
     child.stdout?.on("data", (chunk) => onLog(chunk.toString()));
@@ -60,9 +65,11 @@ export async function getJob(id: string): Promise<CollectionJob | undefined> {
   return jobs.get(id) ?? getPersistedCollectionJob(id);
 }
 
-export function startCollectionJob(organizationId: string, keyword: string, engines: ("naver" | "google")[]): CollectionJob {
+export function startCollectionJob(organizationId: string, keyword: string, engines: ("naver" | "google")[], request?: { clientId: string; brandId: string }): CollectionJob {
   const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const job: CollectionJob = {
+    collectionRequestClientId: request?.clientId,
+    brandId: request?.brandId,
     id,
     organizationId,
     keyword,
@@ -109,14 +116,13 @@ async function runJob(job: CollectionJob) {
     throw new Error("Playwright 브라우저 설치에 실패했습니다. 로그를 확인해주세요.");
   }
 
-  const npm = isWindows ? "npm.cmd" : "npm";
   let collectionFailed = false;
 
   if (job.engines.includes("naver")) {
     job.stage = "naver";
     await persistCollectionJob(job);
     appendLog(job, `네이버 AI검색 수집 시작: "${job.keyword}"`);
-    const code = await runCommand(npm, ["run", "collect:naver-ai", "--", "--query", job.keyword], (line) =>
+    const code = await runCommand(process.execPath, ["scripts/collect-naver-ai.mjs", "--query", job.keyword], (line) =>
       appendLog(job, line), job.id
     );
     if (cancelledJobs.has(job.id)) return markCancelled(job);
@@ -128,7 +134,7 @@ async function runJob(job: CollectionJob) {
     job.stage = "google";
     await persistCollectionJob(job);
     appendLog(job, `구글 AI 모드 수집 시작: "${job.keyword}" (시크릿 크롬 창이 열립니다)`);
-    const code = await runCommand(npm, ["run", "collect:google-ai", "--", "--query", job.keyword], (line) =>
+    const code = await runCommand(process.execPath, ["scripts/collect-google-ai.mjs", "--query", job.keyword], (line) =>
       appendLog(job, line), job.id
     );
     if (cancelledJobs.has(job.id)) return markCancelled(job);
@@ -141,7 +147,11 @@ async function runJob(job: CollectionJob) {
   appendLog(job, "수집 결과 저장(가공) 중...");
   const store = await getPromptStore();
   await syncCollectedFiles(store);
-  const saveCode = await runCommand(npm, ["run", "db:migrate"], (line) => appendLog(job, line), job.id);
+  if (job.collectionRequestClientId && job.brandId && job.organizationId) {
+    const runs = await store.query<{ original_json: PromptRunSeed }>("SELECT original_json FROM prompt_runs WHERE organization_id=$1 AND job_id=$2", [job.organizationId, job.id]);
+    for (const run of runs) await linkLegacyRun(job.organizationId, job.brandId, job.collectionRequestClientId, run.original_json);
+  }
+  const saveCode = await runCommand(npx, ["tsx", "scripts/migrate-db.ts"], (line) => appendLog(job, line), job.id);
   if (cancelledJobs.has(job.id)) return markCancelled(job);
   if (saveCode !== 0) throw new Error("Failed to save collection analysis");
   if (collectionFailed) throw new Error("일부 수집이 실패했습니다. 수집 로그를 확인해주세요.");

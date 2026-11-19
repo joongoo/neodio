@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   if (channels.length === 0) return NextResponse.json({ error: "YouTube 채널을 먼저 연동하세요." }, { status: 400 });
   const settings = await getBrandAioSettings(brandId);
   const { citations, saved } = await saveCollectedResult({
+    requestId: typeof body?.requestId === "string" ? body.requestId : undefined,
     brandId,
     keywordId,
     device,

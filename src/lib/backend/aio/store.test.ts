@@ -468,7 +468,8 @@ test("라이브러리에서 고른 프롬프트: 플랫폼 일괄 변경이 AIO 
   const post = (body: unknown) => bulkSurfacesRoute.POST(request("/x", "POST", body));
   assert.equal((await post({ ids: [], surfaces: ["google-aio"] })).status, 400);
   assert.equal((await post({ ids: [one.id], surfaces: [] })).status, 400);
-  assert.deepEqual(await (await post({ ids: [one.id, "tracked-none", one.id], surfaces: ["google-aio", "naver-ai"] })).json(), { changed: 1 });
+  assert.equal((await post({ ids: Array.from({ length: 26 }, (_, i) => `id-${i}`), surfaces: ["google-aio"] })).status, 400);
+  assert.deepEqual(await (await post({ ids: [one.id, "tracked-none", one.id], surfaces: ["google-aio", "naver-ai"] })).json(), { changed: 1, ids: [one.id] });
 
   const surfaces = async (id: string) => (await s.library("neodigm", brandId)).find((r) => r.id === id)?.surfaces;
   assert.deepEqual(await surfaces(one.id), ["google-aio", "naver-ai"]);

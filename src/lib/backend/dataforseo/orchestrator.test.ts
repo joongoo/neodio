@@ -1,0 +1,151 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { LocalArtifactStore, MemoryArtifactStore } from "./artifacts";
+import { DataForSeoClient, DataForSeoRequestError } from "./client";
+import { DataForSeoOrchestrator } from "./orchestrator";
+import { MemoryObservationProjector } from "./projector";
+import { MemoryProviderTaskStore } from "./taskStore";
+
+const input = {
+  organizationId: "org-1",
+  brandId: null,
+  promptId: null,
+  query: "CRM 추천",
+  surface: "google-ai-mode" as const,
+  device: "desktop" as const,
+  marketId: "market-kr",
+  scheduledWindow: "2026-11-12",
+};
+
+test("같은 관측은 한 번만 예약한다", async () => {
+  const store = new MemoryProviderTaskStore();
+  const first = await store.reserve(input);
+  const second = await store.reserve(input);
+  assert.equal(first.created, true);
+  assert.equal(second.created, false);
+  assert.equal(second.task.id, first.task.id);
+});
+
+test("로컬 artifact 저장소는 원본과 checksum 메타데이터를 보존한다", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "neodio-dataforseo-"));
+  try {
+    const store = new MemoryProviderTaskStore();
+    const { task } = await store.reserve(input);
+    const artifact = await new LocalArtifactStore(root).save(task, "request", "[{\"keyword\":\"CRM 추천\"}]\n", "application/json");
+    const relativePath = artifact.objectKey.slice("local:".length).split("/");
+    assert.equal(await readFile(path.join(root, ...relativePath), "utf8"), "[{\"keyword\":\"CRM 추천\"}]\n");
+    assert.equal(artifact.checksumSha256.length, 64);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("missing credentials block artifacts and fetch", async () => {
+  const store = new MemoryProviderTaskStore();
+  const artifacts = new MemoryArtifactStore();
+  let fetchCalls = 0;
+  const client = new DataForSeoClient({ login: "", password: "y", fetchImpl: async () => { fetchCalls += 1; return Response.json({}); } });
+  const orchestrator = new DataForSeoOrchestrator(store, artifacts, client, new MemoryObservationProjector());
+  const { task } = await orchestrator.reserve(input);
+  await assert.rejects(orchestrator.submit(task.id), DataForSeoRequestError);
+  assert.equal(fetchCalls, 0);
+  assert.equal(artifacts.bodies.size, 0);
+  assert.equal((await store.get(task.id))?.status, "reserved");
+});
+
+test("lease owner가 아닌 worker는 Provider POST 직전에 차단된다", async () => {
+  const store = new MemoryProviderTaskStore();
+  const artifacts = new MemoryArtifactStore();
+  let fetchCalls = 0;
+  const client = new DataForSeoClient({
+    login: "x",
+    password: "y",
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return Response.json({});
+    },
+  });
+  const orchestrator = new DataForSeoOrchestrator(store, artifacts, client, new MemoryObservationProjector());
+  const { task } = await orchestrator.reserve(input);
+  await store.claimReserved({ owner: "worker-a", limit: 1, maxInFlight: 1, leaseMs: 60_000 });
+
+  await assert.rejects(orchestrator.submit(task.id, "worker-b"), /lease를 잃어 제출하지 않았습니다/);
+  assert.equal(fetchCalls, 0);
+  assert.equal((await store.get(task.id))?.status, "reserved");
+});
+
+test("가짜 POST와 GET으로 제출·회수·정규화를 완료한다", async () => {
+  const store = new MemoryProviderTaskStore();
+  const artifacts = new MemoryArtifactStore();
+  const responses = [
+    { status_code: 20000, tasks: [{ id: "provider-1", status_code: 20100, status_message: "Task Created", cost: 0.0012 }] },
+    { status_code: 20000, version: "0.1", tasks: [{ id: "provider-1", status_code: 20000, status_message: "Ok", cost: 0.0012,
+      data: { se_type: "ai_mode" }, result: [{ items: [{ type: "ai_overview", markdown: "HubSpot을 추천합니다.", references: [
+        { type: "ai_overview_reference", title: "HubSpot", url: "https://hubspot.com/kr" },
+      ] }] }] }] },
+  ];
+  let fetchCalls = 0;
+  const client = new DataForSeoClient({
+    login: "x", password: "y",
+    fetchImpl: async () => { const value = responses[fetchCalls++]; return Response.json(value); },
+  });
+  const projector = new MemoryObservationProjector();
+  const orchestrator = new DataForSeoOrchestrator(store, artifacts, client, projector);
+  const { task } = await orchestrator.reserve(input);
+  const submitted = await orchestrator.submit(task.id);
+  assert.equal(submitted.status, "queued");
+  assert.equal(submitted.providerTaskId, "provider-1");
+  const recovered = await orchestrator.recover(task.id);
+  assert.equal(recovered.task.status, "completed");
+  assert.equal(recovered.observation?.outcome, "ai_answered");
+  assert.equal(recovered.observation?.citations[0].domain, "hubspot.com");
+  assert.equal(projector.projections.length, 1);
+  assert.equal(fetchCalls, 2);
+  assert.deepEqual([...store.artifacts.values()].map((item) => item.kind).sort(), ["advanced_result", "post_response", "request"]);
+});
+
+test("recovery lease를 검증하고 처리 중 결과의 다음 조회를 예약한다", async () => {
+  const store = new MemoryProviderTaskStore();
+  let fetchCalls = 0;
+  const responses = [
+    { status_code: 20000, tasks: [{ id: "provider-pending", status_code: 20100, cost: 0.0012 }] },
+    { status_code: 20000, tasks: [{ id: "provider-pending", status_code: 20100, status_message: "Task In Queue" }] },
+  ];
+  const client = new DataForSeoClient({
+    login: "x", password: "y",
+    fetchImpl: async () => Response.json(responses[fetchCalls++]),
+  });
+  const orchestrator = new DataForSeoOrchestrator(store, new MemoryArtifactStore(), client, new MemoryObservationProjector());
+  const { task } = await orchestrator.reserve({ ...input, scheduledWindow: "manual:pending" });
+  await orchestrator.submit(task.id);
+  const claimedAt = new Date().toISOString();
+  await store.claimRecoverable({ owner: "recovery-a", limit: 1, leaseMs: 60_000, now: claimedAt });
+
+  await assert.rejects(orchestrator.recover(task.id, "recovery-b"), /lease를 잃어/);
+  assert.equal(fetchCalls, 1);
+
+  const recovered = await orchestrator.recover(task.id, "recovery-a");
+  assert.equal(recovered.task.status, "collecting");
+  assert.equal(recovered.task.leaseOwner, null);
+  assert.equal(recovered.task.leaseExpiresAt, null);
+  assert.ok(recovered.task.nextPollAt && recovered.task.nextPollAt > claimedAt);
+  assert.equal(fetchCalls, 2);
+});
+
+test("an active prompt and engine task is reused across collection requests", async () => {
+  const store = new MemoryProviderTaskStore();
+  const first = await store.reserveActive({ ...input, scheduledWindow: "manual:first" });
+  const duplicate = await store.reserveActive({ ...input, scheduledWindow: "manual:second" });
+
+  assert.equal(first.created, true);
+  assert.equal(duplicate.created, false);
+  assert.equal(duplicate.task.id, first.task.id);
+
+  await store.update(first.task.id, "reserved", { status: "cancelled" });
+  const next = await store.reserveActive({ ...input, scheduledWindow: "manual:third" });
+  assert.equal(next.created, true);
+  assert.notEqual(next.task.id, first.task.id);
+});

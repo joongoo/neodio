@@ -40,9 +40,12 @@ export function Dropdown({
   }, []);
 
   return (
-    <div className={cn("relative inline-block", className)} ref={ref}>
+    <div className={cn("relative inline-block", className)} ref={ref}
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false); }}
+      onKeyDown={event => { if (event.key === "Escape") { setOpen(false); ref.current?.querySelector("button")?.focus(); } }}>
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "inline-flex items-center gap-2 rounded-md px-3.5 py-2 text-sm whitespace-nowrap cursor-pointer transition-colors",

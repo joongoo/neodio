@@ -97,6 +97,8 @@ export interface PromptRunMetadata {
   webSearch?: boolean;
   /** API 제공사 원본에서 보존한 값(검색어, 토큰 사용량 등) */
   providerData?: Record<string, unknown>;
+  /** Provider collection result, kept separate from transport success/failure. */
+  observationOutcome?: "ai_answered" | "ai_absent" | "collection_error" | "parse_error";
   query?: string;
   queryUrl?: string;
   finalUrl?: string;

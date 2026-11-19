@@ -1,4 +1,11 @@
 {
+  "functions": {
+    "src/app/api/queue/dataforseo/route.ts": {
+      "experimentalTriggers": [
+        { "type": "queue/v2beta", "topic": "dataforseo-collection", "retryAfterSeconds": 60 }
+      ]
+    }
+  },
   "crons": [
     { "path": "/api/cron/youtube-videos", "schedule": "0 0 * * *" }
   ]

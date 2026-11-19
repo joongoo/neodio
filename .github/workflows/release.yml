@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, closed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event.action != 'closed' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate release direction and version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execFileSync } = require('node:child_process');
+            const { validateRelease } = require('./.github/scripts/release-policy.cjs');
+            const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n');
+            const tag = validateRelease(context.payload.pull_request, tags, context.payload.action === 'closed');
+            core.info(`Validated ${tag}; merge staging/hotfix into main using Create a merge commit.`);
+
+  publish-and-sync:
+    needs: validate
+    concurrency:
+      group: publish-main-release
+      cancel-in-progress: false
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Publish version and fast-forward staging
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execFileSync, spawnSync } = require('node:child_process');
+            const { validateRelease } = require('./.github/scripts/release-policy.cjs');
+            const pr = context.payload.pull_request;
+            const repo = context.repo;
+            const sha = pr.merge_commit_sha;
+            if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid merge SHA');
+            const tags = execFileSync('git', ['tag', '--list'], { encoding: 'utf8' }).trim().split('\n');
+            const tag = validateRelease(pr, tags, true);
+            const parents = execFileSync('git', ['show', '-s', '--format=%P', sha], { encoding: 'utf8' }).trim().split(' ');
+            if (parents.length !== 2 || !parents.includes(pr.head.sha)) throw new Error('Release requires a merge commit preserving the source branch; squash/rebase is not allowed.');
+            try {
+              const existing = await github.rest.git.getRef({ ...repo, ref: `tags/${tag}` });
+              if (existing.data.object.sha !== sha) throw new Error(`${tag} already points to a different commit; refusing to overwrite.`);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.git.createRef({ ...repo, ref: `refs/tags/${tag}`, sha });
+            }
+            try {
+              await github.rest.repos.getReleaseByTag({ ...repo, tag });
+              core.info('Release already exists; preserving its notes.');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              const notes = await github.rest.repos.generateReleaseNotes({ ...repo, tag_name: tag, target_commitish: sha, configuration_file_path: '.github/release.yml' });
+              await github.rest.repos.createRelease({ ...repo, tag_name: tag, target_commitish: sha, name: tag,
+                body: `${pr.body || ''}\n\n## GitHub 변경 목록\n\n${notes.data.body}`, draft: false, prerelease: false });
+            }
+            await execFileSync('git', ['fetch', 'origin', 'staging', '--no-tags']);
+            const staging = execFileSync('git', ['rev-parse', 'FETCH_HEAD'], { encoding: 'utf8' }).trim();
+            const ancestor = (a, b) => {
+              const result = spawnSync('git', ['merge-base', '--is-ancestor', a, b]);
+              if (result.status !== 0 && result.status !== 1) throw new Error('Unable to verify branch ancestry');
+              return result.status === 0;
+            };
+            if (ancestor(staging, sha)) {
+              await github.rest.git.updateRef({ ...repo, ref: 'heads/staging', sha, force: false });
+              core.info(`staging fast-forwarded to ${tag}.`);
+            } else if (ancestor(sha, staging)) {
+              core.info('staging already contains this release; preserving newer work.');
+            } else {
+              throw new Error('Release published, but staging has diverged. Create a main → staging merge-commit sync PR. No force push was attempted.');
+            }

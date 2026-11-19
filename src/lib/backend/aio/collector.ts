@@ -3,28 +3,16 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getManagedBrandById } from "../brandsManagementStore";
 import { getBrandAioSettings, listBrandYoutubeChannels } from "../brandAioConfig";
-import { resolveYoutubeVideo } from "../youtube";
 import { getPromptStore } from "../database";
+import { linkLegacyRun } from "../dataforseo/legacyRequest";
 import { buildJudgeContext, CollectedSource, judgeCitations } from "./judge";
-import { cacheVideo, collectedToday, getCachedVideos, keywordPromptContext, listAioKeywords, saveAioObservation, seoulDate } from "./store";
-import { AioCitation, AioDevice, AioObservationStatus, AioParagraph, PromptRunSeed, RawCitationMetadata, YoutubeVideoMeta } from "@/lib/db/types";
+import { collectedToday, keywordPromptContext, listAioKeywords, saveAioObservation, seoulDate } from "./store";
+import { AioCitation, AioDevice, AioObservationStatus, AioParagraph, PromptRunSeed } from "@/lib/db/types";
+import { lookupAioVideo, toRawAioCitation } from "./citationEnrichment";
 
 const GOOGLE_AIO_MODEL_ID = "model-google-aio";
 const DEFAULT_MARKET_ID = "market-kr";
 
-function toRawCitation(citation: AioCitation): RawCitationMetadata {
-  return {
-    title: citation.title,
-    url: citation.url,
-    domain: citation.domain,
-    isOwnDomain: citation.sourceType === "own_video" || citation.sourceType === "own_web",
-    position: citation.position,
-    sourceType: citation.sourceType,
-    videoId: citation.videoId,
-    channelId: citation.channelId,
-    startSeconds: citation.startSeconds,
-  };
-}
 
 // 구글AIO 결과를 다른 플랫폼(네이버AI/구글AI모드)과 같은 prompt_runs에도
 // 적재한다 — 수집 로그·가시성 개요·브랜드 가시성이 전부 prompt_runs만
@@ -32,6 +20,8 @@ function toRawCitation(citation: AioCitation): RawCitationMetadata {
 // aio_observations 저장은 그대로 유지한다 — YouTube AIO 전용 대시보드(영상
 // 소유 판정, 채널별 통계 등)는 아직 이 테이블을 직접 쓴다.
 async function syncAioRunToPromptRuns(params: {
+  requestId?: string;
+  brandId?: string;
   keywordId: string;
   device: AioDevice;
   status: AioObservationStatus;
@@ -68,12 +58,13 @@ async function syncAioRunToPromptRuns(params: {
         screenshotPath: params.screenshotPath ?? undefined,
         htmlPath: params.htmlPath ?? undefined,
         answerTextLength: params.aioText?.length,
-        citations: params.citations.map(toRawCitation),
+        citations: params.citations.map(toRawAioCitation),
         errorMessage,
       },
     };
     const store = await getPromptStore();
     await store.importRun(context.organizationId, { dir: "aio-sync", filename: `${run.id}.json`, promptRun: run }, null);
+    if (params.brandId) await linkLegacyRun(context.organizationId, params.brandId, params.requestId, run, params.device);
   } catch (error) {
     console.error("[aio] prompt_runs 동기화 실패 — aio_observations 저장은 영향 없음:", error);
   }
@@ -116,6 +107,8 @@ export type AioRunEvent =
     };
 
 export interface AioRunOptions {
+  targets?: { keywordId: string; device: AioDevice }[];
+  requestId?: string;
   brandId: string;
   /** 없으면 브랜드의 활성 키워드 전체 */
   keywordIds?: string[];
@@ -185,14 +178,6 @@ function runCollector(args: string[], onChild?: (child: ChildProcess | null) => 
   });
 }
 
-// 영상 → 채널 조회는 캐시 우선. 한 번 본 영상은 다시 묻지 않는다.
-async function lookupVideo(videoId: string): Promise<YoutubeVideoMeta | null> {
-  const cached = (await getCachedVideos([videoId])).get(videoId);
-  if (cached) return cached;
-  const fetched = await resolveYoutubeVideo(videoId).catch(() => null);
-  if (fetched) await cacheVideo(fetched);
-  return fetched;
-}
 
 export interface AioPlan {
   brand: NonNullable<Awaited<ReturnType<typeof getManagedBrandById>>>;
@@ -211,7 +196,7 @@ export interface AioPlan {
  * 정기 수집 CLI처럼 조직(쿠키)을 모르는 곳에서도 돌아야 해서 브랜드 id로 찾는다.
  */
 export async function planAioRun(
-  options: Pick<AioRunOptions, "brandId" | "keywordIds" | "devices" | "force" | "limit">
+  options: Pick<AioRunOptions, "brandId" | "keywordIds" | "devices" | "force" | "limit" | "targets">
 ): Promise<{ plan: AioPlan } | { skippedReason: string }> {
   const { brandId } = options;
   const brand = await getManagedBrandById(brandId);
@@ -228,11 +213,13 @@ export async function planAioRun(
   const tasks = shuffle(keywords.flatMap((keyword) => devices.map((device) => ({ keyword, device }))))
     .filter((t) => !skip.has(`${t.keyword.id}:${t.device}`))
     .slice(0, options.limit ?? Infinity);
-  return { plan: { brand, channelIds: channels.map((c) => c.channelId), settings, devices, tasks, skipped: keywords.length * devices.length - tasks.length } };
+  const selectedTasks = options.targets ? tasks.filter(task => options.targets!.some(target => target.keywordId === task.keyword.id && target.device === task.device)) : tasks;
+  return { plan: { brand, channelIds: channels.map((c) => c.channelId), settings, devices, tasks: selectedTasks, skipped: keywords.length * devices.length - selectedTasks.length } };
 }
 
 /** 수집 결과 한 건을 판정(자사 영상·경쟁사 등 분류)해 저장한다 — 서버가 직접 돌린 결과와 수집기가 올린 결과가 같이 쓴다. */
 export async function saveCollectedResult(params: {
+  requestId?: string;
   brandId: string;
   keywordId: string;
   device: AioDevice;
@@ -242,7 +229,7 @@ export async function saveCollectedResult(params: {
   context: ReturnType<typeof buildJudgeContext>;
 }) {
   const { brandId, keywordId, device, country, language, result, context } = params;
-  const citations = result.status === "aio_present" ? await judgeCitations(result.sources ?? [], context, lookupVideo) : [];
+  const citations = result.status === "aio_present" ? await judgeCitations(result.sources ?? [], context, lookupAioVideo) : [];
   const saved = await saveAioObservation(brandId, {
     keywordId,
     device,
@@ -258,6 +245,8 @@ export async function saveCollectedResult(params: {
     errorMessage: result.errorMessage ?? null,
   });
   await syncAioRunToPromptRuns({
+    requestId: params.requestId,
+    brandId,
     keywordId,
     device,
     status: result.status,
@@ -325,6 +314,7 @@ export async function runAioCollection(options: AioRunOptions): Promise<AioRunSu
     }
 
     const { citations, saved } = await saveCollectedResult({
+      requestId: options.requestId,
       brandId,
       keywordId: keyword.id,
       device,

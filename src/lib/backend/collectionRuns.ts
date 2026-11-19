@@ -2,10 +2,10 @@ import { getPromptStore, syncCollectedFiles } from "./database";
 import type { CollectedRunFile } from "./collectionRunsTypes";
 
 // 수집 실행은 조직 단위 — 어느 조직의 실행인지는 수집 작업 기록으로 정해진다(database/index.ts syncCollectedFiles).
-export async function listCollectedRuns(orgId: string): Promise<CollectedRunFile[]> {
+export async function listCollectedRuns(orgId: string, options: { unlinkedOnly?: boolean } = {}): Promise<CollectedRunFile[]> {
   const store = await getPromptStore();
   await syncCollectedFiles(store);
-  return store.runs(orgId);
+  return store.runs(orgId, options);
 }
 
 // 행을 펼칠 때만 불러오는 원문·인용 — 목록에는 이 큰 값들을 싣지 않는다.

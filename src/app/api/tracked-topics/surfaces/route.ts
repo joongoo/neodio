@@ -4,7 +4,7 @@ import { getCurrentTenant } from "@/lib/backend/tenant";
 import { normalizeSurfaces } from "@/lib/promptSurfaces";
 import { guardApi } from "@/lib/backend/auth/guard";
 
-const MAX_ROWS = 300;
+const MAX_ROWS = 25;
 
 // 프롬프트 라이브러리에서 고른 여러 프롬프트의 플랫폼을 한 번에 같은 값으로 바꾼다.
 // 플랫폼이 바뀌면 AIO 수집 대상(aio_keywords)도 함께 맞춰진다(store.setTrackingSurfaces).
@@ -20,9 +20,15 @@ export async function POST(request: NextRequest) {
   if (surfaces.length === 0) return NextResponse.json({ error: "수집할 플랫폼을 하나 이상 선택하세요." }, { status: 400 });
 
   const store = await getPromptStore();
-  let changed = 0;
-  for (const id of new Set(ids)) {
-    if (await store.setTrackingSurfaces(tenant.orgId, id, surfaces)) changed += 1;
+  const changedIds: string[] = [];
+  try {
+    for (const id of new Set(ids)) {
+      if (await store.setTrackingSurfaces(tenant.orgId, id, surfaces)) changedIds.push(id);
+    }
+  } catch (error) {
+    console.error("Bulk platform update failed", error);
+    return NextResponse.json({ changed: changedIds.length, ids: changedIds,
+      error: "플랫폼 변경이 중단됐습니다. 변경된 항목은 유지됩니다. 다시 시도해 주세요." }, { status: 500 });
   }
-  return NextResponse.json({ changed });
+  return NextResponse.json({ changed: changedIds.length, ids: changedIds });
 }
