@@ -15,6 +15,12 @@
 
 ## 최신 인수인계
 
+### 2026-11-19 — 브랜치와 버전 출시 지침
+
+- 공통 기준은 `docs/operations/release-guide.md`이며 AGENTS.md에서 연결합니다. 현재 브랜치 PR 대상은 main이 아닌 staging입니다. staging 검증 후 별도 `release: vX.Y.Z` 제목의 staging→main 릴리스 PR을 merge commit으로 병합합니다. 작은 기능 PR은 squash, 이 브랜치처럼 이력을 보존할 큰 변경은 merge commit을 선택하고 PR에 명시합니다.
+- Release workflow는 버전 태그·사용자용 릴리스 PR 본문+자동 변경 목록을 발행하고 안전한 경우 staging FF를 수행합니다. 자동 병합이나 강제 push는 하지 않습니다. 실제 릴리스 발행은 이번에 실행하지 않습니다.
+- ‘확인 필요 0건’의 초록 상태 카드는 계획만 합의했고 아직 구현하지 않았습니다. 이 PR의 구현 기능으로 안내하지 않습니다.
+
 ### 2026-11-19 — 실행 목록 선택 토글
 
 - RequestSelectionButtons는 버튼 하나만 렌더링합니다. 현재 필터 selectableCount와 선택 수가 일치하면 aria-pressed/강조 테두리와 ‘전체 선택 해제’ 문구로 바뀌며 클릭 시 해제합니다. 부분 선택은 기존 cross-page GET으로 최신 후보를 읽고 전체 선택합니다. 오래된 집계와 다른 경우에도 실제 후보 전체 선택 여부로 toggle하며, 필터 변경 시 선택 초기화·등록 중 잠금은 유지합니다.

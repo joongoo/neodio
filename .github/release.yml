@@ -1,0 +1,10 @@
+changelog:
+  categories:
+    - title: 새로운 기능과 사용성 개선
+      labels: [feature, enhancement]
+    - title: 오류 수정
+      labels: [bug, fix]
+    - title: 운영과 문서
+      labels: [documentation, infrastructure, chore]
+    - title: 기타 변경
+      labels: ['*']

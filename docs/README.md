@@ -49,6 +49,8 @@
 
 ## 로컬 실행과 확인
 
+브랜치·PR·버전 발행은 [릴리스 운영 지침](operations/release-guide.md)을 기준으로 합니다. 기능은 staging에서 검증하고 staging→main 릴리스 PR로 모아 출시합니다.
+
 ```bash
 npm install
 npm run dev
