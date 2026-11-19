@@ -19,8 +19,8 @@
 | --- | --- | --- |
 | 단기 기능·수정 브랜치 → staging | 기본 Squash and merge | 작업 중 커밋을 사용자에게 의미 있는 기능 PR 하나로 묶음 |
 | 여러 독립 변경과 검증 이력을 보존할 큰 기능 브랜치 → staging | 필요 시 Create a merge commit | 개별 변경 추적·이력 보존. 이 PR에서 사용하는 방식을 본문에 명시 |
-| staging → main | 반드시 Create a merge commit | staging 커밋을 main의 조상으로 보존해 릴리스 후 FF 동기화 가능 |
-| main → staging 동기화 | 가능하면 fast-forward만 | 같은 출시 커밋을 공유하고 중복 변경 방지 |
+| staging → main | 반드시 Create a merge commit | staging 커밋을 main의 조상으로 보존해 다음 릴리스에서도 변경 이력 유지 |
+| main → staging 동기화 | main에만 있는 수정이 있을 때 merge commit | hotfix 등 staging에 없는 실제 변경 전달 |
 | 긴급 hotfix → main | Create a merge commit | 긴급 수정 이력 보존. main 변경을 staging에도 반영해야 함 |
 
 staging→main 또는 main→staging에는 squash/rebase를 사용하지 않습니다. 장기 브랜치를 squash하면 변경 내용이 같아도 커밋 연결이 끊겨 이후 PR에 과거 변경이 다시 나타나거나 충돌·중복 릴리스 기록이 생길 수 있습니다.
@@ -39,7 +39,7 @@ staging→main 또는 main→staging에는 squash/rebase를 사용하지 않습�
 
 상세 문제 설명·구현 내역·테스트별 결과는 기능 PR에 기록하고 릴리스 PR에 복사하지 않습니다. 릴리스 담당자는 포함 PR을 따라가 상세를 확인할 수 있어야 합니다. 다만 출시에 필요한 주의사항은 기능 PR 링크만으로 대신하지 않습니다. 이 간결한 사용자용 요약은 GitHub Release에도 사용하며, 자동 생성 변경 목록은 관련 PR·기여자·전체 비교 링크를 보완합니다.
 
-CI 통과, staging에서의 핵심 동작 검증, 출시 버전·환경 설정·DB 변경 확인 후 사람이 병합합니다. PR 생성은 출시 승인이나 자동 병합을 뜻하지 않습니다. 필요한 브랜치 보호는 저장소 설정에서 main/staging 직접 push 금지와 CI 필수 검사로 설정합니다. 자동화 봇의 FF 갱신도 보호 규칙에 막히면 우회하거나 force push하지 않습니다.
+CI 통과, staging에서의 핵심 동작 검증, 출시 버전·환경 설정·DB 변경 확인 후 사람이 병합합니다. PR 생성은 출시 승인이나 자동 병합을 뜻하지 않습니다. 필요한 브랜치 보호는 저장소 설정에서 main/staging 직접 push 금지와 CI 필수 검사로 설정합니다. 릴리스 자동화는 staging을 갱신하지 않으며 보호 규칙을 우회하거나 force push하지 않습니다.
 
 ## 버전 번호와 GitHub 변경 기록
 
@@ -52,23 +52,23 @@ CI 통과, staging에서의 핵심 동작 검증, 출시 버전·환경 설정·
 1. main 대상 릴리스 PR의 출처·제목·기존 태그보다 높은 버전인지 검사합니다. 일반 기능 PR의 main 직접 반영은 거절하고, 명시적 `hotfix/` PR만 예외로 허용합니다.
 2. staging 또는 hotfix PR이 main에 merge commit으로 병합되면 정확한 병합 SHA에 버전 태그를 붙입니다. squash/rebase 병합이면 태그를 만들지 않고 실패로 알립니다.
 3. 릴리스 PR 본문과 GitHub 자동 생성 변경 목록을 합쳐 GitHub Release를 발행합니다. `.github/release.yml`의 라벨별 분류를 사용합니다. 사람의 출시 승인과 GitHub Release 발행은 이어지지만 Vercel 배포 성공을 보증하는 것은 아닙니다.
-4. 최신 staging이 출시 SHA의 조상일 때만 staging을 그 SHA로 FF 갱신합니다. staging이 이미 출시 SHA를 포함하면 유지합니다. 두 이력이 갈라졌거나 브랜치 보호로 갱신할 수 없으면 자동화가 실패로 알리고 강제로 덮어쓰지 않습니다.
+릴리스 후 main → staging 자동 동기화는 수행하지 않습니다. staging → main을 merge commit으로 병합하면 staging의 출시 이력이 main에 보존되므로 릴리스 병합 커밋을 staging에 다시 반영할 필요가 없습니다.
 
-Release 생성과 FF는 같은 workflow에서 직접 수행합니다. `GITHUB_TOKEN`으로 만든 태그/push가 다른 Actions workflow를 다시 실행할 것이라고 가정하지 않습니다. GitHub 외부 배포 서비스의 봇 push 처리 여부는 별도 운영 설정으로 확인합니다. 자동 생성 변경 목록은 PR 제목·라벨과 릴리스 간 비교를 제공하고, 본문은 사용자에게 중요한 변경과 제약을 설명합니다.
+태그와 Release 생성은 같은 workflow에서 직접 수행합니다. `GITHUB_TOKEN`으로 만든 태그/push가 다른 Actions workflow를 다시 실행할 것이라고 가정하지 않습니다. GitHub 외부 배포 서비스의 봇 push 처리 여부는 별도 운영 설정으로 확인합니다. 자동 생성 변경 목록은 PR 제목·라벨과 릴리스 간 비교를 제공하고, 본문은 사용자에게 중요한 변경과 제약을 설명합니다.
 
 자동화에는 저장소의 Actions 실행 허용과 `contents: write` 권한이 필요합니다. 이번 정책은 저장소 설정이나 보호 규칙을 자동 변경하지 않습니다. 첫 workflow가 main에 들어오기 전 이벤트는 자동화되지 않을 수 있으므로 첫 릴리스 실행 여부를 확인합니다.
 
-## 릴리스 후 동기화와 긴급 수정
+## 릴리스 후 브랜치 운영과 긴급 수정
 
-릴리스 중 staging에 새 기능이 들어오면 main과 staging의 이력이 갈라져 FF가 불가능할 수 있습니다. 출시 시 staging 병합을 잠시 멈추면 이를 줄일 수 있습니다. 갈라진 경우 `main → staging` 동기화 PR을 만들고 merge commit으로 반영합니다. 이 동기화 PR도 staging 대상이지만 예외적으로 squash하지 않습니다. 새로운 staging 변경을 버리거나 force push하지 않습니다.
+일반 릴리스 후에는 staging에서 다음 기능 작업을 계속합니다. main에만 릴리스 병합 커밋이 있는 것은 정상이며, 브랜치 SHA를 맞추기 위한 동기화 PR은 만들지 않습니다. staging → main 릴리스에는 계속 merge commit을 사용합니다.
 
-긴급 수정은 main에서 `hotfix/<주제>`로 분기하고 main 대상 `release: vX.Y.Z` PR로 검증·승인 후 merge commit으로 반영합니다. 같은 자동화로 버전과 Release를 기록합니다. staging이 FF될 수 없으면 main→staging 동기화 PR로 긴급 수정을 전달합니다. 진행 중인 릴리스 PR은 hotfix 이후 버전으로 갱신합니다.
+긴급 수정은 main에서 `hotfix/<주제>`로 분기하고 main 대상 `release: vX.Y.Z` PR로 검증·승인 후 merge commit으로 반영합니다. 같은 자동화로 버전과 Release를 기록합니다. main에만 반영된 긴급 수정은 main → staging 동기화 PR로 전달하고 merge commit으로 병합합니다. 이 동기화 PR은 예외적으로 squash하지 않습니다. 진행 중인 릴리스 PR은 hotfix 이후 버전으로 갱신합니다.
 
 취소·롤백은 릴리스 태그를 옮기는 것이 아니라 revert PR과 새 PATCH 릴리스로 처리합니다. 긴급 배포 롤백이 먼저 필요하더라도 소스 수정·DB 호환성·후속 릴리스 기록을 별도로 남깁니다.
 
 ## 자동화 실패 복구
 
-Release 생성 후 FF만 실패했다면 같은 workflow를 재실행할 수 있습니다. 동일 버전 태그가 같은 SHA를 가리키면 재사용하고 이미 있는 Release는 중복 생성하지 않습니다. 다른 SHA를 가리키면 중단합니다. 충돌한 버전을 덮어쓰지 않습니다.
+태그 또는 Release 발행 도중 실패했다면 원인을 해결한 뒤 같은 workflow를 재실행할 수 있습니다. 동일 버전 태그가 같은 SHA를 가리키면 재사용하고 이미 있는 Release는 중복 생성하지 않습니다. 다른 SHA를 가리키면 중단합니다. 충돌한 버전을 덮어쓰지 않습니다.
 
 잘못된 제목이나 squash 병합으로 이미 main에 들어간 경우 재실행만으로 이력은 복구되지 않습니다. 담당자가 원인·실제 출시 SHA·버전·동기화 방식을 확인한 뒤 복구를 결정해야 합니다. 에이전트가 임의로 태그를 생성하거나 main/staging 이력을 재작성하지 않습니다.
 
