@@ -15,6 +15,17 @@
 
 ## 최신 인수인계
 
+### 2026-11-19 — 요청 전체 취소(일시정지 제외)
+
+- 최상단 카드 우측 ‘취소하기’→확인 모달→write/tenant 검증 POST `/api/collection-requests/[requestId]/cancel`입니다. `cancel_requested`를 재사용하고, 미제출 provider reserved(lease 포함)만 취소합니다. submitting/queued/collecting/저장·반영 재처리는 계속 회수합니다.
+- 취소 service와 beginSubmission은 공통 전역 advisory lock으로 직렬화합니다. 작업 선점 후에도 실제 POST 직전 cancel_requested를 재확인합니다. 취소 service는 split 등록 client lock도 잡으며 appendApproved/registerLegacyRequest는 취소 요청에 추가 등록하지 않습니다.
+- 살아 있는 로컬 collecting은 기존 10초 heartbeat 응답의 cancelRequested를 실행 화면이 읽어 cancels를 호출하고 leave로 종료를 알립니다. reserved와 30초 이상 만료된 세션은 서버에서 취소합니다. 로컬 수집기 취소는 협력적이며 브라우저/네트워크 정지 시 신호 전달이 지연될 수 있고 진행 중인 외부 작업의 즉시 종료를 보장하지 않습니다. 이후 결과 도착은 기존 저장 경로를 보존합니다.
+- 취소 후 active running이 있으면 ‘취소 중’+스피너, 없으면 ‘취소’입니다. 목록 상태 필터에서는 cancelled(취소) 그룹에 들어갑니다. sidebar는 취소 진행 중에도 스피너를 유지하고 tooltip으로 취소 중을 설명합니다. 자동 sidebar polling은 추가하지 않습니다.
+- cancelled request는 task 이력을 유지하지만 확인 필요 SQL/카드/필터/sidebar에서 영구 제외합니다. 새 실패 trigger도 취소 요청의 attention_reviewed를 해제하지 않습니다. submission_unknown은 재제출/강제 종료하지 않고 원래 이력을 유지합니다.
+- 요청 진행률=(completed+failed+cancelled)/total, 정수 내림입니다. 성공률이나 외부 HTTP 동시 실행 수가 아닙니다. 취소·실패도 처리 완료로 계산하고 unknown은 미완료로 남습니다.
+- 검증: 회귀 92건, 요청 PostgreSQL rollback 통합 3건, 독립 DB 연결 큐 경합 6건, sidebar 4건 통과. TypeScript·변경 코드 ESLint 통과. 실제 외부 API 호출 없이 취소 후 제출 fencing·기제출 회수 유지·로컬 heartbeat 취소·새 실패 후 확인 필요 제외·진행률/스피너 표시를 검증했습니다. 실행 브라우저와 설치형 수집기의 실제 종료 응답 확인은 스테이징 E2E에서 필요합니다.
+
+
 ### 2026-11-19 — 실행 목록 선택 건수 상한 해제
 
 - RequestRunList, retry GET/POST, pending POST, retry-legacy POST의 2000/2001 제한을 제거했습니다. 라이브러리 최초 legacy 등록/진행 보고 API의 별도 2000 제한은 이번 실행 목록 선택 범위와 달라 유지합니다.

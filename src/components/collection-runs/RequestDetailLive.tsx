@@ -9,6 +9,7 @@ import { RequestRunList } from "./RequestRunList";
 import { RequestDetailFilters } from "./RequestDetailFilters";
 import { requestSelectionScope } from "@/lib/requestItemFilters";
 import { collectionDurationLabel } from "@/lib/collectionDuration";
+import { RequestCancelControl } from "./RequestCancelControl";
 
 export function RequestRefreshIndicator({ state }: { state: RequestRefreshState }) {
   const time = (timestamp: number) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(timestamp);
@@ -90,7 +91,7 @@ export function RequestDetailLive({ initial, query: initialQuery, listProps, chi
   }
 
   return <>
-    <RequestSummary request={snapshot.request} />
+    <RequestSummary request={snapshot.request} actions={<RequestCancelControl request={snapshot.request} />} />
     <RequestProgressStages request={snapshot.request} refreshState={refreshState} />
     <p className="text-xs text-neutral-500">{currentError?.stopped ? "현황 조회를 중지했습니다. 접근 권한과 요청 상태를 확인한 뒤 새로고침하세요." : active ? "이 상세 화면을 보고 있는 동안 5초 간격으로 내부 상태를 확인합니다. 다른 탭으로 이동하면 일시 중지합니다." : "활성 작업이 없어 자동 갱신을 중지했습니다. 최신 상태가 필요하면 페이지를 새로고침하세요."} 외부 수집 API를 조회하거나 작업을 다시 제출하지 않습니다.</p>
     {currentError && <p role="alert" className="text-xs text-amber-700">{currentError.message}</p>}

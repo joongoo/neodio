@@ -136,6 +136,13 @@ export function ParallelCollectModal({
     const report = (action: "heartbeat" | "leave") => {
       for (const requestId of requestIds) void fetch("/api/collection-requests/legacy/session", {
         method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, action }),
+      }).then(async response => {
+        if (!response.ok || action !== "heartbeat") return;
+        const data = await response.json() as { cancelRequested?: boolean };
+        if (data.cancelRequested) {
+          steps.forEach((step, index) => { if (step.kind !== "serp-api" && step.requestId === requestId && latestStates.current[index]?.phase === "running") cancels.current[index](); });
+          void fetch("/api/collection-requests/legacy/session", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, action: "leave" }) }).catch(() => undefined);
+        }
       }).catch(() => undefined);
     };
     const leave = () => {

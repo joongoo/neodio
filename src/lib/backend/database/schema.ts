@@ -264,7 +264,7 @@ CREATE OR REPLACE FUNCTION reopen_collection_attention() RETURNS trigger LANGUAG
 BEGIN
   IF NEW.status IN ('provider_failed','submission_unknown') AND (TG_OP='INSERT' OR OLD.status IS DISTINCT FROM NEW.status) THEN
     UPDATE collection_requests SET attention_reviewed=false
-      WHERE id=NEW.collection_request_id AND organization_id=NEW.organization_id AND brand_id=NEW.brand_id;
+      WHERE id=NEW.collection_request_id AND organization_id=NEW.organization_id AND brand_id=NEW.brand_id AND NOT cancel_requested;
   END IF;
   RETURN NEW;
 END

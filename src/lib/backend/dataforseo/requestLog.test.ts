@@ -15,6 +15,8 @@ import { getCollectionActivitySummary, getCollectionActivityFlags, getRequestAtt
 import { managePendingSerpItems } from "./pendingSelection";
 import { CollectionQueueService } from "./collectionQueue";
 import { reportLegacySession } from "./legacySession";
+import { cancelCollectionRequest } from "./cancelRequest";
+import { PostgresProviderTaskStore } from "./taskStore";
 
 test("request filters reject invalid inputs and normalize time zones", () => {
   for (const query of ["page=-1", "size=2000", "sort=DROP", "status=bad", "surface=bad", "attention=bad", "from=no", "from=2026-11-18T00:00:00"]) {
@@ -194,6 +196,7 @@ test("legacy registration is idempotent and links results to the approved reques
       await store.query("UPDATE collection_requests SET cancel_requested=true WHERE id=$1", [pending.request.id]);
       await assert.rejects(pendingAction("wake", [pendingIds[1]]), LegacyRetryConflict);
       assert.equal((await pendingAction("cancel", [pendingIds[1]]))?.count, 1);
+      await store.query("UPDATE collection_requests SET cancel_requested=false WHERE id=$1", [pending.request.id]);
       await store.query("UPDATE provider_tasks SET status='provider_failed' WHERE id=$1", [pendingIds[0]]);
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, pending.request.id))?.needsAttention, true);
       assert.equal(await reviewCollectionRequest("foreign-org", sample.brand_id, pending.request.id), false);
@@ -213,10 +216,34 @@ test("legacy registration is idempotent and links results to the approved reques
           query: `large rollback-only ${index}`, surface: "google-aio" as const, device: "desktop" as const,
           marketId: "market-kr", scheduledWindow: `large:${pending.request.id}` })) });
       await managePendingSerpItems(sample.organization_id, sample.brand_id, large.request.id, large.tasks.map(task => task.id), "cancel");
-      const largeRetry = await retrySelectedItems(sample.organization_id, sample.brand_id, large.request.id, randomUUID(), null, large.tasks.map(task => task.id));
+      const largeRetryClient = randomUUID();
+      const largeRetry = await retrySelectedItems(sample.organization_id, sample.brand_id, large.request.id, largeRetryClient, null, large.tasks.map(task => task.id));
       assert.equal(largeRetry?.count, 2501, "bulk retry above the previous cap registers one new request");
       assert.equal((await getRequestLog(sample.organization_id, sample.brand_id, largeRetry!.requestId!))?.counts.waiting, 2501);
       await assert.rejects(retrySelectedItems(sample.organization_id, sample.brand_id, large.request.id, randomUUID(), null, large.tasks.map(task => task.id)), LegacyRetryConflict);
+      const cancelId = largeRetry!.requestId!;
+      const provider = new PostgresProviderTaskStore();
+      const [inFlight, unknown, waiting] = await store.query<{ id: string }>("SELECT id FROM provider_tasks WHERE collection_request_id=$1 ORDER BY id LIMIT 3", [cancelId]);
+      await store.query("UPDATE provider_tasks SET status='queued',provider_task_id='mock-cancel-inflight',submitted_at=$2 WHERE id=$1", [inFlight.id, new Date().toISOString()]);
+      await store.query("UPDATE provider_tasks SET status='submission_unknown' WHERE id=$1", [unknown.id]);
+      await registerLegacyRequest(sample.organization_id, sample.brand_id, largeRetryClient, null, [{ query: "cancel heartbeat test", surface: "gemini", device: "desktop" }]);
+      await store.query("UPDATE legacy_collection_items SET status='collecting',last_seen_at=$2 WHERE collection_request_id=$1", [cancelId, new Date().toISOString()]);
+      assert.equal(await cancelCollectionRequest("wrong-org", sample.brand_id, cancelId), false);
+      assert.equal(await cancelCollectionRequest(sample.organization_id, sample.brand_id, cancelId), true);
+      assert.equal(await cancelCollectionRequest(sample.organization_id, sample.brand_id, cancelId), true);
+      const cancelling = (await getRequestLog(sample.organization_id, sample.brand_id, cancelId))!;
+      assert.equal(cancelling.cancelRequested, true);
+      assert.equal(cancelling.needsAttention, false);
+      assert.equal(cancelling.counts.waiting, 0);
+      assert.equal(cancelling.counts.running, 2, "in-flight provider and live local session await completion");
+      assert.equal((await provider.get(inFlight.id))?.status, "queued", "accepted provider work remains recoverable");
+      assert.equal(await provider.beginSubmission(waiting.id, "cancelled-owner", new Date().toISOString()), null);
+      assert.deepEqual(await reportLegacySession(sample.organization_id, sample.brand_id, largeRetryClient, "heartbeat"), { cancelRequested: true });
+      await reportLegacySession(sample.organization_id, sample.brand_id, largeRetryClient, "leave");
+      await store.query("UPDATE provider_tasks SET status='provider_failed',completed_at=$2 WHERE id=$1", [inFlight.id, new Date().toISOString()]);
+      const cancelled = (await getRequestLog(sample.organization_id, sample.brand_id, cancelId))!;
+      assert.equal(cancelled.counts.running, 0);
+      assert.equal(cancelled.needsAttention, false, "later failures never reopen cancelled requests");
       throw rollback;
     }), error => error === rollback);
   } finally { await store.close(); }

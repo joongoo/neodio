@@ -12,19 +12,23 @@ export const WITHOUT_COLLECTION_RETRY_SQL = `NOT EXISTS (
 
 export const WITHOUT_REVIEWED_REQUEST_SQL = `NOT EXISTS (
   SELECT 1 FROM collection_requests reviewed WHERE reviewed.id=p.collection_request_id
-    AND reviewed.organization_id=p.organization_id AND reviewed.brand_id=p.brand_id AND reviewed.attention_reviewed
+    AND reviewed.organization_id=p.organization_id AND reviewed.brand_id=p.brand_id AND (reviewed.attention_reviewed OR reviewed.cancel_requested)
 )`;
 
 /** Sidebar excludes unsubmitted reservations; worker activity below still includes them. */
-export async function getCollectionActivityFlags(organizationId: string, brandId: string, database?: RequestLogDatabase): Promise<{ running: boolean; attention: boolean }> {
+export async function getCollectionActivityFlags(organizationId: string, brandId: string, database?: RequestLogDatabase): Promise<{ running: boolean; attention: boolean; cancelling?: boolean }> {
   const db = database ?? await getPromptStore();
-  const [row] = await db.query<{ running: boolean; attention: boolean }>(`SELECT
+  const [row] = await db.query<{ running: boolean; attention: boolean; cancelling: boolean }>(`SELECT
+    EXISTS(SELECT 1 FROM collection_execution_items p JOIN collection_requests r ON r.id=p.collection_request_id
+      AND r.organization_id=p.organization_id AND r.brand_id=p.brand_id WHERE p.organization_id=$1 AND p.brand_id=$2
+      AND r.cancel_requested AND p.status=ANY($3::text[])) AS cancelling,
     EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
-      AND p.execution_kind='serp-api' AND p.status=ANY($3::text[])) AS running,
+      AND (p.execution_kind='serp-api' OR EXISTS(SELECT 1 FROM collection_requests cancelling WHERE cancelling.id=p.collection_request_id
+        AND cancelling.organization_id=p.organization_id AND cancelling.brand_id=p.brand_id AND cancelling.cancel_requested)) AND p.status=ANY($3::text[])) AS running,
     EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
       AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL} AND ${WITHOUT_REVIEWED_REQUEST_SQL}) AS attention`,
   [organizationId, brandId, ["submitting", "queued", "collecting", "raw_saved", "normalized", "artifact_failed", "projection_failed"], COLLECTION_ATTENTION_STATUSES]);
-  return { running: !!row?.running, attention: !!row?.attention };
+  return { running: !!row?.running, attention: !!row?.attention, ...(row?.cancelling ? { cancelling: true } : {}) };
 }
 
 export async function getCollectionActivitySummary(organizationId: string, brandId: string, database?: RequestLogDatabase): Promise<ProviderTaskActivitySummary> {
@@ -40,7 +44,7 @@ export async function getCollectionActivitySummary(organizationId: string, brand
 export async function getRequestAttentionCount(org: string, brand: string, database?: RequestLogDatabase): Promise<number> {
   const db = database ?? await getPromptStore();
   const [row] = await db.query<{ count: number }>(`SELECT count(*)::int AS count FROM collection_requests r
-    WHERE r.organization_id=$1 AND r.brand_id=$2 AND NOT r.attention_reviewed AND EXISTS (
+    WHERE r.organization_id=$1 AND r.brand_id=$2 AND NOT r.attention_reviewed AND NOT r.cancel_requested AND EXISTS (
       SELECT 1 FROM collection_execution_items p WHERE p.collection_request_id=r.id
         AND p.organization_id=r.organization_id AND p.brand_id=r.brand_id
         AND p.status=ANY($3::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL})`, [org, brand, COLLECTION_ATTENTION_STATUSES]);

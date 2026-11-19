@@ -3,6 +3,8 @@ import { formatKst } from "@/lib/backend/collectionRunsTypes";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
 import { SURFACE_LABEL } from "@/lib/promptSurfaces";
 import type { PromptSurface } from "@/lib/promptSurfaces";
+import { Loader2 } from "lucide-react";
+import type { ReactNode } from "react";
 
 export const REQUEST_STATUS_LABEL: Record<string, string> = {
   queued: "대기", running: "진행 중", completed: "완료", partially_failed: "일부 실패", needs_attention: "확인 필요", cancelled: "취소",
@@ -27,10 +29,17 @@ export function RequestStatusBadge({ status }: { status: string }) {
 }
 export const fieldClass = "h-9 min-w-0 rounded-md border border-neutral-200 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-slate-300";
 
-export function RequestSummary({ request }: { request: RequestLogRow }) {
+export function RequestSummary({ request, actions }: { request: RequestLogRow; actions?: ReactNode }) {
   return <div className="rounded-xl border border-neutral-200 bg-white p-5 space-y-2">
-    <div className="flex flex-wrap items-center gap-3"><RequestStatusBadge status={request.status} /><span className="text-sm text-neutral-500">{formatKst(request.createdAt)} · {request.requestedBy?.name ?? "요청자 정보 없음"}</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-3"><RequestExecutionBadge request={request} /><span className="text-sm text-neutral-500">{formatKst(request.createdAt)} · {request.requestedBy?.name ?? "요청자 정보 없음"}</span></div>{actions}</div>
   </div>;
+}
+
+export function RequestExecutionBadge({ request }: { request: RequestLogRow }) {
+  const active = request.counts.running > 0;
+  if (!request.cancelRequested && !active) return <RequestStatusBadge status={request.status} />;
+  const progress = request.counts.total > 0 ? Math.min(100, Math.floor((request.counts.completed + request.counts.failed + request.counts.cancelled) / request.counts.total * 100)) : 0;
+  return <span title="진행률은 전체 항목 중 완료·실패·취소로 처리가 끝난 비율입니다." className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-bold ${active ? "bg-blue-100 text-blue-800" : "bg-neutral-100 text-neutral-600"}`}>{active && <Loader2 size={12} aria-hidden="true" className="animate-spin motion-reduce:animate-none" />}{request.cancelRequested ? active ? "취소 중" : "취소" : "진행 중"}{active && <span className="ml-1 tabular-nums">{progress}%</span>}</span>;
 }
 
 export function RequestPageLinks({ path, query, page, pageCount, total }: { path: string; query: URLSearchParams; page: number; pageCount: number; total: number }) {

@@ -84,7 +84,7 @@ export async function listRequestLogs(
     'measuredAt',CURRENT_TIMESTAMP)`;
   const [result] = await db.query<{ payload: RequestLogPage }>(`
     WITH scoped AS (
-      SELECT r.*, u.name AS requester_name, (NOT r.attention_reviewed AND EXISTS (
+      SELECT r.*, u.name AS requester_name, (NOT r.attention_reviewed AND NOT r.cancel_requested AND EXISTS (
           SELECT 1 FROM collection_execution_items p WHERE p.collection_request_id=r.id
             AND p.organization_id=r.organization_id AND p.brand_id=r.brand_id
             AND p.status=ANY($12::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL}
@@ -119,7 +119,7 @@ export async function listRequestLogs(
       GROUP BY r.id
     ), summaries AS (
       SELECT r.*, a.serp_duration,a.local_duration,a.total,a.waiting,a.serp_waiting,a.running,a.submitting,a.collecting,a.processing,a.completed,a.failed,a.attention,a.cancelled,a.actual_cost,a.surfaces,a.devices,a.finished_at,a.query_match,
-        CASE WHEN a.total>0 AND a.completed+a.failed+a.cancelled+a.attention>=a.total THEN
+        CASE WHEN r.cancel_requested THEN 'cancelled' WHEN a.total>0 AND a.completed+a.failed+a.cancelled+a.attention>=a.total THEN
             CASE WHEN a.failed+a.attention>0 THEN 'partially_failed' WHEN a.cancelled=a.total THEN 'cancelled' ELSE 'completed' END
           WHEN a.running>0 THEN 'running' ELSE 'queued' END AS display_status
       FROM scoped r JOIN aggregates a ON a.id=r.id

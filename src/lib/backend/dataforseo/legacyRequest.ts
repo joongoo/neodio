@@ -12,6 +12,7 @@ export async function registerLegacyRequest(org: string, brand: string, clientId
     const requests = new PostgresCollectionRequestStore();
     await requests.lockClientRequest(org, clientId);
     let request = await requests.getByClientRequestId(org, clientId);
+    if (request?.cancelRequested) throw new Error("취소된 수집 요청에는 작업을 추가할 수 없습니다.");
     if (request && request.brandId !== brand) throw new Error("수집 요청의 브랜드가 일치하지 않습니다.");
     if (!request) request = await requests.create({ organizationId: org, brandId: brand, clientRequestId: clientId, requestedBy: actor, requestKind: retryOfRequestId ? "retry" : "manual", retryOfRequestId, totalTaskCount: items.length, estimatedCostUsd: 0 });
     const now = new Date().toISOString();

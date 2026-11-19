@@ -3,12 +3,22 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RequestProgressStages, RequestRefreshIndicator } from "./RequestDetailLive";
 import type { RequestLogRow } from "@/lib/backend/dataforseo/requestLog";
-import { RequestSummary, requestItemStatusLabel } from "./RequestLogViews";
+import { RequestSummary, RequestExecutionBadge, requestItemStatusLabel } from "./RequestLogViews";
 import { PendingRunDetail, StatusBadge } from "./CollectionRunsClient";
 import { toPendingRunListRow } from "@/lib/collectionRunList";
 import type { ProviderTaskRecord } from "@/lib/backend/dataforseo/types";
 import type { RunListRow } from "@/lib/collectionRunList";
 import { REQUEST_ITEM_STATUSES } from "@/lib/requestItemFilters";
+
+test("active requests show spinner and terminal-item progress, cancelled recovery keeps spinning", () => {
+  const request = { status: "running", counts: { total: 10, waiting: 0, running: 5, completed: 3, failed: 1, attention: 0, cancelled: 1 } } as RequestLogRow;
+  const active = renderToStaticMarkup(<RequestExecutionBadge request={request} />);
+  assert.ok(active.includes("진행 중")); assert.ok(active.includes("50%")); assert.ok(active.includes("animate-spin"));
+  const cancelling = renderToStaticMarkup(<RequestExecutionBadge request={{ ...request, cancelRequested: true }} />);
+  assert.ok(cancelling.includes("취소 중")); assert.ok(cancelling.includes("animate-spin"));
+  const cancelled = renderToStaticMarkup(<RequestExecutionBadge request={{ ...request, cancelRequested: true, counts: { ...request.counts, running: 0 } }} />);
+  assert.ok(cancelled.includes("취소")); assert.ok(!cancelled.includes("취소 중")); assert.ok(!cancelled.includes("animate-spin"));
+});
 
 test("item table badges simplify queue phases without changing internal failure labels", () => {
   for (const status of REQUEST_ITEM_STATUSES) {

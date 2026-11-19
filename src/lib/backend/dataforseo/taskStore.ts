@@ -422,14 +422,19 @@ export class PostgresProviderTaskStore implements ProviderTaskStore {
   }
 
   async beginSubmission(id: string, owner: string, attemptedAt: string): Promise<ProviderTaskRecord | null> {
-    const [row] = await (await this.database()).query<Record<string, unknown>>(
-      `UPDATE provider_tasks
-       SET status='submitting',submission_attempted_at=$3,updated_at=$3
-       WHERE id=$1 AND status='reserved' AND lease_owner=$2 AND lease_expires_at>$3
-       RETURNING *`,
-      [id, owner, attemptedAt],
-    );
-    return row ? rowToTask(row) : null;
+    const db = await this.database();
+    return db.transaction(async () => {
+      await db.query("SELECT pg_advisory_xact_lock(hashtext('dataforseo-submit-capacity'))");
+      const [row] = await db.query<Record<string, unknown>>(
+        `UPDATE provider_tasks
+         SET status='submitting',submission_attempted_at=$3,updated_at=$3
+         WHERE id=$1 AND status='reserved' AND lease_owner=$2 AND lease_expires_at>$3
+           AND (collection_request_id IS NULL OR EXISTS (SELECT 1 FROM collection_requests r WHERE r.id=provider_tasks.collection_request_id AND NOT r.cancel_requested))
+         RETURNING *`,
+        [id, owner, attemptedAt],
+      );
+      return row ? rowToTask(row) : null;
+    });
   }
 
   async get(id: string): Promise<ProviderTaskRecord | null> {

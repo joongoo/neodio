@@ -100,6 +100,7 @@ export class CollectionQueueService {
     return this.transaction(async () => {
       await this.requests.lockClientRequest(input.organizationId, input.clientRequestId);
       let request = await this.requests.getByClientRequestId(input.organizationId, input.clientRequestId);
+      if (request?.cancelRequested) throw new Error("취소된 수집 요청에는 작업을 추가할 수 없습니다.");
       if (request && (request.brandId !== (input.brandId ?? null) || request.requestKind !== input.requestKind)) {
         throw new Error("사용자 수집 실행 ID의 대상이 기존 요청과 일치하지 않습니다.");
       }

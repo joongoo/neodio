@@ -12,7 +12,7 @@ import { formatKst } from "@/lib/backend/collectionRunsTypes";
 import { RequestDetailFilters } from "./RequestDetailFilters";
 import { RequestAttentionCard } from "./RequestAttentionCard";
 import { RequestRowLink } from "./RequestRowLink";
-import { RequestStatusBadge, surfaceLabel, usd } from "./RequestLogViews";
+import { RequestExecutionBadge, surfaceLabel, usd } from "./RequestLogViews";
 
 type Page = RequestLogPage & { attentionCount: number };
 export function RequestLogClient({ path, initial, initialQuery }: { path: string; initial: Page; initialQuery: string }) {
@@ -76,7 +76,7 @@ export function RequestLogClient({ path, initial, initialQuery }: { path: string
         return <RequestRowLink key={row.id} label={`수집 요청 ${row.id} 상세 보기`} href={href}>
           <td className="px-5 py-3"><Link href={href} title={row.id} className="block max-w-40 truncate font-medium hover:underline">{row.id}</Link></td>
           <td className="whitespace-nowrap px-5 py-3">{formatKst(row.createdAt)}</td><td className="whitespace-nowrap px-5 py-3">{row.requestedBy?.name ?? "-"}</td>
-          <td className="min-w-36 px-5 py-3">{row.surfaces.map(surfaceLabel).join(", ")}</td><td className="whitespace-nowrap px-5 py-3"><RequestStatusBadge status={row.status} /></td>
+          <td className="min-w-36 px-5 py-3">{row.surfaces.map(surfaceLabel).join(", ")}</td><td className="whitespace-nowrap px-5 py-3"><RequestExecutionBadge request={row} /></td>
           <td className="whitespace-nowrap px-5 py-3">{row.counts.completed} / {row.counts.total}</td><td className="whitespace-nowrap px-5 py-3">{row.counts.failed} / {row.counts.attention}</td>
           <td className="whitespace-nowrap px-5 py-3">{row.needsAttention ? <div className="flex items-center gap-2"><span className="text-amber-700">확인 필요</span>{canEdit && <button type="button" disabled={!!reviewing} onClick={() => { setReviewError(""); setReviewTarget(row.id); }} className="cursor-pointer rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40">{reviewing === row.id ? "저장 중…" : "확인 완료"}</button>}</div> : row.attentionReviewed ? "확인 완료" : "-"}</td>
           <td className="whitespace-nowrap px-5 py-3">{usd(row.estimatedCostUsd)} / {usd(row.actualCostUsd)}</td>

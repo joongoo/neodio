@@ -11,4 +11,7 @@ export async function reportLegacySession(org: string, brand: string, requestId:
       AND r.organization_id=$3 AND r.brand_id=$4 AND r.client_request_id=$5
       AND i.organization_id=$3 AND i.brand_id=$4 AND i.run_id IS NULL AND i.status IN ('reserved','collecting')`,
   [new Date().toISOString(), leaving, org, brand, requestId]);
+  const [request] = await (await getPromptStore()).query<{ cancel_requested: boolean }>(
+    "SELECT cancel_requested FROM collection_requests WHERE organization_id=$1 AND brand_id=$2 AND client_request_id=$3", [org, brand, requestId]);
+  return { cancelRequested: request?.cancel_requested === true };
 }

@@ -9,6 +9,6 @@ export async function POST(request: NextRequest) {
   const tenant = await getCurrentTenant();
   const body = await request.json().catch(() => null);
   if (typeof body?.requestId !== "string" || !["heartbeat", "leave"].includes(body?.action)) return NextResponse.json({ error: "잘못된 세션 요청입니다." }, { status: 400 });
-  await reportLegacySession(tenant.orgId, tenant.brandId, body.requestId, body.action);
-  return NextResponse.json({ ok: true });
+  const state = await reportLegacySession(tenant.orgId, tenant.brandId, body.requestId, body.action);
+  return NextResponse.json({ ok: true, ...state }, { headers: { "Cache-Control": "private, no-store" } });
 }

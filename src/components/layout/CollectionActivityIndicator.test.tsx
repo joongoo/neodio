@@ -9,6 +9,8 @@ import { loadSidebarActivity } from "@/lib/backend/dataforseo/sidebarActivity";
 import type { CollectionActivityStatus } from "@/lib/collectionActivityStatus";
 
 test("sidebar shows spinner and exclamation independently with no numeric badge", () => {
+  const cancelling = renderToStaticMarkup(<CollectionActivityIndicator state={{ status: "ready", running: true, attention: false, cancelling: true }} />);
+  assert.ok(cancelling.includes("수집 취소 중")); assert.ok(cancelling.includes("animate-spin")); assert.ok(!cancelling.includes("lucide-circle-alert"));
   for (const running of [false, true]) for (const attention of [false, true]) {
     const html = renderToStaticMarkup(<CollectionActivityIndicator state={{ status: "ready", running, attention }} />);
     assert.equal(html.includes("lucide-loader-circle"), running);

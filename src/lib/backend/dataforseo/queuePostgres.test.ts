@@ -6,6 +6,7 @@ import { PromptStore } from "../database/store";
 import { PostgresProviderTaskStore } from "./taskStore";
 import { managePendingSerpItems } from "./pendingSelection";
 import { LegacyRetryConflict } from "./legacyRetry";
+import { cancelCollectionRequest } from "./cancelRequest";
 
 const connectionString = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
 
@@ -19,7 +20,8 @@ test("Postgres queue capacity and cancellation races across independent connecti
     // Only these empty tables in a unique disposable schema are written.
     await admin.query(`CREATE SCHEMA ${namespace}`);
     await admin.query(`CREATE TABLE ${namespace}.provider_tasks (LIKE public.provider_tasks INCLUDING DEFAULTS);
-      CREATE TABLE ${namespace}.collection_requests (LIKE public.collection_requests INCLUDING DEFAULTS)`);
+      CREATE TABLE ${namespace}.collection_requests (LIKE public.collection_requests INCLUDING DEFAULTS);
+      CREATE TABLE ${namespace}.legacy_collection_items (LIKE public.legacy_collection_items INCLUDING DEFAULTS)`);
     for (let i = 0; i < 2; i++) stores.push(new PromptStore(new Pool({ connectionString, max: 1,
       options: `-c search_path=${namespace},pg_catalog -c statement_timeout=5000 -c lock_timeout=4000` })));
     const [a, b] = stores;
@@ -77,6 +79,23 @@ test("Postgres queue capacity and cancellation races across independent connecti
       assert.equal(await taskB.beginSubmission("task-1", "restart", new Date().toISOString()), null);
       assert.equal((await a.query("SELECT id FROM provider_tasks WHERE status='cancelled'")).length, 2);
       assert.equal((await a.query("SELECT id FROM provider_tasks")).length, 2, "Cancellation preserves both records");
+    });
+
+    await t.test("whole-request cancellation fences a claimed worker before POST, including concurrent attempts", async () => {
+      await reset();
+      const [claimed] = await taskB.claimReserved(claim("already-claimed"));
+      let release!: () => void;
+      let ready!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const started = new Promise<void>(resolve => { ready = resolve; });
+      const cancellation = a.transaction(async () => { await cancelCollectionRequest("org", "brand", "request", a); ready(); await gate; });
+      await started;
+      const submission = taskB.beginSubmission(claimed.id, "already-claimed", new Date().toISOString());
+      try { await waitForLock(); } finally { release(); }
+      await cancellation;
+      assert.equal(await submission, null);
+      assert.equal((await taskB.claimReserved(claim("new-worker"))).length, 0);
+      assert.equal((await a.query("SELECT id FROM provider_tasks WHERE status='cancelled'")).length, 2);
     });
 
     await t.test("expired lease transfers ownership and fences the old process before submission", async () => {
