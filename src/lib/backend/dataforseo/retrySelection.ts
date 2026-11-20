@@ -15,9 +15,10 @@ export async function listRetryCandidates(org: string, brand: string, requestId:
   if (!request) return null;
   return db.query<RetrySelectionItem>(`SELECT p.id,p.execution_kind AS "executionKind",p.query_snapshot AS query,p.surface,p.device,p.status,false AS "hasRetry",
     p.estimated_cost_usd::float8 AS "estimatedCostUsd",
+    EXISTS(SELECT 1 FROM gemini_collection_queue q WHERE q.item_id=p.id) AS "serverManaged",
     (p.execution_kind='serp-api' AND p.status='reserved' AND EXISTS (SELECT 1 FROM provider_tasks pending WHERE pending.id=p.id AND pending.provider_task_id IS NULL AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $10))) AS "canManagePending"
     FROM collection_execution_items p WHERE p.collection_request_id=$1 AND p.organization_id=$2 AND p.brand_id=$3
-      AND (p.status=ANY($4::text[]) OR ($11 AND ((p.execution_kind='legacy' AND p.status IN ('reserved','collecting')) OR (p.execution_kind='serp-api' AND p.status='reserved' AND EXISTS (SELECT 1 FROM provider_tasks pending WHERE pending.id=p.id AND pending.provider_task_id IS NULL AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $10)))))) AND ${WITHOUT_COLLECTION_RETRY_SQL}
+      AND (p.status=ANY($4::text[]) OR ($11 AND ((p.execution_kind='legacy' AND (p.status='reserved' OR (p.status='collecting' AND NOT EXISTS(SELECT 1 FROM gemini_collection_queue q WHERE q.item_id=p.id)))) OR (p.execution_kind='serp-api' AND p.status='reserved' AND EXISTS (SELECT 1 FROM provider_tasks pending WHERE pending.id=p.id AND pending.provider_task_id IS NULL AND pending.submission_attempted_at IS NULL AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= $10)))))) AND ${WITHOUT_COLLECTION_RETRY_SQL}
       AND ($5::text[] IS NULL OR p.status=ANY($5)) AND ($6::text[] IS NULL OR p.surface=ANY($6))
       AND ($7='' OR strpos(lower(p.query_snapshot),lower($7))>0)
       AND ($8::text IS NULL OR p.created_at >= $8) AND ($9::text IS NULL OR p.created_at < $9)
@@ -38,6 +39,7 @@ export async function retrySelectedItems(org: string, brand: string, originalId:
     await db.query("SELECT id FROM legacy_collection_items WHERE collection_request_id=$1 AND id::text=ANY($2::text[]) FOR UPDATE", [originalId, ids]);
     const items = await db.query<RetrySelectionItem & { promptId: string | null; marketId: string | null }>(`SELECT p.id,p.execution_kind AS "executionKind",p.query_snapshot AS query,p.surface,p.device,p.status,p.prompt_id AS "promptId",
       NOT (${WITHOUT_COLLECTION_RETRY_SQL}) AS "hasRetry",
+      EXISTS(SELECT 1 FROM gemini_collection_queue q WHERE q.item_id=p.id) AS "serverManaged",
       (SELECT market_id FROM provider_tasks source WHERE source.id=p.id) AS "marketId"
       FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2 AND p.collection_request_id=$3 AND p.id::text=ANY($4::text[])`, [org, brand, originalId, ids]);
     if (items.some(item => item.hasRetry)) throw new LegacyRetryConflict("이미 재수집이 요청된 항목입니다. 연결된 최신 요청에서 확인해 주세요.");

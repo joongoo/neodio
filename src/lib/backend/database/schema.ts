@@ -258,6 +258,11 @@ CREATE TABLE IF NOT EXISTS legacy_collection_items (
   UNIQUE(collection_request_id,query_snapshot,surface,device)
 );
 CREATE INDEX IF NOT EXISTS legacy_collection_request ON legacy_collection_items(collection_request_id);
+-- Explicit opt-in: historical Gemini items remain browser-managed.
+CREATE TABLE IF NOT EXISTS gemini_collection_queue (
+  item_id TEXT PRIMARY KEY REFERENCES legacy_collection_items(id),
+  started_at TEXT, finished_at TEXT
+);
 ALTER TABLE collection_requests ADD COLUMN IF NOT EXISTS attention_reviewed BOOLEAN NOT NULL DEFAULT false;
 -- Acknowledgement is separate from execution history. New actionable failures reopen it.
 CREATE OR REPLACE FUNCTION reopen_collection_attention() RETURNS trigger LANGUAGE plpgsql AS $body$

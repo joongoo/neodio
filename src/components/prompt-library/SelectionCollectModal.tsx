@@ -12,11 +12,11 @@ const HINT: Record<PromptSurface, string> = {
   "google-ai-mode": "구글 AI 모드의 답변을 수집합니다.",
   "naver-aio": "네이버 통합검색 첫 화면의 AI 브리핑을 수집합니다. 수집기 0.4.0 이상이 필요합니다.",
   "naver-ai": "네이버 AI 검색(AI 탭)의 답변을 수집합니다.",
-  gemini: "Gemini API로 답변과 출처를 수집합니다(수집기 불필요).",
+  gemini: "서버에서 최대 3건씩 동시에 수집합니다. 등록 후 진행 상황과 결과는 수집 요청 로그에서 확인합니다.",
 };
 
 // "선택 수집" — 고른 프롬프트를 각자 저장된 플랫폼대로 수집한다. 여기서는 어느 플랫폼을 이번에 수집할지만 정하고,
-// 플랫폼별 수집은 이어지는 단계로 차례로 진행된다(src/lib/collectSteps.ts).
+// 플랫폼별 수집 단계와 서버 작업 등록은 collectSteps.ts에서 구성한다.
 export function SelectionCollectModal({
   open,
   onClose,
@@ -116,7 +116,7 @@ export function SelectionCollectModal({
         <ModalCloseButton onClose={onClose} />
       </div>
       <p className="mt-2 text-sm text-neutral-600">
-        선택한 <b>{rows.length}개</b> 프롬프트를 각자 저장된 플랫폼에서 수집합니다. 플랫폼별로 차례로 진행되며, 플랫폼은 &quot;플랫폼 변경&quot;이나 행의 편집에서 바꿀 수 있습니다.
+        선택한 <b>{rows.length}개</b> 프롬프트를 각자 저장된 플랫폼에서 수집합니다. Gemini와 SERP API는 작업 등록 후 수집 요청 로그에서 진행 상황을 확인할 수 있습니다. 플랫폼은 &quot;플랫폼 변경&quot;이나 행의 편집에서 바꿀 수 있습니다.
       </p>
       <div className="mt-4 flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
         <span className="flex flex-col">

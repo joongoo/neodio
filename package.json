@@ -45,7 +45,8 @@
     "open:google-ai-chrome": "node scripts/open-google-ai-chrome.mjs",
     "parse:naver-ai-html": "python3 scripts/parse_naver_ai_html.py",
     "process:raw": "tsx scripts/process-raw.ts",
-    "crawl:sitemap": "node scripts/crawl-sitemap.mjs"
+    "crawl:sitemap": "node scripts/crawl-sitemap.mjs",
+    "test:gemini": "node --env-file=.env.local --import tsx --test --test-concurrency=1 src/lib/backend/llm/gemini.test.ts src/lib/backend/llm/geminiQueue.test.ts src/lib/requestRetrySelection.test.ts"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",

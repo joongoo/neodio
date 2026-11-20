@@ -1,5 +1,10 @@
 {
   "functions": {
+    "src/app/api/queue/gemini/route.ts": {
+      "experimentalTriggers": [
+        { "type": "queue/v2beta", "topic": "gemini-collection", "retryAfterSeconds": 5 }
+      ]
+    },
     "src/app/api/queue/dataforseo/route.ts": {
       "experimentalTriggers": [
         { "type": "queue/v2beta", "topic": "dataforseo-collection", "retryAfterSeconds": 60 }

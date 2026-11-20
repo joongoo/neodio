@@ -35,7 +35,7 @@ export function RequestProgressStages({ request, refreshState }: Pick<RequestDet
       <div className="rounded-lg bg-neutral-50 px-3 py-2"><dt className="text-xs text-neutral-500">실제 발생 예상 비용</dt><dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">{usd(request.actualCostUsd)}{request.actualCostUsd > 0 && <span className="ml-1 text-xs font-normal text-neutral-500">USD</span>}</dd></div>
     </dl>
     <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-neutral-100 pt-4 sm:grid-cols-3">
-      {([ ["SERP API 소요 시간", request.durations?.serpApi], ["로컬 수집기 소요 시간", request.durations?.local], ["총 요청 처리 소요 시간", request.durations?.total] ] as const).map(([label, timing]) => <div key={label}><dt className="text-xs text-neutral-500">{label}</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{collectionDurationLabel(timing)}</dd></div>)}
+      {([ ["SERP API 소요 시간", request.durations?.serpApi], [request.surfaces?.includes("gemini") ? "Gemini API·로컬 수집 소요 시간" : "로컬 수집기 소요 시간", request.durations?.local], ["총 요청 처리 소요 시간", request.durations?.total] ] as const).map(([label, timing]) => <div key={label}><dt className="text-xs text-neutral-500">{label}</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{collectionDurationLabel(timing)}</dd></div>)}
     </dl>
     <p className="mt-2 text-xs leading-5 text-neutral-500">방식별 시간은 첫 실행 시작부터 마지막 처리 종료까지입니다. 총 시간은 최초 큐 대기를 포함한 요청 승인 이후 경과 시간으로, 병렬 처리되는 방식별 시간의 합과 다릅니다. 진행 중 시간은 현황 조회 시 갱신됩니다.</p>
   </section>;

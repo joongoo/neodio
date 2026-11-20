@@ -20,13 +20,16 @@ export async function retryLegacyRequest(org: string, brand: string, originalId:
        AND ($4::text[] IS NULL OR i.id::text=ANY($4::text[]))
        ORDER BY i.created_at,i.id FOR UPDATE`, [originalId, org, brand, selection?.itemIds ?? null]);
     if (selection && items.length !== selection.itemIds.length) throw new LegacyRetryConflict("선택 항목이 변경되었습니다. 새로고침 후 다시 선택해 주세요.");
+    const queued = await db.query("SELECT q.item_id FROM gemini_collection_queue q JOIN legacy_collection_items i ON i.id=q.item_id WHERE q.item_id=ANY($1::text[]) AND i.status IN ('reserved','collecting')", [items.map(item => item.id)]);
+    if (queued.length && selection?.action !== "cancel") throw new LegacyRetryConflict("서버에서 대기 또는 수집 중입니다. 요청 로그에서 진행 상황을 확인해 주세요.");
+    if (queued.length && items.some(item => item.status === "collecting")) throw new LegacyRetryConflict("이미 전송한 수집은 요청 취소로 중지해 주세요. 진행 중인 결과는 보존됩니다.");
     if (selection && selection.action !== "retry" && items.some(item => item.status !== "reserved")) throw new LegacyRetryConflict("수집 대기 항목만 시작하거나 취소할 수 있습니다.");
     if (!items.length) throw new LegacyRetryConflict("다시 시도할 미완료 로컬 항목이 없습니다.");
     if (items.some(item => item.status === "parse_failed")) throw new LegacyRetryConflict("분석 실패는 재수집 대상이 아닙니다. 저장된 원본과 분석 오류를 확인해 주세요.");
     const existingRetry = await db.query("SELECT id FROM legacy_collection_items WHERE organization_id=$1 AND brand_id=$2 AND retry_of_task_id=ANY($3::text[]) LIMIT 1", [org, brand, items.map(item => item.id)]);
     if (existingRetry.length) throw new LegacyRetryConflict("이미 재수집이 요청된 항목입니다. 연결된 최신 요청에서 확인해 주세요.");
     const cutoff = Date.now() - 30_000;
-    if (items.some(item => ["reserved", "collecting"].includes(item.status) && item.last_seen_at && Date.parse(item.last_seen_at) > cutoff)) {
+    if (items.some(item => !queued.some(q => q.item_id === item.id) && ["reserved", "collecting"].includes(item.status) && item.last_seen_at && Date.parse(item.last_seen_at) > cutoff)) {
       throw new LegacyRetryConflict("다른 화면에서 로컬 수집이 진행 중입니다. 해당 화면에서 중단한 후 다시 시도해 주세요. 페이지 이탈 직후에는 최대 30초 후 재시도할 수 있습니다.");
     }
     if (selection?.action === "cancel") {
