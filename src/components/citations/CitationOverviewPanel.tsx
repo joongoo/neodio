@@ -7,6 +7,7 @@ import { CitationStatCard } from "./CitationStatCard";
 import { CitationPager, CitationTableFilters } from "./CitationControls";
 import type { PromptSurface } from "@/lib/promptSurfaces";
 import { supportsAioExposure } from "@/lib/citationEngines";
+import { citationDetailHref } from "@/lib/citationNavigation";
 
 const percent = (value: number | null) => value === null ? "–" : `${(value * 100).toFixed(1)}%`;
 const colors: Record<CitationSourceType, string> = { own: "bg-blue-500", other: "bg-orange-400", unknown: "bg-neutral-400", own_web: "bg-slate-500", competitor: "bg-slate-400", web: "bg-slate-300" };
@@ -39,7 +40,7 @@ export function CitationOverviewPanel({ overview: o, path, engine, range, query,
   const page = pageNumber(promptPage, pages);
   const videoPages = Math.max(1, Math.ceil(o.videos.length / vSize));
   const vPage = pageNumber(videoPage, videoPages);
-  const link = (run: string) => `${path}?${new URLSearchParams({ engine, range, q: query, citation, promptPage: String(page), videoPage: String(vPage), size: String(pageSize), videoSize: String(vSize), run })}#citation-answer`;
+  const link = (run: string) => citationDetailHref(path, run, engine, { range, q: query, citation, promptPage: String(page), videoPage: String(vPage), size: String(pageSize), videoSize: String(vSize) });
   const sources = Object.entries(o.sourceCounts) as [CitationSourceType, number][];
   const totalSources = sources.reduce((sum, [, count]) => sum + count, 0);
   const cards = [

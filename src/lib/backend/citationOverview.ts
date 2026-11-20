@@ -77,12 +77,13 @@ export async function loadCitationDetail(org: string, brand: string, engine: Pro
   db ??= await getPromptStore();
   if (engine === "google-aio") {
     if (!id.startsWith("aio:")) return null;
-    const [o] = await db.query<{ id: string; query: string; runAt: string; status: string; text: string | null; citations: PromptRunSeed["rawMetadata"]["citations"] }>(`SELECT o.id,coalesce(p.text,k.keyword) AS query,o.collected_at AS "runAt",o.status,o.aio_text AS text,${aioCitations} AS citations
+    const [o] = await db.query<{ id: string; promptId: string; query: string; runAt: string; status: string; text: string | null; citations: PromptRunSeed["rawMetadata"]["citations"] }>(`SELECT o.id,coalesce(k.prompt_id,k.id) AS "promptId",coalesce(p.text,k.keyword) AS query,o.collected_at AS "runAt",o.status,o.aio_text AS text,${aioCitations} AS citations
       FROM aio_observations o JOIN brands b ON b.id=o.brand_id JOIN aio_keywords k ON k.id=o.keyword_id LEFT JOIN prompts p ON p.id=k.prompt_id AND p.organization_id=$1
       WHERE ${aioScope} AND o.id=$3`, [org, brand, id.slice(4)]);
-    return o ? { id, promptId: "", llmModelId: models[engine], marketId: "market-kr", runAt: o.runAt, status: o.status === "failed" ? "failed" : "success", rawResponse: o.text ?? "",
+    return o ? { id, promptId: o.promptId, llmModelId: models[engine], marketId: "market-kr", runAt: o.runAt, status: o.status === "failed" ? "failed" : "success", rawResponse: o.text ?? "",
       rawMetadata: { source: "google-aio", query: o.query, citations: o.citations, observationOutcome: o.status === "aio_absent" ? "ai_absent" : o.status === "failed" ? "collection_error" : "ai_answered" } } : null;
   }
-  const [row] = await db.query<{ original_json: PromptRunSeed }>(`SELECT r.original_json FROM prompt_runs r WHERE ${runScope} AND r.id=$6`, [...values(org, brand, engine), id]);
-  return row?.original_json ?? null;
+  const [row] = await db.query<{ original_json: PromptRunSeed; prompt_id: string; prompt_text_snapshot: string; run_at: string; status: PromptRunSeed["status"]; raw_response: string; observation_outcome: PromptRunSeed["rawMetadata"]["observationOutcome"] }>(`SELECT r.original_json,r.prompt_id,r.prompt_text_snapshot,r.run_at,r.status,r.raw_response,r.observation_outcome FROM prompt_runs r WHERE ${runScope} AND r.id=$6`, [...values(org, brand, engine), id]);
+  return row ? { ...row.original_json, id, promptId: row.prompt_id, runAt: row.run_at, status: row.status, rawResponse: row.raw_response,
+    rawMetadata: { ...row.original_json.rawMetadata, query: row.prompt_text_snapshot, observationOutcome: row.observation_outcome ?? row.original_json.rawMetadata.observationOutcome } } : null;
 }

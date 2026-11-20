@@ -6,6 +6,7 @@ import { citationEngine, supportsAioExposure } from "../citationEngines";
 import { citationRedirect } from "../citationNavigation";
 import { safeCitationUrl } from "../safeCitationUrl";
 import { citationPageSize, citationStatus } from "../citationPresentation";
+import { loadCitationDetailPage } from "./citationDetail";
 
 test("engine selection and legacy navigation preserve safe filter state", () => {
   assert.equal(citationEngine("gemini"), "gemini");
@@ -48,6 +49,7 @@ test("all engines use owned records and Google AIO keeps historical dedicated ob
       CREATE TEMP TABLE collection_jobs(id text,organization_id text,data_json jsonb);
       CREATE TEMP TABLE brand_youtube_channels(brand_id text,channel_id text);
       CREATE TEMP TABLE youtube_videos(video_id text,channel_id text,title text,channel_title text);
+      CREATE TEMP TABLE aio_video_work_logs(id text,brand_id text,video_id text,work_date text,work_type text,note text);
       CREATE TEMP TABLE aio_keywords(id text,brand_id text,prompt_id text,keyword text,status text);
       CREATE TEMP TABLE aio_observations(id text,brand_id text,keyword_id text,collected_at text,collected_date text,status text,aio_text text);
       CREATE TEMP TABLE aio_citations(observation_id text,position int,url text,title text,domain text,channel_id text);
@@ -105,6 +107,17 @@ test("all engines use owned records and Google AIO keeps historical dedicated ob
     assert.equal(await loadCitationDetail("org", "other-brand", "gemini", "gemini", db), null);
     assert.equal(await loadCitationDetail("foreign-org", "brand", "gemini", "gemini", db), null);
     assert.equal(await loadCitationDetail("org", "other-brand", "google-aio", "aio:historical", db), null);
+    await client.query(`INSERT INTO aio_video_work_logs VALUES ('our-log','brand','abcdefghijk','2026-11-19','caption','our note'),('other-log','other-brand','abcdefghijk','2026-11-19','caption','private note')`);
+    const detailNow = new Date("2026-11-20T01:00:00Z");
+    const detail = await loadCitationDetailPage("org", brand, "gemini", "gemini", detailNow, db);
+    assert.ok(detail);
+    assert.equal(detail.snapshot.promptId, "prompt", "database prompt identity replaces legacy manual IDs in original JSON");
+    assert.equal(detail.current.hasOwn, true);
+    assert.deepEqual(detail.workLogs.map(log => log.id), ["our-log"]);
+    assert.ok(detail.history.some(day => day.runId === "gemini"));
+    assert.equal(await loadCitationDetailPage("org", { ...brand, id: "other-brand" }, "gemini", "gemini", detailNow, db), null);
+    assert.equal(await loadCitationDetailPage("foreign-org", brand, "gemini", "gemini", detailNow, db), null);
+    assert.equal(await loadCitationDetailPage("org", brand, "naver-aio", "gemini", detailNow, db), null);
     for (const engine of ["google-aio", "gemini", "google-ai-mode", "naver-aio", "naver-ai"] as const) {
       assert.equal((await loadCitationOverview("foreign-org", brand, engine, period, db)).rows.length, 0);
       assert.equal((await loadCitationOverview("org", { ...brand, id: "other-brand" }, engine, period, db)).rows.length, 0);

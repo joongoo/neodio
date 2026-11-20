@@ -1,7 +1,7 @@
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getCurrentTenant } from "@/lib/backend/tenant";
-import { citationPeriod, loadCitationOverview, loadCitationDetail } from "@/lib/backend/citationOverview";
-import { safeCitationUrl } from "@/lib/safeCitationUrl";
+import { citationPeriod, loadCitationOverview } from "@/lib/backend/citationOverview";
+import { citationDetailHref } from "@/lib/citationNavigation";
 import { buildCitationOverview } from "@/lib/citationMetrics";
 import { citationEngine, CITATION_ENGINES } from "@/lib/citationEngines";
 import { CitationOverviewPanel } from "@/components/citations/CitationOverviewPanel";
@@ -23,15 +23,11 @@ export default async function CitationsPage({ searchParams }: {
   const q = typeof params.q === "string" ? params.q.trim().slice(0, 500) : "";
   const runId = typeof params.run === "string" ? params.run : null;
   const path = `${tenant.base}/citations`;
+  if (runId) redirect(citationDetailHref(path, runId, engine, params));
   const period = citationPeriod(params.range);
   const citation = ["own", "youtube", "unknown", "none"].includes(params.citation ?? "") ? params.citation! : "all";
-  const closeHref = `${path}?${new URLSearchParams({ engine, range: period.range, q, citation, promptPage: params.promptPage ?? "1", videoPage: params.videoPage ?? "1", size: params.size ?? "10", videoSize: params.videoSize ?? "10" })}`;
   const active = !tenant.demo && !!tenant.brand;
-  const [overview, detail] = await Promise.all([
-    active ? loadCitationOverview(tenant.orgId, tenant.brand!, engine, period) : Promise.resolve({ ...buildCitationOverview([], [], [], period.dates), channelCount: 0 }),
-    runId && active ? loadCitationDetail(tenant.orgId, tenant.brandId, engine, runId) : Promise.resolve(null),
-  ]);
-  if (runId && !detail) notFound();
+  const overview = active ? await loadCitationOverview(tenant.orgId, tenant.brand!, engine, period) : { ...buildCitationOverview([], [], [], period.dates), channelCount: 0 };
   const searchless = engine === "gemini" ? overview.rows.filter(row => row.status === "success" && row.webSearch === false).length : 0;
   const latestAt = overview.rows.find(row => row.runAt)?.runAt;
   const exportRows = overview.rows.map(row => [row.query, citationStatus(row, engine), row.measurable ? row.citations.filter(source => source.videoId).map(source => `${source.title} https://www.youtube.com/watch?v=${source.videoId}`).join("\n") : "", row.measurable ? row.hasOwn ? "인용" : row.hasUnknown ? "미확인" : "미인용" : "미측정", row.runAt]);
@@ -50,19 +46,6 @@ export default async function CitationsPage({ searchParams }: {
     {overview.rows.length === 0 ? <Card className="flex flex-col items-center gap-3 py-16 text-center"><p className="text-base font-bold text-neutral-900">추적할 프롬프트를 추가하세요</p><p className="max-w-md text-sm text-neutral-500">프롬프트 라이브러리에서 {engineName} 엔진을 선택해 수집하면 영상 인용 현황과 추이가 표시됩니다.</p><Button href={`${tenant.base}/prompt-library`} variant="primary" icon={<Plus size={16} />}>프롬프트 라이브러리</Button></Card> :
       <CitationOverviewPanel overview={overview} path={path} engine={engine} range={period.range} query={q} citation={citation} promptPage={params.promptPage} videoPage={params.videoPage} size={params.size} videoSize={params.videoSize} />}
     <p className="text-xs text-neutral-500">브랜드 연결을 확인할 수 없는 과거 수집 결과는 <a href={`${tenant.base}/collection-runs`} className="underline">수집 로그</a>에서 확인하세요.</p>
-    {detail && <section id="citation-answer" className="scroll-mt-6 space-y-4 rounded-lg border p-6" aria-label="답변 상세">
-      <div className="flex justify-between gap-4"><h2 className="text-lg font-semibold">{detail.rawMetadata.query}</h2><a href={closeHref} className="shrink-0 text-sm underline">상세 닫기</a></div>
-      <p className="text-sm text-slate-500">{new Date(detail.runAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · {detail.rawMetadata.model ?? engineName}</p>
-      {detail.status === "failed" && <p role="status" className="text-sm text-red-700">수집에 실패했습니다. 수집 로그에서 오류를 확인하세요.</p>}
-      {detail.rawMetadata.observationOutcome === "ai_absent" && <p className="text-sm text-slate-500">이 수집에서는 AI 답변이 노출되지 않았습니다.</p>}
-      {engine === "gemini" && detail.rawMetadata.webSearch === false && <p className="text-sm text-amber-700">웹 검색 없이 수집한 답변입니다. 출처 유무로 인용 성과를 판단할 수 없습니다.</p>}
-      <h3 className="font-medium">답변 원문</h3><p className="whitespace-pre-wrap break-words text-sm leading-7">{detail.rawResponse || "저장된 답변이 없습니다."}</p>
-      <h3 className="font-medium">출처</h3>
-      <ul className="space-y-2 text-sm">{(detail.rawMetadata.citations ?? []).map((source, index) => {
-        const url = safeCitationUrl(source.url);
-        return <li key={index} className="break-all">{url ? <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">{source.title || url}</a> : <span>{source.title || "유효하지 않은 출처 주소"}</span>}</li>;
-      })}</ul>
-      {!detail.rawMetadata.citations?.length && <p className="text-sm text-slate-500">저장된 출처가 없습니다.</p>}
-    </section>}
+
   </div>;
 }
