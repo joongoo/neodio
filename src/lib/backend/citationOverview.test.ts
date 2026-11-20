@@ -2,15 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Pool } from "pg";
 import { citationPeriod, loadCitationOverview, loadCitationDetail } from "./citationOverview";
-import { citationEngine } from "../citationEngines";
+import { citationEngine, supportsAioExposure } from "../citationEngines";
 import { citationRedirect } from "../citationNavigation";
 import { safeCitationUrl } from "../safeCitationUrl";
-import { citationPageSize } from "../citationPresentation";
+import { citationPageSize, citationStatus } from "../citationPresentation";
 
 test("engine selection and legacy navigation preserve safe filter state", () => {
   assert.equal(citationEngine("gemini"), "gemini");
   assert.equal(citationEngine("constructor"), "google-aio");
   assert.equal(citationEngine(["gemini"]), "google-aio");
+  assert.equal(supportsAioExposure("google-aio"), true);
+  assert.equal(supportsAioExposure("naver-aio"), true);
+  for (const engine of ["gemini", "google-ai-mode", "naver-ai"] as const) assert.equal(supportsAioExposure(engine), false);
   assert.equal(citationPageSize("25"), 25);
   for (const value of ["-1", "100000", "bad", ["25"], undefined]) assert.equal(citationPageSize(value), 10);
   const target = new URL(citationRedirect("/org/brand", "gemini", { engine: "naver-ai", run: "run-1", range: "1w", q: "a&b", device: "mobile" }), "https://example.com");
@@ -71,6 +74,10 @@ test("all engines use owned records and Google AIO keeps historical dedicated ob
     await client.query("ALTER TABLE prompt_runs ADD COLUMN prompt_text_snapshot text DEFAULT 'shared query'");
     await client.query(`INSERT INTO prompt_runs SELECT 'gemini-failure',organization_id,prompt_id,model_id,platform,'2026-11-20T02:00:00.000Z','failed','',NULL,'{"rawResponse":"","rawMetadata":{}}',NULL,NULL,prompt_text_snapshot FROM prompt_runs WHERE id='gemini';
       INSERT INTO legacy_collection_items VALUES ('gemini-failure','request','org','brand','gemini');`);
+    await client.query(`INSERT INTO prompt_runs(id,organization_id,prompt_id,model_id,platform,run_at,status,raw_response,observation_outcome,original_json,provider_task_id,prompt_text_snapshot) VALUES
+      ('naver-present','org','naver-present-prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','success','answer','ai_answered','{"rawResponse":"answer","rawMetadata":{}}','task-naver','present query'),
+      ('naver-error','org','naver-error-prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','failed','','parse_error','{"rawMetadata":{}}','task-naver','parse error query'),
+      ('naver-unknown','org','naver-unknown-prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','success','',NULL,'{"rawMetadata":{}}','task-naver','unknown query');`);
     const brand = { id: "brand", url: "https://example.com", urls: [], otherBrands: [] };
     const period = citationPeriod("1w", new Date("2026-11-20T01:00:00Z"));
     const gemini = await loadCitationOverview("org", brand, "gemini", period, db);
@@ -86,7 +93,13 @@ test("all engines use owned records and Google AIO keeps historical dedicated ob
     assert.equal(google.rows[0].id, "aio:historical");
     assert.equal((await loadCitationDetail("org", "brand", "google-aio", "aio:historical", db))?.rawResponse, "historical answer");
     assert.equal((await loadCitationOverview("org", brand, "google-ai-mode", period, db)).rows[0].id, "google");
-    assert.equal((await loadCitationOverview("org", brand, "naver-aio", period, db)).measured, 0, "absent AI answers do not dilute citation rates");
+    const naver = await loadCitationOverview("org", brand, "naver-aio", period, db);
+    assert.equal(naver.measured, 1, "absent AI answers do not dilute citation rates");
+    assert.equal(naver.exposureMeasured, 2, "only confirmed present and absent outcomes count; parse errors and unknown records do not");
+    assert.equal(naver.exposureRate, 1 / 2);
+    assert.equal(naver.trend.at(-1)?.exposureRate, 1 / 2);
+    assert.equal(citationStatus(naver.rows.find(row => row.id === "naver")!, "naver-aio"), "미노출");
+    assert.equal(citationStatus(naver.rows.find(row => row.id === "naver-present")!, "naver-aio"), "노출");
     assert.equal((await loadCitationOverview("org", brand, "naver-ai", period, db)).rows[0].id, "naver-ai");
     assert.equal(await loadCitationDetail("org", "brand", "google-ai-mode", "gemini", db), null);
     assert.equal(await loadCitationDetail("org", "other-brand", "gemini", "gemini", db), null);

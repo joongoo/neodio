@@ -6,3 +6,8 @@ export const CITATION_ENGINES: Record<PromptSurface, string> = {
 export function citationEngine(value: unknown): PromptSurface {
   return typeof value === "string" && Object.hasOwn(CITATION_ENGINES, value) ? value as PromptSurface : "google-aio";
 }
+
+/** Search overviews have a measured present/absent result; chat engines do not. */
+export function supportsAioExposure(engine: PromptSurface) {
+  return engine === "google-aio" || engine === "naver-aio";
+}

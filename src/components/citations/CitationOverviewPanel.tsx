@@ -6,6 +6,7 @@ import { CitationTrendChart } from "./CitationTrendChart";
 import { CitationStatCard } from "./CitationStatCard";
 import { CitationPager, CitationTableFilters } from "./CitationControls";
 import type { PromptSurface } from "@/lib/promptSurfaces";
+import { supportsAioExposure } from "@/lib/citationEngines";
 
 const percent = (value: number | null) => value === null ? "–" : `${(value * 100).toFixed(1)}%`;
 const colors: Record<CitationSourceType, string> = { own: "bg-blue-500", other: "bg-orange-400", unknown: "bg-neutral-400", own_web: "bg-slate-500", competitor: "bg-slate-400", web: "bg-slate-300" };
@@ -28,6 +29,7 @@ function CitationVideos({ row }: { row: CitationOverview["rows"][number] }) {
 export function CitationOverviewPanel({ overview: o, path, engine, range, query, citation, promptPage, videoPage, size, videoSize }: {
   overview: CitationOverview & { channelCount: number }; path: string; engine: PromptSurface; range: string; query: string; citation: string; promptPage?: string; videoPage?: string; size?: string; videoSize?: string;
 }) {
+  const showExposure = supportsAioExposure(engine);
   const filtered = o.rows.filter(row => row.query.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (
     citation === "own" ? row.measurable && row.hasOwn : citation === "youtube" ? row.measurable && row.hasYoutube :
       citation === "unknown" ? row.measurable && row.hasUnknown : citation === "none" ? row.measurable && !row.hasYoutube : true));
@@ -42,18 +44,18 @@ export function CitationOverviewPanel({ overview: o, path, engine, range, query,
   const totalSources = sources.reduce((sum, [, count]) => sum + count, 0);
   const cards = [
     { label: "추적 프롬프트", value: String(o.rows.length), sub: `답변 측정 ${o.measured}개 · 미측정/미응답 ${o.excluded}개`, tooltip: "선택 엔진의 추적 프롬프트와 기간 내 수집 기록이 있는 프롬프트입니다. 미수집과 답변 없음은 인용률 분모에 포함하지 않습니다." },
-    ...(engine === "google-aio" ? [{ label: "AIO 노출률", value: percent(o.exposureRate), sub: `${o.exposurePresent} / ${o.exposureMeasured}개 측정 프롬프트`, tooltip: "AI Overview가 노출된 프롬프트 ÷ 노출 여부를 측정한 프롬프트. 실패와 미수집은 제외합니다." }] : []),
+    ...(showExposure ? [{ label: "AIO 노출률", value: percent(o.exposureRate), sub: `${o.exposurePresent} / ${o.exposureMeasured}개 측정 프롬프트`, tooltip: `${engine === "naver-aio" ? "네이버 AI 브리핑" : "Google AI Overview"}이 노출된 프롬프트 ÷ 노출 여부를 측정한 프롬프트. 수집·분석 실패와 미수집은 제외합니다.` }] : []),
     { label: "YouTube 인용률", value: percent(o.youtubeRate), sub: `${o.youtube} / ${o.measured}개 답변`, tooltip: "YouTube 영상이 인용된 답변 ÷ 측정 가능한 AI 답변. Gemini는 웹 검색을 사용한 답변만 포함합니다." },
     { label: "우리 채널 인용률", value: o.channelCount ? percent(o.ownRate) : "–", sub: o.channelCount ? `${o.own} / ${o.classifiable}개 판별 가능 답변` : "브랜드 설정에서 채널을 연결하세요", tooltip: "우리 채널 영상이 인용된 답변 ÷ 채널 판별이 가능한 답변. 소유 여부가 불확실한 답변은 분모에서 제외합니다.", highlight: true },
     { label: "인용된 우리 영상", value: o.channelCount && o.measured ? `${o.ownVideos}개` : "–", sub: `채널 미확인 영상 ${o.unknownVideos}개`, tooltip: "프롬프트별 최신 성공 답변에 인용된 우리 채널 영상 수입니다. 동일 영상은 한 번만 집계합니다." },
   ];
   return <div className="flex flex-col gap-5">
-    <div className={`grid grid-cols-2 gap-4 ${engine === "google-aio" ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>{cards.map(card => <CitationStatCard key={card.label} {...card} />)}</div>
+    <div className={`grid grid-cols-2 gap-4 ${showExposure ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>{cards.map(card => <CitationStatCard key={card.label} {...card} />)}</div>
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="flex flex-col gap-3 p-5 lg:col-span-2">
         <h2 className="text-base font-bold text-neutral-900">일별 추이</h2>
-        <CitationTrendChart trend={o.trend} showExposure={engine === "google-aio"} />
-        <details className="text-xs text-neutral-500"><summary className="cursor-pointer">일별 데이터 보기</summary><div className="mt-3 max-h-48 overflow-auto"><table className="w-full text-left"><thead><tr><th scope="col">날짜 (KST)</th><th scope="col">측정 답변</th>{engine === "google-aio" && <th scope="col">AIO 노출률</th>}<th scope="col">YouTube</th><th scope="col">우리 채널</th></tr></thead><tbody>{o.trend.map(point => <tr key={point.day}><td className="py-1">{point.day}</td><td>{point.measured}</td>{engine === "google-aio" && <td>{percent(point.exposureRate)}</td>}<td>{percent(point.youtubeRate)}</td><td>{o.channelCount ? percent(point.ownRate) : "–"}</td></tr>)}</tbody></table></div></details>
+        <CitationTrendChart trend={o.trend} showExposure={showExposure} />
+        <details className="text-xs text-neutral-500"><summary className="cursor-pointer">일별 데이터 보기</summary><div className="mt-3 max-h-48 overflow-auto"><table className="w-full text-left"><thead><tr><th scope="col">날짜 (KST)</th><th scope="col">측정 답변</th>{showExposure && <th scope="col">AIO 노출률</th>}<th scope="col">YouTube</th><th scope="col">우리 채널</th></tr></thead><tbody>{o.trend.map(point => <tr key={point.day}><td className="py-1">{point.day}</td><td>{point.measured}</td>{showExposure && <td>{percent(point.exposureRate)}</td>}<td>{percent(point.youtubeRate)}</td><td>{o.channelCount ? percent(point.ownRate) : "–"}</td></tr>)}</tbody></table></div></details>
       </Card>
       <Card className="flex flex-col gap-4 p-5">
         <div><h2 className="text-base font-bold text-neutral-900">인용 소스 점유율</h2><p className="mt-0.5 text-xs text-neutral-500">전체 인용 링크 기준 · 우리 영상 점유율(SoV) {percent(totalSources ? o.sourceCounts.own / totalSources : null)}</p></div>
@@ -64,7 +66,7 @@ export function CitationOverviewPanel({ overview: o, path, engine, range, query,
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-bold text-neutral-900">프롬프트별 인용 현황</h2><p className="text-xs text-neutral-500">선택 기간 내 최신 성공 수집 기준 · 프롬프트를 누르면 답변 원문으로 이동합니다.</p></div>
       <CitationTableFilters key={`${engine}:${range}`} query={query} citation={citation} />
       <p className="text-xs text-neutral-500">전체 {o.rows.length.toLocaleString("ko-KR")}개 중 {filtered.length.toLocaleString("ko-KR")}개</p>
-      <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-sm"><thead><tr className="bg-neutral-50 text-left text-xs text-neutral-500">{["프롬프트", engine === "google-aio" ? "AIO" : "답변", "인용된 YouTube 영상", "수집일"].map((label, index) => <th scope="col" key={label} className={cn("px-3 py-2.5 font-medium", index === 0 && "rounded-l-md", index === 3 && "rounded-r-md")}>{label}</th>)}</tr></thead>
+      <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-sm"><thead><tr className="bg-neutral-50 text-left text-xs text-neutral-500">{["프롬프트", showExposure ? "AIO" : "답변", "인용된 YouTube 영상", "수집일"].map((label, index) => <th scope="col" key={label} className={cn("px-3 py-2.5 font-medium", index === 0 && "rounded-l-md", index === 3 && "rounded-r-md")}>{label}</th>)}</tr></thead>
         <tbody>{filtered.slice((page - 1) * pageSize, page * pageSize).map(row => <tr key={row.promptId} className={cn("border-b border-neutral-100 align-top hover:bg-neutral-50", row.hasOwn && row.measurable && "bg-blue-50/30")}>
           <td className="max-w-md px-3 py-3 font-medium text-neutral-900">{row.id ? <a className="hover:underline" href={link(row.id)}>{row.query}</a> : row.query}</td>
           <td className="px-3 py-3"><span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", row.measurable ? "bg-slate-100 text-slate-700" : "bg-neutral-100 text-neutral-500")}>{citationStatus(row, engine)}</span></td>
