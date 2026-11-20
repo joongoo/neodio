@@ -65,7 +65,7 @@ const NAV: NavGroup[] = [
     icon: YouTubeIcon,
     children: [
       { label: "Google AIO 인용", href: "/youtube-aio" },
-      { label: "Gemini 인용", href: "/gemini-citations" },
+      { label: "인용", href: "/citations" },
       { label: "영상 관리", href: "/youtube-manage" },
     ],
   },
