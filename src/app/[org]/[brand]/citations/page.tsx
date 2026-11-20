@@ -46,7 +46,7 @@ export default async function CitationsPage({ searchParams }: {
       </div>
     </div>
     <CitationToolbar engine={engine} range={period.range} from={period.dates[0]} to={period.dates.at(-1)!} />
-    {searchless > 0 && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">웹 검색 없이 수집한 답변 {searchless}개는 인용률 측정에서 제외됩니다. 답변 원문은 아래 프롬프트 목록에서 확인할 수 있습니다.</p>}
+    {searchless > 0 && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Gemini가 인터넷 자료를 찾아보지 않고 작성한 답변이 {searchless}개 있습니다. 이 답변은 인용 여부를 확인할 수 없어 인용률 계산에서 제외됩니다. 아래 프롬프트를 누르면 답변 내용을 볼 수 있습니다.</p>}
     {overview.rows.length === 0 ? <Card className="flex flex-col items-center gap-3 py-16 text-center"><p className="text-base font-bold text-neutral-900">추적할 프롬프트를 추가하세요</p><p className="max-w-md text-sm text-neutral-500">프롬프트 라이브러리에서 {engineName} 엔진을 선택해 수집하면 영상 인용 현황과 추이가 표시됩니다.</p><Button href={`${tenant.base}/prompt-library`} variant="primary" icon={<Plus size={16} />}>프롬프트 라이브러리</Button></Card> :
       <CitationOverviewPanel overview={overview} path={path} engine={engine} range={period.range} query={q} citation={citation} promptPage={params.promptPage} videoPage={params.videoPage} size={params.size} videoSize={params.videoSize} />}
     <p className="text-xs text-neutral-500">브랜드 연결을 확인할 수 없는 과거 수집 결과는 <a href={`${tenant.base}/collection-runs`} className="underline">수집 로그</a>에서 확인하세요.</p>
