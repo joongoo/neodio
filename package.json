@@ -13,6 +13,7 @@
     "test:dataforseo:sidebar": "tsx --test src/components/layout/CollectionActivityIndicator.test.tsx",
     "test:dataforseo:queue-db": "node --env-file=.env.local --import tsx --test src/lib/backend/dataforseo/queuePostgres.test.ts",
     "test:dataforseo:requests": "node --env-file=.env.local --import tsx --test src/lib/backend/dataforseo/requestLog.test.ts",
+    "test:gemini-citations": "node --env-file=.env.local --import tsx --test src/lib/geminiCitationMetrics.test.ts src/lib/backend/geminiCitations.test.ts",
     "fixture:collection-failures": "node --env-file=.env.local --import tsx scripts/seed-collection-failure-fixture.ts",
     "build": "next build",
     "start": "next start",

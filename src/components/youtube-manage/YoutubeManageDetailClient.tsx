@@ -56,7 +56,7 @@ export function YoutubeManageDetailClient({ data }: { data: VideoManageDetailDat
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <Link href={`${base}/youtube-manage${deviceQuery}`} className="inline-flex w-fit items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800">
-        <ArrowLeft size={14} /> YouTube 관리
+        <ArrowLeft size={14} /> 영상 관리
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
