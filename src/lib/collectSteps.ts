@@ -10,7 +10,7 @@ export type CollectEngine = "naver" | "naver-overview" | "google";
 export type CollectStep = (
   | { kind: "ai"; engines: CollectEngine[]; keywords: string[] }
   | { kind: "aio"; promptIds: string[]; devices?: ("desktop" | "mobile")[]; targets?: { promptId: string; device: "desktop" | "mobile" }[] }
-  | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[]; force?: boolean }
+  | { kind: "serp-api"; surface: SerpApiSurface; prompts: { promptId?: string; query: string }[]; requestId: string; taskIds?: string[]; devices?: ("desktop" | "mobile")[]; force?: boolean }
   | { kind: "gemini"; keywords: string[] }) & { requestId?: string };
 
 export interface ActiveSerpApiTask {
@@ -40,6 +40,7 @@ export function buildCollectSteps(
   serpApiEnabled: ReadonlySet<SerpApiSurface> = new Set(),
   requestId = "manual",
   forceSerpDuplicate = false,
+  devices?: ("desktop" | "mobile")[],
 ): CollectStep[] {
   const groups = new Map<string, { engines: CollectEngine[]; keywords: string[] }>();
   const add = (engines: CollectEngine[], keyword: string) => {
@@ -71,6 +72,7 @@ export function buildCollectSteps(
       kind: "serp-api",
       surface,
       prompts,
+      ...(devices ? { devices } : {}),
       requestId,
       ...(forceSerpDuplicate ? { force: true } : {}),
     });

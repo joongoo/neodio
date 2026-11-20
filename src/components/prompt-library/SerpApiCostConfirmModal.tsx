@@ -14,6 +14,7 @@ export function SerpApiCostConfirmModal({
   enabled,
   serpApiEnabled,
   aioDeviceCount,
+  devices,
   onBack,
   onConfirm,
 }: {
@@ -21,12 +22,13 @@ export function SerpApiCostConfirmModal({
   enabled: ReadonlySet<PromptSurface>;
   serpApiEnabled: ReadonlySet<SerpApiSurface>;
   aioDeviceCount: number;
+  devices?: ("desktop" | "mobile")[];
   onBack: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const estimate = estimateSerpApiCost(countBySurface(rows), serpApiEnabled, aioDeviceCount);
+  const estimate = estimateSerpApiCost(countBySurface(rows), serpApiEnabled, aioDeviceCount, devices);
   const collectorSurfaces = [...enabled].filter((surface) => !serpApiEnabled.has(surface as SerpApiSurface));
 
   async function confirm() {
@@ -55,7 +57,7 @@ export function SerpApiCostConfirmModal({
           <div key={row.surface} className="grid grid-cols-[1fr_auto] gap-4 border-b border-neutral-100 px-3 py-2.5 last:border-b-0">
             <span className="flex flex-col">
               <span className="text-sm font-medium text-neutral-800">{SURFACE_LABEL[row.surface]} · SERP API</span>
-              <span className="text-xs text-neutral-500">{row.queries}회 × {usd(row.unitCostUsd)}</span>
+              <span className="text-xs text-neutral-500">{devices && `${devices.map(device => device === "desktop" ? "PC" : "모바일").join(" · ")} · `}{row.queries}회 × {usd(row.unitCostUsd)}</span>
             </span>
             <span className="self-center text-sm font-semibold tabular-nums text-neutral-800">{usd(row.estimatedCostUsd)}</span>
           </div>

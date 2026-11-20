@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
   const surface = typeof body?.surface === "string" && SURFACES.has(body.surface) ? body.surface as SerpApiSurface : null;
   const requestId = typeof body?.requestId === "string" && REQUEST_ID.test(body.requestId) ? body.requestId : null;
   const force = body?.force === true;
+  if (body?.devices !== undefined && (!Array.isArray(body.devices) || body.devices.length === 0 || body.devices.some((device: unknown) => device !== "desktop" && device !== "mobile"))) {
+    return NextResponse.json({ error: "PC 또는 모바일을 하나 이상 선택하세요." }, { status: 400 });
+  }
   const rawPrompts = Array.isArray(body?.prompts) ? body.prompts : [];
 
   if (!brandId || !(await getManagedBrand(tenant.orgId, brandId))) {
@@ -72,7 +75,7 @@ export async function POST(request: NextRequest) {
     canonical.push({ promptId: row.id, query: row.text });
   }
 
-  const devices: AioDevice[] = surface === "google-aio"
+  const devices: AioDevice[] = body?.devices !== undefined ? [...new Set<AioDevice>(body.devices)] : surface === "google-aio"
     ? (await getBrandAioSettings(brandId)).devices
     : ["desktop"];
   const queued = await new CollectionQueueService().appendApproved({

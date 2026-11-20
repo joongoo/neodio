@@ -71,3 +71,14 @@ test("미완료 SERP API 작업을 수집 묶음과 표면별로 복원한다", 
     { kind: "serp-api", surface: "google-aio", prompts: [], requestId: "batch-2", taskIds: ["ptask-4"] },
   ]);
 });
+
+ test("SERP steps carry selected devices without changing local collection", () => {
+  const surfaces = new Set(["google-aio", "google-ai-mode", "naver-aio"] as const);
+  const input = [{prompt: "query", promptId: "p", surfaces: [...surfaces]}];
+  for (const devices of [["mobile"], ["desktop", "mobile"]] as ("desktop" | "mobile")[][]) {
+    const steps = buildCollectSteps(input, surfaces, surfaces, "request", false, devices);
+    assert.equal(steps.length, 3);
+    for (const step of steps) { assert.equal(step.kind, "serp-api"); if(step.kind === "serp-api") assert.deepEqual(step.devices, devices); }
+  }
+  assert.deepEqual(buildCollectSteps(input, new Set(["google-aio"]), new Set(), "manual", false, ["mobile"]), [{kind: "aio", promptIds: ["p"]}]);
+});

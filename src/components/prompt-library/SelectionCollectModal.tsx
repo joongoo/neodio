@@ -25,6 +25,7 @@ export function SelectionCollectModal({
   aioDeviceCount,
   initialEnabled,
   initialSerpApiEnabled,
+  initialDevices,
   onReview,
 }: {
   open: boolean;
@@ -34,9 +35,11 @@ export function SelectionCollectModal({
   aioDeviceCount: number;
   initialEnabled?: ReadonlySet<PromptSurface>;
   initialSerpApiEnabled?: ReadonlySet<SerpApiSurface>;
-  onReview: (enabled: Set<PromptSurface>, serpApiEnabled: Set<SerpApiSurface>) => void;
+  initialDevices?: ("desktop" | "mobile")[];
+  onReview: (enabled: Set<PromptSurface>, serpApiEnabled: Set<SerpApiSurface>, devices: ("desktop" | "mobile")[]) => void;
 }) {
   const counts = countBySurface(rows);
+  const [devices, setDevices] = useState<("desktop" | "mobile")[]>(initialDevices ?? ["desktop", "mobile"]);
   const [enabled, setEnabled] = useState<Set<PromptSurface>>(() => new Set(initialEnabled ?? PROMPT_SURFACES.filter((s) => counts[s] > 0)));
   const [serpApiEnabled, setSerpApiEnabled] = useState<Set<SerpApiSurface>>(() => new Set(initialSerpApiEnabled));
   const [activeSerpCounts, setActiveSerpCounts] = useState<Partial<Record<SerpApiSurface, number>>>({});
@@ -170,6 +173,20 @@ export function SelectionCollectModal({
           );
         })}
       </div>
+      {eligibleSerpSurfaces.some(surface => serpApiEnabled.has(surface)) && (
+        <fieldset className="mt-3 rounded-md border border-neutral-200 px-3 pb-3">
+          <legend className="px-1 text-sm font-medium text-neutral-800">SERP API 수집 기기</legend>
+          <div className="mt-1 flex gap-4">
+            {(["desktop", "mobile"] as const).map(device => (
+              <label key={device} className="flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+                <input type="checkbox" checked={devices.includes(device)} onChange={() => setDevices(current => current.includes(device) ? current.filter(value => value !== device) : [...current, device])} className="size-4 cursor-pointer accent-slate-800" />
+                {device === "desktop" ? "PC" : "모바일"}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-neutral-500">선택한 SERP API 엔진에 적용됩니다. 둘 다 선택하면 기기별로 각각 수집합니다.</p>
+        </fieldset>
+      )}
       {enabled.has("google-aio") && aioSearches > AIO_DAILY_CAP && (
         <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
           AIO 검색이 {aioSearches}회로, 하루 권장 상한({AIO_DAILY_CAP}회)을 넘습니다. 캡차가 뜨면 그 자리에서 멈춥니다.
@@ -179,7 +196,7 @@ export function SelectionCollectModal({
         <Button variant="secondary" onClick={onClose}>
           취소
         </Button>
-        <Button variant="primary" disabled={active.length === 0} onClick={() => onReview(new Set(active), new Set(serpApiEnabled))}>
+        <Button variant="primary" disabled={active.length === 0 || (eligibleSerpSurfaces.some(surface => serpApiEnabled.has(surface)) && devices.length === 0)} onClick={() => onReview(new Set(active), new Set(serpApiEnabled), devices)}>
           다음
         </Button>
       </div>
