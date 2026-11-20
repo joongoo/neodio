@@ -74,6 +74,9 @@ test("all engines use owned records and Google AIO keeps historical dedicated ob
       INSERT INTO aio_observations VALUES ('historical','brand','keyword','2026-11-20T01:00:00.000Z','2026-11-20','aio_present','historical answer');
       INSERT INTO aio_citations VALUES ('historical',1,'https://youtu.be/abcdefghijk','video','youtu.be','our-channel');`);
     await client.query("ALTER TABLE prompt_runs ADD COLUMN prompt_text_snapshot text DEFAULT 'shared query'");
+    await client.query(`ALTER TABLE aio_observations ADD COLUMN device text DEFAULT 'desktop';
+      ALTER TABLE provider_tasks ADD COLUMN device text DEFAULT 'desktop';
+      ALTER TABLE legacy_collection_items ADD COLUMN device text DEFAULT 'desktop'`);
     await client.query(`INSERT INTO prompt_runs SELECT 'gemini-failure',organization_id,prompt_id,model_id,platform,'2026-11-20T02:00:00.000Z','failed','',NULL,'{"rawResponse":"","rawMetadata":{}}',NULL,NULL,prompt_text_snapshot FROM prompt_runs WHERE id='gemini';
       INSERT INTO legacy_collection_items VALUES ('gemini-failure','request','org','brand','gemini');`);
     await client.query(`INSERT INTO prompt_runs(id,organization_id,prompt_id,model_id,platform,run_at,status,raw_response,observation_outcome,original_json,provider_task_id,prompt_text_snapshot) VALUES
@@ -118,6 +121,27 @@ test("all engines use owned records and Google AIO keeps historical dedicated ob
     assert.equal(await loadCitationDetailPage("org", { ...brand, id: "other-brand" }, "gemini", "gemini", detailNow, db), null);
     assert.equal(await loadCitationDetailPage("foreign-org", brand, "gemini", "gemini", detailNow, db), null);
     assert.equal(await loadCitationDetailPage("org", brand, "naver-aio", "gemini", detailNow, db), null);
+    await client.query(`INSERT INTO aio_observations(id,brand_id,keyword_id,collected_at,collected_date,status,aio_text,device) VALUES
+      ('mobile-aio','brand','keyword','2026-11-20T00:30:00.000Z','2026-11-20','aio_absent','','mobile');
+      INSERT INTO provider_tasks(id,organization_id,brand_id,surface,device) VALUES ('naver-mobile-task','org','brand','naver-aio','mobile');
+      INSERT INTO prompt_runs(id,organization_id,prompt_id,model_id,platform,run_at,status,raw_response,observation_outcome,original_json,provider_task_id,prompt_text_snapshot) VALUES
+      ('naver-mobile','org','prompt','model-naver-overview','naver-overview','2026-11-20T00:30:00.000Z','success','mobile answer','ai_answered','{"rawResponse":"mobile answer","rawMetadata":{"citations":[{"url":"https://youtu.be/abcdefghijk","title":"video"}]}}','naver-mobile-task','shared query');`);
+    const googleMobile = await loadCitationOverview("org", brand, "google-aio", period, db, "mobile");
+    assert.equal(googleMobile.rows[0].id, "aio:mobile-aio", "same-day desktop cannot replace mobile");
+    assert.equal(googleMobile.exposureRate, 0);
+    assert.equal(googleMobile.measured, 0);
+    const googleDesktop = await loadCitationOverview("org", brand, "google-aio", period, db, "desktop");
+    assert.equal(googleDesktop.exposureRate, 1);
+    assert.equal(googleDesktop.deviceSummaries.find(s => s.device === "mobile")?.exposureRate, 0);
+    assert.equal((await loadCitationDetail("org", "brand", "google-aio", "aio:mobile-aio", db))?.device, "mobile");
+    const naverMobile = await loadCitationOverview("org", brand, "naver-aio", period, db, "mobile");
+    assert.equal(naverMobile.measured, 1);
+    assert.equal(naverMobile.ownRate, 1);
+    assert.equal(naverMobile.exposureRate, 1);
+    assert.equal((await loadCitationOverview("org", brand, "naver-aio", period, db, "desktop")).exposureRate, 1 / 2);
+    const mobileDetail = await loadCitationDetailPage("org", brand, "naver-aio", "naver-mobile", detailNow, db);
+    assert.equal(mobileDetail?.snapshot.device, "mobile");
+    assert.equal(mobileDetail?.history.at(-1)?.state, "own", "detail history uses the snapshot device, not a later desktop absence");
     for (const engine of ["google-aio", "gemini", "google-ai-mode", "naver-aio", "naver-ai"] as const) {
       assert.equal((await loadCitationOverview("foreign-org", brand, engine, period, db)).rows.length, 0);
       assert.equal((await loadCitationOverview("org", { ...brand, id: "other-brand" }, engine, period, db)).rows.length, 0);

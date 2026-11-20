@@ -12,6 +12,7 @@ import { safeCitationUrl } from "@/lib/safeCitationUrl";
 import type { CitationHistoryState } from "@/lib/citationDetail";
 import type { CitationDetailPageData } from "@/lib/backend/citationDetail";
 import type { PromptSurface } from "@/lib/promptSurfaces";
+import { CITATION_DEVICE_LABELS, supportsCitationDevices } from "@/lib/citationDevices";
 
 const historyStyle: Record<CitationHistoryState, { color: string; label: string }> = {
   own: { color: "bg-blue-600", label: "우리 영상 인용" }, youtube: { color: "bg-orange-200", label: "YouTube 인용" },
@@ -29,6 +30,7 @@ function VideoThumb({ id }: { id: string }) {
 export function CitationDetailView({ data, engine, base, backHref, params }: { data: CitationDetailPageData; engine: PromptSurface; base: string; backHref: string; params: Record<string, string | string[] | undefined> }) {
   const { snapshot, current, history, ownVideos, workLogs, retention } = data;
   const engineName = CITATION_ENGINES[engine];
+  const deviceLabel = supportsCitationDevices(engine) ? snapshot.device ? CITATION_DEVICE_LABELS[snapshot.device] : "기기 정보 없음" : null;
   const path = `${base}/citations`;
   const detailHref = (id: string) => citationDetailHref(path, id, engine, params);
   const tags = [
@@ -39,7 +41,7 @@ export function CitationDetailView({ data, engine, base, backHref, params }: { d
   return <div className="mx-auto flex max-w-7xl flex-col gap-5 p-6">
     <Link href={backHref} className="flex w-fit items-center gap-2 text-[13px] text-neutral-600 hover:text-neutral-900"><ArrowLeft size={16} />프롬프트 목록</Link>
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><h1 className="text-2xl font-semibold text-neutral-900">&quot;{current.query}&quot;</h1><p className="mt-1 text-sm text-neutral-500">{engineName} · 수집 {new Date(snapshot.runAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} (KST){snapshot.rawMetadata.model && ` · ${snapshot.rawMetadata.model}`}</p></div>
+      <div><h1 className="text-2xl font-semibold text-neutral-900">&quot;{current.query}&quot;</h1><p className="mt-1 text-sm text-neutral-500">{engineName}{deviceLabel && ` · ${deviceLabel}`} · 수집 {new Date(snapshot.runAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} (KST){snapshot.rawMetadata.model && ` · ${snapshot.rawMetadata.model}`}</p></div>
       <div className="flex flex-wrap items-center gap-2">{tags.map(tag => <span key={tag.text} className={cn("rounded-full px-4 py-2 text-sm font-semibold", tag.color)}>{tag.text}</span>)}<Button href={`${base}/prompt-library`} variant="secondary" size="sm">프롬프트 라이브러리</Button></div>
     </div>
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -63,6 +65,7 @@ export function CitationDetailView({ data, engine, base, backHref, params }: { d
       <div className="flex flex-col gap-4 lg:col-span-2">
         <Card className="flex flex-col gap-3 p-6">
           <h2 className="text-base font-bold text-neutral-900">최근 14일 인용 히스토리</h2>
+          {deviceLabel && <p className="text-xs text-neutral-500">{deviceLabel} 기준</p>}
           <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(14, minmax(0, 1fr))" }}>{history.map(day => {
             const label = `${short(day.date)} · ${historyStyle[day.state].label}`;
             return day.runId ? <Link key={day.date} href={detailHref(day.runId)} title={label} aria-label={label} className={cn("aspect-square rounded-md outline-offset-2", historyStyle[day.state].color, day.runId === snapshot.id && "ring-2 ring-slate-800 ring-offset-2")} /> : <span key={day.date} title={label} aria-label={label} role="img" className={cn("aspect-square rounded-md", historyStyle[day.state].color)} />;

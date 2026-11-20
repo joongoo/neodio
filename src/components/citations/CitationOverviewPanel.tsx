@@ -8,6 +8,8 @@ import { CitationPager, CitationTableFilters } from "./CitationControls";
 import type { PromptSurface } from "@/lib/promptSurfaces";
 import { supportsAioExposure } from "@/lib/citationEngines";
 import { citationDetailHref } from "@/lib/citationNavigation";
+import { CITATION_DEVICE_LABELS, supportsCitationDevices, type CitationDeviceFilter, type CitationDeviceSummary } from "@/lib/citationDevices";
+import Link from "next/link";
 
 const percent = (value: number | null) => value === null ? "–" : `${(value * 100).toFixed(1)}%`;
 const colors: Record<CitationSourceType, string> = { own: "bg-blue-500", other: "bg-orange-400", unknown: "bg-neutral-400", own_web: "bg-slate-500", competitor: "bg-slate-400", web: "bg-slate-300" };
@@ -27,8 +29,8 @@ function CitationVideos({ row }: { row: CitationOverview["rows"][number] }) {
   return <div className="min-w-56 max-w-md"><ul className="space-y-2">{videos.slice(0, 3).map(item)}</ul>{videos.length > 3 && <details className="mt-2"><summary className="cursor-pointer text-xs text-neutral-500">외 {videos.length - 3}개 영상</summary><ul className="mt-2 space-y-2">{videos.slice(3).map(item)}</ul></details>}</div>;
 }
 
-export function CitationOverviewPanel({ overview: o, path, engine, range, query, citation, promptPage, videoPage, size, videoSize }: {
-  overview: CitationOverview & { channelCount: number }; path: string; engine: PromptSurface; range: string; query: string; citation: string; promptPage?: string; videoPage?: string; size?: string; videoSize?: string;
+export function CitationOverviewPanel({ overview: o, path, engine, device, range, query, citation, promptPage, videoPage, size, videoSize }: {
+  overview: CitationOverview & { channelCount: number; deviceSummaries: CitationDeviceSummary[]; hasUnknownDevice: boolean }; path: string; engine: PromptSurface; device: CitationDeviceFilter; range: string; query: string; citation: string; promptPage?: string; videoPage?: string; size?: string; videoSize?: string;
 }) {
   const showExposure = supportsAioExposure(engine);
   const filtered = o.rows.filter(row => row.query.toLocaleLowerCase().includes(query.toLocaleLowerCase()) && (
@@ -40,7 +42,9 @@ export function CitationOverviewPanel({ overview: o, path, engine, range, query,
   const page = pageNumber(promptPage, pages);
   const videoPages = Math.max(1, Math.ceil(o.videos.length / vSize));
   const vPage = pageNumber(videoPage, videoPages);
-  const link = (run: string) => citationDetailHref(path, run, engine, { range, q: query, citation, promptPage: String(page), videoPage: String(vPage), size: String(pageSize), videoSize: String(vSize) });
+  const listParams = { range, q: query, citation, engine, device, promptPage: String(page), videoPage: String(vPage), size: String(pageSize), videoSize: String(vSize) };
+  const link = (run: string) => citationDetailHref(path, run, engine, listParams);
+  const deviceHref = (device: CitationDeviceFilter) => `${path}?${new URLSearchParams({ ...listParams, device, promptPage: "1", videoPage: "1" })}`;
   const sources = Object.entries(o.sourceCounts) as [CitationSourceType, number][];
   const totalSources = sources.reduce((sum, [, count]) => sum + count, 0);
   const cards = [
@@ -52,6 +56,19 @@ export function CitationOverviewPanel({ overview: o, path, engine, range, query,
   ];
   return <div className="flex flex-col gap-5">
     <div className={`grid grid-cols-2 gap-4 ${showExposure ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>{cards.map(card => <CitationStatCard key={card.label} {...card} />)}</div>
+    {supportsCitationDevices(engine) && <Card className="flex flex-col gap-3 p-5">
+      <h2 className="text-base font-bold text-neutral-900">기기별 현황</h2>
+      <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-sm"><thead><tr className="text-left text-xs text-neutral-500"><th scope="col" className="py-1.5 font-medium">지표</th>{o.deviceSummaries.map(summary => <th scope="col" key={summary.device} className="py-1.5 text-right font-medium"><Link href={deviceHref(summary.device)} aria-label={`${CITATION_DEVICE_LABELS[summary.device]} 기준으로 보기`} aria-current={summary.device === device ? "true" : undefined} className={cn("rounded px-2 py-0.5 hover:bg-neutral-100", summary.device === device && "bg-neutral-100 font-bold text-neutral-900")}>{CITATION_DEVICE_LABELS[summary.device]}</Link></th>)}</tr></thead>
+        <tbody>{[
+          { label: "측정 프롬프트", value: (s: CitationDeviceSummary) => `${s.measured} / ${s.tracked}개` },
+          ...(showExposure ? [{ label: "AIO 노출률", value: (s: CitationDeviceSummary) => percent(s.exposureRate) }] : []),
+          { label: "YouTube 인용률", value: (s: CitationDeviceSummary) => percent(s.youtubeRate) },
+          { label: "우리 채널 인용률", value: (s: CitationDeviceSummary) => percent(s.ownRate) },
+          { label: "인용된 우리 영상", value: (s: CitationDeviceSummary) => s.answerMeasured && o.channelCount ? `${s.ownVideos}개` : "–" },
+        ].map(row => <tr key={row.label} className="border-t border-neutral-100"><th scope="row" className="py-2 text-left font-normal text-neutral-700">{row.label}</th>{o.deviceSummaries.map(summary => <td key={summary.device} className="py-2 pr-2 text-right tabular-nums text-neutral-900">{row.value(summary)}</td>)}</tr>)}</tbody>
+      </table></div>
+      <p className="text-xs text-neutral-500">기기 이름을 누르면 해당 기기의 지표·추이·목록으로 바뀝니다.{o.hasUnknownDevice && " 기기 정보가 없는 기록은 전체에서만 표시됩니다."}</p>
+    </Card>}
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="flex flex-col gap-3 p-5 lg:col-span-2">
         <h2 className="text-base font-bold text-neutral-900">일별 추이</h2>
@@ -82,6 +99,6 @@ export function CitationOverviewPanel({ overview: o, path, engine, range, query,
       <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="bg-neutral-50 text-xs text-neutral-500">{["영상", "채널", "구분", "인용 프롬프트", "최근 답변"].map(label => <th scope="col" className="px-3 py-2.5 font-medium" key={label}>{label}</th>)}</tr></thead><tbody>{o.videos.slice((vPage - 1) * vSize, vPage * vSize).map(video => <tr key={video.videoId} className={cn("border-b border-neutral-100 align-top hover:bg-neutral-50", video.type === "own" && "bg-blue-50/30")}><td className="max-w-md px-3 py-3 font-medium text-neutral-900"><a href={`https://www.youtube.com/watch?v=${video.videoId}`} target="_blank" rel="noopener noreferrer" className="hover:underline">{video.title || video.videoId}</a></td><td className="px-3 py-3 text-neutral-500">{video.channelTitle || "채널명 기록 없음"}</td><td className="px-3 py-3"><span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-xs", video.type === "own" ? "bg-blue-50 text-blue-700" : "bg-neutral-100 text-neutral-600")}>{CITATION_SOURCE_LABELS[video.type]}</span></td><td className="px-3 py-3 tabular-nums">{video.prompts}개</td><td className="px-3 py-3"><a href={link(video.runId)} className="text-slate-700 hover:underline">답변 보기</a></td></tr>)}{!o.videos.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-neutral-500">기간 내 영상 인용 기록이 없습니다.</td></tr>}</tbody></table></div>
       <CitationPager kind="video" page={vPage} pageCount={videoPages} total={o.videos.length} pageSize={vSize} />
     </Card>
-    <details className="text-xs leading-6 text-neutral-500"><summary className="cursor-pointer">지표 산정 기준</summary><p className="mt-2">지표는 선택 엔진·기간의 프롬프트별 최신 성공 수집 기준입니다. 기기 구분 없이 마지막 성공 수집을 사용합니다. 인용률은 AI 답변이 있는 프롬프트 기준이며, Gemini는 웹 검색을 사용한 답변만 포함합니다. 우리 채널 인용률은 채널 판별이 가능한 답변 기준입니다.</p></details>
+    <details className="text-xs leading-6 text-neutral-500"><summary className="cursor-pointer">지표 산정 기준</summary><p className="mt-2">지표는 선택 엔진·기간·기기의 프롬프트별 최신 성공 수집 기준입니다. 기기 전체를 선택하면 기기를 합쳐 프롬프트별 마지막 성공 수집을 사용합니다. 인용률은 AI 답변이 있는 프롬프트 기준이며, Gemini는 웹 검색을 사용한 답변만 포함합니다. 우리 채널 인용률은 채널 판별이 가능한 답변 기준입니다.</p></details>
   </div>;
 }

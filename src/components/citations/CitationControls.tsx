@@ -8,6 +8,7 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { Pagination } from "@/components/ui/Pagination";
 import { CITATION_ENGINES } from "@/lib/citationEngines";
 import type { PromptSurface } from "@/lib/promptSurfaces";
+import { CITATION_DEVICE_LABELS, supportsCitationDevices, type CitationDeviceFilter } from "@/lib/citationDevices";
 
 const ranges: Record<string, string> = { "1w": "최근 1주", "2w": "최근 2주", "4w": "최근 4주", "12w": "최근 12주" };
 const filters: Record<string, string> = { all: "전체", own: "우리 채널 인용", youtube: "YouTube 인용", unknown: "채널 미확인 포함", none: "영상 인용 없음" };
@@ -30,13 +31,17 @@ function useCitationNavigation() {
   return { navigate, pending };
 }
 
-export function CitationToolbar({ engine, range, from, to }: { engine: PromptSurface; range: string; from: string; to: string }) {
+export function CitationToolbar({ engine, device, range, from, to }: { engine: PromptSurface; device: CitationDeviceFilter; range: string; from: string; to: string }) {
   const { navigate, pending } = useCitationNavigation();
   return <div className="flex flex-wrap items-center gap-2" aria-busy={pending}>
     <Dropdown label="엔진" value={CITATION_ENGINES[engine]} options={Object.values(CITATION_ENGINES)} onChange={label => {
       const selected = Object.entries(CITATION_ENGINES).find(([, value]) => value === label)?.[0];
-      if (selected) navigate({ engine: selected, q: "", citation: "", promptPage: "1", videoPage: "1" });
+      if (selected) navigate({ engine: selected, device: "", q: "", citation: "", promptPage: "1", videoPage: "1" });
     }} />
+    {supportsCitationDevices(engine) && <Dropdown label="디바이스" value={CITATION_DEVICE_LABELS[device]} options={Object.values(CITATION_DEVICE_LABELS)} onChange={label => {
+      const selected = Object.entries(CITATION_DEVICE_LABELS).find(([, value]) => value === label)?.[0] ?? "all";
+      navigate({ device: selected, promptPage: "1", videoPage: "1" });
+    }} />}
     <Dropdown label="기간" value={ranges[range]} options={Object.values(ranges)} onChange={label => {
       const selected = Object.entries(ranges).find(([, value]) => value === label)?.[0];
       if (selected) navigate({ range: selected, promptPage: "1", videoPage: "1" });

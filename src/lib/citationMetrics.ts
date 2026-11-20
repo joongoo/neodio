@@ -1,11 +1,13 @@
 import type { RawCitationMetadata } from "./db/types";
 import { parseYoutubeVideoUrl } from "./backend/youtube";
+import type { CitationDevice } from "./citationDevices";
 
 export interface CitationObservation {
   id: string; promptId: string; query: string; runAt: string; status: string;
   webSearch: boolean | null; citations: RawCitationMetadata[];
   answerPresent?: boolean | null;
   latestAttemptFailed?: boolean;
+  device?: CitationDevice | null;
 }
 export interface CitationVideoMeta { videoId: string; channelId: string; title: string; channelTitle: string | null }
 export type CitationSourceType = "own" | "other" | "unknown" | "own_web" | "competitor" | "web";
