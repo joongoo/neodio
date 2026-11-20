@@ -26,9 +26,10 @@ export function estimateSerpApiCost(
   counts: Readonly<Record<PromptSurface, number>>,
   enabled: ReadonlySet<SerpApiSurface>,
   aioDeviceCount: number,
+  devices?: readonly ("desktop" | "mobile")[],
 ): { rows: SerpApiCostRow[]; totalQueries: number; totalCostUsd: number } {
   const rows = SERP_API_SURFACES.filter((surface) => enabled.has(surface) && counts[surface] > 0).map((surface) => {
-    const queries = counts[surface] * (surface === "google-aio" ? Math.max(1, aioDeviceCount) : 1);
+    const queries = counts[surface] * (devices ? devices.length : surface === "google-aio" ? Math.max(1, aioDeviceCount) : 1);
     const unitCostUsd = SERP_API_ESTIMATED_COST_USD[surface];
     return { surface, queries, unitCostUsd, estimatedCostUsd: queries * unitCostUsd };
   });

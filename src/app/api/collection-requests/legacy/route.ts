@@ -50,6 +50,7 @@ export async function PATCH(request: NextRequest) {
     error_message=CASE WHEN $1='collecting' THEN NULL ELSE $3 END
     FROM collection_requests r WHERE r.id=i.collection_request_id AND r.client_request_id=$4
       AND r.organization_id=$5 AND r.brand_id=$6 AND i.run_id IS NULL
+      AND NOT EXISTS(SELECT 1 FROM gemini_collection_queue q WHERE q.item_id=i.id)
       AND (NOT r.cancel_requested OR $1 NOT IN ('reserved','collecting'))
       AND i.surface=ANY($7::text[]) AND (${step.kind === "aio" ? "i.prompt_id" : "i.query_snapshot"}=ANY($8::text[]))
       AND i.status=ANY($9::text[])`,

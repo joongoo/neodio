@@ -11,7 +11,7 @@ export function YoutubeAioSetupGate({ brandId, brandName, base }: { brandId: str
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 p-6">
       <div>
-        <h1 className="text-2xl font-semibold text-neutral-900">YouTube AIO 인용</h1>
+        <h1 className="text-2xl font-semibold text-neutral-900">Google AIO 인용</h1>
         <p className="mt-1 text-sm text-neutral-500">브랜드 YouTube 영상이 Google AI Overview에 인용되는지 키워드별로 추적합니다.</p>
       </div>
 

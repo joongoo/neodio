@@ -10,6 +10,7 @@ export async function cancelCollectionRequest(org: string, brand: string, id: st
     // Serialize against split-batch registration too, so no late batch can append after cancellation.
     if (identity.client_request_id) await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`dataforseo-collection:${org}:${identity.client_request_id}`]);
     await db.query("SELECT pg_advisory_xact_lock(hashtext('dataforseo-submit-capacity'))");
+    await db.query("SELECT pg_advisory_xact_lock(hashtext('gemini-collection-capacity'))");
     const [request] = await db.query("SELECT id FROM collection_requests WHERE id=$1 AND organization_id=$2 AND brand_id=$3 FOR UPDATE", [id, org, brand]);
     if (!request) return false;
     const now = new Date().toISOString();
@@ -20,7 +21,8 @@ export async function cancelCollectionRequest(org: string, brand: string, id: st
     // A live collector receives cancellation through its existing heartbeat. Expired sessions need no acknowledgement.
     await db.query(`UPDATE legacy_collection_items SET status='cancelled',completed_at=$2,error_message='사용자가 수집 요청을 취소했습니다.'
       WHERE collection_request_id=$1 AND organization_id=$3 AND brand_id=$4 AND run_id IS NULL
-        AND (status='reserved' OR (status='collecting' AND COALESCE(last_seen_at,created_at)<$5))`, [id, now, org, brand, new Date(Date.parse(now) - 30_000).toISOString()]);
+        AND (status='reserved' OR (status='collecting' AND COALESCE(last_seen_at,created_at)<$5
+          AND NOT EXISTS(SELECT 1 FROM gemini_collection_queue q WHERE q.item_id=legacy_collection_items.id)))`, [id, now, org, brand, new Date(Date.parse(now) - 30_000).toISOString()]);
     return true;
   });
 }

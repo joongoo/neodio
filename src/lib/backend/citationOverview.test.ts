@@ -1,0 +1,150 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { Pool } from "pg";
+import { citationPeriod, loadCitationOverview, loadCitationDetail } from "./citationOverview";
+import { citationEngine, supportsAioExposure } from "../citationEngines";
+import { citationRedirect } from "../citationNavigation";
+import { safeCitationUrl } from "../safeCitationUrl";
+import { citationPageSize, citationStatus } from "../citationPresentation";
+import { loadCitationDetailPage } from "./citationDetail";
+
+test("engine selection and legacy navigation preserve safe filter state", () => {
+  assert.equal(citationEngine("gemini"), "gemini");
+  assert.equal(citationEngine("constructor"), "google-aio");
+  assert.equal(citationEngine(["gemini"]), "google-aio");
+  assert.equal(supportsAioExposure("google-aio"), true);
+  assert.equal(supportsAioExposure("naver-aio"), true);
+  for (const engine of ["gemini", "google-ai-mode", "naver-ai"] as const) assert.equal(supportsAioExposure(engine), false);
+  assert.equal(citationPageSize("25"), 25);
+  for (const value of ["-1", "100000", "bad", ["25"], undefined]) assert.equal(citationPageSize(value), 10);
+  const target = new URL(citationRedirect("/org/brand", "gemini", { engine: "naver-ai", run: "run-1", range: "1w", q: "a&b", device: "mobile" }), "https://example.com");
+  assert.equal(target.searchParams.get("engine"), "gemini");
+  assert.equal(target.searchParams.get("q"), "a&b");
+  assert.equal(target.searchParams.get("device"), null);
+  assert.equal(target.hash, "#citation-answer");
+  assert.equal(citationPeriod("1w", new Date("2026-11-19T15:00:00Z")).dates.at(-1), "2026-11-20");
+  for (const value of ["javascript:alert(1)", "data:text/html,test", "file:///secret", "/relative"]) assert.equal(safeCitationUrl(value), null);
+  assert.equal(safeCitationUrl("https://example.com"), "https://example.com/");
+});
+
+test("all engines use owned records and Google AIO keeps historical dedicated observations without double counting", { skip: !process.env.POSTGRES_URL && !process.env.POSTGRES_URL_NON_POOLING }, async () => {
+  const pool = new Pool({ connectionString: process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL });
+  const client = await pool.connect();
+  let pending: Promise<unknown> = Promise.resolve();
+  const db = { query: <T>(sql: string, values: unknown[] = []): Promise<T[]> => {
+    const result = pending.then(async () => (await client.query(sql, values)).rows as T[]);
+    pending = result.catch(() => undefined);
+    return result;
+  } };
+  try {
+    await client.query("BEGIN");
+    await client.query(`CREATE TEMP TABLE brands(id text,organization_id text);
+      CREATE TEMP TABLE prompts(id text,organization_id text,text text);
+      CREATE TEMP TABLE prompt_tracking(id text,organization_id text,brand_id text,prompt_id text,status text);
+      CREATE TEMP TABLE prompt_tracking_surfaces(tracking_id text,surface text);
+      CREATE TEMP TABLE prompt_runs(id text,organization_id text,prompt_id text,model_id text,platform text,run_at text,status text,raw_response text,observation_outcome text,original_json jsonb,provider_task_id text,job_id text);
+      CREATE TEMP TABLE legacy_collection_items(run_id text,collection_request_id text,organization_id text,brand_id text,surface text);
+      CREATE TEMP TABLE collection_requests(id text,organization_id text,brand_id text);
+      CREATE TEMP TABLE provider_tasks(id text,organization_id text,brand_id text,surface text);
+      CREATE TEMP TABLE collection_jobs(id text,organization_id text,data_json jsonb);
+      CREATE TEMP TABLE brand_youtube_channels(brand_id text,channel_id text);
+      CREATE TEMP TABLE youtube_videos(video_id text,channel_id text,title text,channel_title text);
+      CREATE TEMP TABLE aio_video_work_logs(id text,brand_id text,video_id text,work_date text,work_type text,note text);
+      CREATE TEMP TABLE aio_keywords(id text,brand_id text,prompt_id text,keyword text,status text);
+      CREATE TEMP TABLE aio_observations(id text,brand_id text,keyword_id text,collected_at text,collected_date text,status text,aio_text text);
+      CREATE TEMP TABLE aio_citations(observation_id text,position int,url text,title text,domain text,channel_id text);
+      INSERT INTO brands VALUES ('brand','org'),('other-brand','org'),('foreign','foreign-org');
+      INSERT INTO prompts VALUES ('prompt','org','shared query'),('waiting','org','waiting query');
+      INSERT INTO prompt_tracking VALUES ('tracking','org','brand','waiting','active');
+      INSERT INTO prompt_tracking_surfaces VALUES ('tracking','gemini');
+      INSERT INTO collection_requests VALUES ('request','org','brand'),('other-request','org','other-brand');
+      INSERT INTO brand_youtube_channels VALUES ('brand','our-channel');
+      INSERT INTO youtube_videos VALUES ('abcdefghijk','our-channel','our video','our channel');
+      INSERT INTO provider_tasks VALUES ('task-google','org','brand','google-ai-mode'),('task-naver','org','brand','naver-aio');
+      INSERT INTO collection_jobs VALUES ('job','org','{"brandId":"brand"}');
+      INSERT INTO prompt_runs VALUES
+        ('gemini','org','prompt','model-gemini-25','api','2026-11-20T01:00:00.000Z','success','answer',NULL,'{"rawResponse":"answer","rawMetadata":{"webSearch":true,"citations":[{"url":"https://youtu.be/abcdefghijk","title":"video"}]}}',NULL,NULL),
+        ('google','org','prompt','model-google-ai-overview','google-ai-overview','2026-11-20T01:00:00.000Z','success','answer','ai_answered','{"rawResponse":"google","rawMetadata":{}}','task-google',NULL),
+        ('naver','org','prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','success','','ai_absent','{"rawMetadata":{"observationOutcome":"ai_absent"}}','task-naver',NULL),
+        ('naver-ai','org','prompt','model-naver-ai-search','naver-ai-search','2026-11-20T01:00:00.000Z','success','answer',NULL,'{"rawResponse":"naver","rawMetadata":{}}',NULL,'job'),
+        ('unlinked','org','prompt','model-gemini-25','api','2026-11-20T05:00:00.000Z','success','secret',NULL,'{"rawMetadata":{"webSearch":true}}',NULL,NULL),
+        ('bad-request','org','prompt','model-gemini-25','api','2026-11-20T06:00:00.000Z','success','secret',NULL,'{"rawMetadata":{"webSearch":true}}',NULL,NULL);
+      INSERT INTO legacy_collection_items VALUES ('gemini','request','org','brand','gemini'),('gemini','request','org','brand','gemini'),('bad-request','other-request','org','brand','gemini');
+      INSERT INTO aio_keywords VALUES ('keyword','brand','prompt','query','active');
+      INSERT INTO aio_observations VALUES ('historical','brand','keyword','2026-11-20T01:00:00.000Z','2026-11-20','aio_present','historical answer');
+      INSERT INTO aio_citations VALUES ('historical',1,'https://youtu.be/abcdefghijk','video','youtu.be','our-channel');`);
+    await client.query("ALTER TABLE prompt_runs ADD COLUMN prompt_text_snapshot text DEFAULT 'shared query'");
+    await client.query(`ALTER TABLE aio_observations ADD COLUMN device text DEFAULT 'desktop';
+      ALTER TABLE provider_tasks ADD COLUMN device text DEFAULT 'desktop';
+      ALTER TABLE legacy_collection_items ADD COLUMN device text DEFAULT 'desktop'`);
+    await client.query(`INSERT INTO prompt_runs SELECT 'gemini-failure',organization_id,prompt_id,model_id,platform,'2026-11-20T02:00:00.000Z','failed','',NULL,'{"rawResponse":"","rawMetadata":{}}',NULL,NULL,prompt_text_snapshot FROM prompt_runs WHERE id='gemini';
+      INSERT INTO legacy_collection_items VALUES ('gemini-failure','request','org','brand','gemini');`);
+    await client.query(`INSERT INTO prompt_runs(id,organization_id,prompt_id,model_id,platform,run_at,status,raw_response,observation_outcome,original_json,provider_task_id,prompt_text_snapshot) VALUES
+      ('naver-present','org','naver-present-prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','success','answer','ai_answered','{"rawResponse":"answer","rawMetadata":{}}','task-naver','present query'),
+      ('naver-error','org','naver-error-prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','failed','','parse_error','{"rawMetadata":{}}','task-naver','parse error query'),
+      ('naver-unknown','org','naver-unknown-prompt','model-naver-overview','naver-overview','2026-11-20T01:00:00.000Z','success','',NULL,'{"rawMetadata":{}}','task-naver','unknown query');`);
+    const brand = { id: "brand", url: "https://example.com", urls: [], otherBrands: [] };
+    const period = citationPeriod("1w", new Date("2026-11-20T01:00:00Z"));
+    const gemini = await loadCitationOverview("org", brand, "gemini", period, db);
+    assert.equal(gemini.rows.length, 2, "one actual record plus one tracked, uncollected prompt");
+    assert.equal(gemini.measured, 1);
+    assert.equal(gemini.ownVideos, 1);
+    assert.equal(gemini.ownRate, 1);
+    assert.equal(gemini.rows.find(row => row.id === "gemini")?.latestAttemptFailed, true, "a later same-day failure does not erase the latest successful measurement");
+    assert.equal(gemini.rows.find(row => row.id)?.id, "gemini", "foreign request and unlinked records are excluded, duplicate links are counted once");
+    const google = await loadCitationOverview("org", brand, "google-aio", period, db);
+    assert.equal(google.measured, 1);
+    assert.equal(google.exposureRate, 1);
+    assert.equal(google.rows[0].id, "aio:historical");
+    assert.equal((await loadCitationDetail("org", "brand", "google-aio", "aio:historical", db))?.rawResponse, "historical answer");
+    assert.equal((await loadCitationOverview("org", brand, "google-ai-mode", period, db)).rows[0].id, "google");
+    const naver = await loadCitationOverview("org", brand, "naver-aio", period, db);
+    assert.equal(naver.measured, 1, "absent AI answers do not dilute citation rates");
+    assert.equal(naver.exposureMeasured, 2, "only confirmed present and absent outcomes count; parse errors and unknown records do not");
+    assert.equal(naver.exposureRate, 1 / 2);
+    assert.equal(naver.trend.at(-1)?.exposureRate, 1 / 2);
+    assert.equal(citationStatus(naver.rows.find(row => row.id === "naver")!, "naver-aio"), "미노출");
+    assert.equal(citationStatus(naver.rows.find(row => row.id === "naver-present")!, "naver-aio"), "노출");
+    assert.equal((await loadCitationOverview("org", brand, "naver-ai", period, db)).rows[0].id, "naver-ai");
+    assert.equal(await loadCitationDetail("org", "brand", "google-ai-mode", "gemini", db), null);
+    assert.equal(await loadCitationDetail("org", "other-brand", "gemini", "gemini", db), null);
+    assert.equal(await loadCitationDetail("foreign-org", "brand", "gemini", "gemini", db), null);
+    assert.equal(await loadCitationDetail("org", "other-brand", "google-aio", "aio:historical", db), null);
+    await client.query(`INSERT INTO aio_video_work_logs VALUES ('our-log','brand','abcdefghijk','2026-11-19','caption','our note'),('other-log','other-brand','abcdefghijk','2026-11-19','caption','private note')`);
+    const detailNow = new Date("2026-11-20T01:00:00Z");
+    const detail = await loadCitationDetailPage("org", brand, "gemini", "gemini", detailNow, db);
+    assert.ok(detail);
+    assert.equal(detail.snapshot.promptId, "prompt", "database prompt identity replaces legacy manual IDs in original JSON");
+    assert.equal(detail.current.hasOwn, true);
+    assert.deepEqual(detail.workLogs.map(log => log.id), ["our-log"]);
+    assert.ok(detail.history.some(day => day.runId === "gemini"));
+    assert.equal(await loadCitationDetailPage("org", { ...brand, id: "other-brand" }, "gemini", "gemini", detailNow, db), null);
+    assert.equal(await loadCitationDetailPage("foreign-org", brand, "gemini", "gemini", detailNow, db), null);
+    assert.equal(await loadCitationDetailPage("org", brand, "naver-aio", "gemini", detailNow, db), null);
+    await client.query(`INSERT INTO aio_observations(id,brand_id,keyword_id,collected_at,collected_date,status,aio_text,device) VALUES
+      ('mobile-aio','brand','keyword','2026-11-20T00:30:00.000Z','2026-11-20','aio_absent','','mobile');
+      INSERT INTO provider_tasks(id,organization_id,brand_id,surface,device) VALUES ('naver-mobile-task','org','brand','naver-aio','mobile');
+      INSERT INTO prompt_runs(id,organization_id,prompt_id,model_id,platform,run_at,status,raw_response,observation_outcome,original_json,provider_task_id,prompt_text_snapshot) VALUES
+      ('naver-mobile','org','prompt','model-naver-overview','naver-overview','2026-11-20T00:30:00.000Z','success','mobile answer','ai_answered','{"rawResponse":"mobile answer","rawMetadata":{"citations":[{"url":"https://youtu.be/abcdefghijk","title":"video"}]}}','naver-mobile-task','shared query');`);
+    const googleMobile = await loadCitationOverview("org", brand, "google-aio", period, db, "mobile");
+    assert.equal(googleMobile.rows[0].id, "aio:mobile-aio", "same-day desktop cannot replace mobile");
+    assert.equal(googleMobile.exposureRate, 0);
+    assert.equal(googleMobile.measured, 0);
+    const googleDesktop = await loadCitationOverview("org", brand, "google-aio", period, db, "desktop");
+    assert.equal(googleDesktop.exposureRate, 1);
+    assert.equal(googleDesktop.deviceSummaries.find(s => s.device === "mobile")?.exposureRate, 0);
+    assert.equal((await loadCitationDetail("org", "brand", "google-aio", "aio:mobile-aio", db))?.device, "mobile");
+    const naverMobile = await loadCitationOverview("org", brand, "naver-aio", period, db, "mobile");
+    assert.equal(naverMobile.measured, 1);
+    assert.equal(naverMobile.ownRate, 1);
+    assert.equal(naverMobile.exposureRate, 1);
+    assert.equal((await loadCitationOverview("org", brand, "naver-aio", period, db, "desktop")).exposureRate, 1 / 2);
+    const mobileDetail = await loadCitationDetailPage("org", brand, "naver-aio", "naver-mobile", detailNow, db);
+    assert.equal(mobileDetail?.snapshot.device, "mobile");
+    assert.equal(mobileDetail?.history.at(-1)?.state, "own", "detail history uses the snapshot device, not a later desktop absence");
+    for (const engine of ["google-aio", "gemini", "google-ai-mode", "naver-aio", "naver-ai"] as const) {
+      assert.equal((await loadCitationOverview("foreign-org", brand, engine, period, db)).rows.length, 0);
+      assert.equal((await loadCitationOverview("org", { ...brand, id: "other-brand" }, engine, period, db)).rows.length, 0);
+    }
+  } finally { await client.query("ROLLBACK"); client.release(); await pool.end(); }
+});

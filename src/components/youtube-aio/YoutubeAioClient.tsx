@@ -85,7 +85,7 @@ export function YoutubeAioClient({ data }: { data: AioOverviewPageData }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium tracking-wide text-neutral-500">YOUTUBE AIO 인용 트래커</p>
-          <h1 className="mt-1 text-2xl font-semibold text-neutral-900">{brandName} YouTube · Google AI Overview 인용 현황</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-neutral-900">{brandName} Google AIO 인용 현황</h1>
           <p className="mt-1 text-sm text-neutral-500">
             프롬프트를 Google에서 검색했을 때 AI Overview가 뜨는지, YouTube가 인용되는지, 그중 우리 채널 영상이 인용되는지를 매일 확인합니다.
             {overview.lastCollectedAt && ` · 마지막 수집 ${formatKstDateTime(overview.lastCollectedAt)}`}

@@ -17,6 +17,10 @@ export interface RunLlmOptions {
   webSearch?: boolean;
   marketId?: string;
   locale?: string;
+  signal?: AbortSignal;
+  /** Persisted queue item identity keeps result recovery independent of wall-clock timing. */
+  runId?: string;
+  promptId?: string;
   /** 일시 오류(429/5xx) 재시도 횟수 */
   retries?: number;
   /** 웹 검색 근거가 한도(429)로 막히면 검색 없이 한 번 더 묻는다 — 언급률은 재도 인용률은 못 재는 답변이 남는다. */
@@ -47,7 +51,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult> {
   const { store, orgId, provider, query, apiKey, retries = 2 } = options;
   const runAt = (options.now?.() ?? new Date()).toISOString();
-  const runId = `run-${provider.id}-${runAt.replace(/\D/g, "")}-${createHash("sha1").update(`${orgId}\n${query}`).digest("hex").slice(0, 8)}`;
+  const runId = options.runId ?? `run-${provider.id}-${runAt.replace(/\D/g, "")}-${createHash("sha1").update(`${orgId}\n${query}`).digest("hex").slice(0, 8)}`;
   const model = options.model ?? process.env[provider.modelEnv] ?? provider.defaultModel;
 
   let answer: Awaited<ReturnType<LlmProvider["ask"]>> | null = null;
@@ -56,7 +60,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
   let quotaBlocked = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale });
+      answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale, signal: options.signal });
       if (!answer.text) throw new LlmRequestError("빈 답변");
       errorMessage = null;
       break;
@@ -72,7 +76,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
   if (!answer && quotaBlocked && options.fallbackWithoutSearch && webSearch !== false) {
     webSearch = false;
     try {
-      answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale });
+      answer = await provider.ask(query, { apiKey, model, webSearch, locale: options.locale, signal: options.signal });
       if (!answer.text) throw new LlmRequestError("빈 답변");
       errorMessage = null;
     } catch (error) {
@@ -83,7 +87,7 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
 
   const promptRun: PromptRunSeed = {
     id: runId,
-    promptId: "manual",
+    promptId: options.promptId ?? "manual",
     llmModelId: provider.llmModelId,
     marketId: options.marketId ?? "market-kr",
     runAt,
@@ -102,6 +106,6 @@ export async function runLlmQuery(options: RunLlmOptions): Promise<RunLlmResult>
       providerData: answer?.providerData,
     },
   };
-  await store.importRun(orgId, { dir: `.tmp/${provider.id}-api`, filename: `${runId}.json`, promptRun });
+  await store.importRun(orgId, { dir: `.tmp/${provider.id}-api`, filename: `${runId}.json`, promptRun }, null, options.promptId ?? null);
   return { runId, status: promptRun.status === "success" ? "success" : "failed", citations: answer?.citations.length ?? 0, errorMessage };
 }

@@ -12,11 +12,11 @@ const HINT: Record<PromptSurface, string> = {
   "google-ai-mode": "구글 AI 모드의 답변을 수집합니다.",
   "naver-aio": "네이버 통합검색 첫 화면의 AI 브리핑을 수집합니다. 수집기 0.4.0 이상이 필요합니다.",
   "naver-ai": "네이버 AI 검색(AI 탭)의 답변을 수집합니다.",
-  gemini: "Gemini API로 답변과 출처를 수집합니다(수집기 불필요).",
+  gemini: "서버에서 최대 3건씩 동시에 수집합니다. 등록 후 진행 상황과 결과는 수집 요청 로그에서 확인합니다.",
 };
 
 // "선택 수집" — 고른 프롬프트를 각자 저장된 플랫폼대로 수집한다. 여기서는 어느 플랫폼을 이번에 수집할지만 정하고,
-// 플랫폼별 수집은 이어지는 단계로 차례로 진행된다(src/lib/collectSteps.ts).
+// 플랫폼별 수집 단계와 서버 작업 등록은 collectSteps.ts에서 구성한다.
 export function SelectionCollectModal({
   open,
   onClose,
@@ -25,6 +25,7 @@ export function SelectionCollectModal({
   aioDeviceCount,
   initialEnabled,
   initialSerpApiEnabled,
+  initialDevices,
   onReview,
 }: {
   open: boolean;
@@ -34,9 +35,11 @@ export function SelectionCollectModal({
   aioDeviceCount: number;
   initialEnabled?: ReadonlySet<PromptSurface>;
   initialSerpApiEnabled?: ReadonlySet<SerpApiSurface>;
-  onReview: (enabled: Set<PromptSurface>, serpApiEnabled: Set<SerpApiSurface>) => void;
+  initialDevices?: ("desktop" | "mobile")[];
+  onReview: (enabled: Set<PromptSurface>, serpApiEnabled: Set<SerpApiSurface>, devices: ("desktop" | "mobile")[]) => void;
 }) {
   const counts = countBySurface(rows);
+  const [devices, setDevices] = useState<("desktop" | "mobile")[]>(initialDevices ?? ["desktop", "mobile"]);
   const [enabled, setEnabled] = useState<Set<PromptSurface>>(() => new Set(initialEnabled ?? PROMPT_SURFACES.filter((s) => counts[s] > 0)));
   const [serpApiEnabled, setSerpApiEnabled] = useState<Set<SerpApiSurface>>(() => new Set(initialSerpApiEnabled));
   const [activeSerpCounts, setActiveSerpCounts] = useState<Partial<Record<SerpApiSurface, number>>>({});
@@ -116,7 +119,7 @@ export function SelectionCollectModal({
         <ModalCloseButton onClose={onClose} />
       </div>
       <p className="mt-2 text-sm text-neutral-600">
-        선택한 <b>{rows.length}개</b> 프롬프트를 각자 저장된 플랫폼에서 수집합니다. 플랫폼별로 차례로 진행되며, 플랫폼은 &quot;플랫폼 변경&quot;이나 행의 편집에서 바꿀 수 있습니다.
+        선택한 <b>{rows.length}개</b> 프롬프트를 각자 저장된 플랫폼에서 수집합니다. Gemini와 SERP API는 작업 등록 후 수집 요청 로그에서 진행 상황을 확인할 수 있습니다. 플랫폼은 &quot;플랫폼 변경&quot;이나 행의 편집에서 바꿀 수 있습니다.
       </p>
       <div className="mt-4 flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
         <span className="flex flex-col">
@@ -170,6 +173,20 @@ export function SelectionCollectModal({
           );
         })}
       </div>
+      {eligibleSerpSurfaces.some(surface => serpApiEnabled.has(surface)) && (
+        <fieldset className="mt-3 rounded-md border border-neutral-200 px-3 pb-3">
+          <legend className="px-1 text-sm font-medium text-neutral-800">SERP API 수집 기기</legend>
+          <div className="mt-1 flex gap-4">
+            {(["desktop", "mobile"] as const).map(device => (
+              <label key={device} className="flex cursor-pointer items-center gap-2 text-sm text-neutral-800">
+                <input type="checkbox" checked={devices.includes(device)} onChange={() => setDevices(current => current.includes(device) ? current.filter(value => value !== device) : [...current, device])} className="size-4 cursor-pointer accent-slate-800" />
+                {device === "desktop" ? "PC" : "모바일"}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-neutral-500">선택한 SERP API 엔진에 적용됩니다. 둘 다 선택하면 기기별로 각각 수집합니다.</p>
+        </fieldset>
+      )}
       {enabled.has("google-aio") && aioSearches > AIO_DAILY_CAP && (
         <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
           AIO 검색이 {aioSearches}회로, 하루 권장 상한({AIO_DAILY_CAP}회)을 넘습니다. 캡차가 뜨면 그 자리에서 멈춥니다.
@@ -179,7 +196,7 @@ export function SelectionCollectModal({
         <Button variant="secondary" onClick={onClose}>
           취소
         </Button>
-        <Button variant="primary" disabled={active.length === 0} onClick={() => onReview(new Set(active), new Set(serpApiEnabled))}>
+        <Button variant="primary" disabled={active.length === 0 || (eligibleSerpSurfaces.some(surface => serpApiEnabled.has(surface)) && devices.length === 0)} onClick={() => onReview(new Set(active), new Set(serpApiEnabled), devices)}>
           다음
         </Button>
       </div>

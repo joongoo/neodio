@@ -1,7 +1,7 @@
 import type { RequestItemRow } from "@/lib/backend/dataforseo/requestItems";
 import { SERP_API_ESTIMATED_COST_USD, type SerpApiSurface } from "./dataforseoPricing";
 
-export type RetrySelectionItem = Pick<RequestItemRow, "id" | "executionKind" | "query" | "surface" | "device" | "status"> & { hasRetry?: boolean; retries?: RequestItemRow["retries"]; canManagePending?: boolean; estimatedCostUsd?: number };
+export type RetrySelectionItem = Pick<RequestItemRow, "id" | "executionKind" | "query" | "surface" | "device" | "status"> & { hasRetry?: boolean; retries?: RequestItemRow["retries"]; canManagePending?: boolean; estimatedCostUsd?: number; serverManaged?: boolean };
 export type RetrySelectionGroup = "failed" | "cancelled";
 // Unknown submissions and saved artifacts must be reconciled, not paid for again.
 export const RETRY_FAILURE_STATUSES = ["provider_failed"] as const;
@@ -10,18 +10,23 @@ export function isRetryFailure(item: RetrySelectionItem) {
 }
 export function isRetrySelectable(item: RetrySelectionItem) {
   if (item.hasRetry || item.retries?.length) return false;
+  if (item.serverManaged && item.status === "collecting") return false;
   return isRetryFailure(item) || item.status === "cancelled" || (item.executionKind === "legacy" && ["reserved", "collecting"].includes(item.status)) || (item.executionKind === "serp-api" && item.status === "reserved" && item.canManagePending === true);
 }
 
 export function isPendingSerpSelection(items: RetrySelectionItem[]) {
   return items.length > 0 && items.every(item => item.executionKind === "serp-api" && item.status === "reserved" && item.canManagePending === true && isRetrySelectable(item));
 }
+export function isPendingGeminiSelection(items: RetrySelectionItem[]) {
+  return items.length > 0 && items.every(item => item.serverManaged && item.surface === "gemini" && item.status === "reserved" && isRetrySelectable(item));
+}
 
 export function selectionAvailableActions(items: RetrySelectionItem[]) {
   const pendingSerp = isPendingSerpSelection(items);
+  const pendingGemini = isPendingGeminiSelection(items);
   const selectable = items.length > 0 && items.every(isRetrySelectable);
   return {
-    canCollect: pendingSerp || (selectable && !items.some(item => item.executionKind === "serp-api" && item.status === "reserved")),
+    canCollect: pendingSerp || pendingGemini || (selectable && !items.some(item => (item.executionKind === "serp-api" || item.serverManaged) && item.status === "reserved")),
     canCancel: pendingSerp || (selectable && items.every(item => item.executionKind === "legacy" && item.status === "reserved")),
   };
 }

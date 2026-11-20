@@ -101,7 +101,7 @@ export function PromptLibraryClient({
   const [surfaceFilter, setSurfaceFilter] = useState<"전체" | PromptSurface>("전체");
   // 선택 수집: 플랫폼 고르기 창 → 플랫폼별 수집 단계(queue)를 차례로.
   const [chooseOpen, setChooseOpen] = useState(false);
-  const [pendingCollection, setPendingCollection] = useState<{ enabled: Set<PromptSurface>; serpApiEnabled: Set<SerpApiSurface> } | null>(null);
+  const [pendingCollection, setPendingCollection] = useState<{ enabled: Set<PromptSurface>; serpApiEnabled: Set<SerpApiSurface>; devices: ("desktop" | "mobile")[] } | null>(null);
   const [activeCollectionConflicts, setActiveCollectionConflicts] = useState<ActiveCollectionConflict[] | null>(null);
   const [queue, setQueue] = useState<CollectStep[]>([]);
   const stepDoneRef = useRef(false);
@@ -301,6 +301,7 @@ export function PromptLibraryClient({
       pendingCollection.serpApiEnabled,
       requestId,
       forceSerpDuplicate,
+      pendingCollection.devices,
     );
     const legacyItems = steps.flatMap(s => {
       if (s.kind === "serp-api") return [];
@@ -338,8 +339,9 @@ export function PromptLibraryClient({
     });
     const data = await response.json().catch(() => ({})) as { error?: string; tasks?: ActiveCollectionConflict[] };
     if (!response.ok) throw new Error(data.error ?? "진행 중인 수집을 확인하지 못했습니다.");
-    if (data.tasks?.length) {
-      setActiveCollectionConflicts(data.tasks);
+    const conflicts = data.tasks?.filter(task => pendingCollection.devices.includes(task.device as "desktop" | "mobile"));
+    if (conflicts?.length) {
+      setActiveCollectionConflicts(conflicts);
       return;
     }
     startPendingCollection(false);
@@ -622,9 +624,10 @@ export function PromptLibraryClient({
           aioDeviceCount={aioDeviceCount}
           initialEnabled={pendingCollection?.enabled}
           initialSerpApiEnabled={pendingCollection?.serpApiEnabled}
-          onReview={(enabled, serpApiEnabled) => {
+          initialDevices={pendingCollection?.devices}
+          onReview={(enabled, serpApiEnabled, devices) => {
             setChooseOpen(false);
-            setPendingCollection({ enabled, serpApiEnabled });
+            setPendingCollection({ enabled, serpApiEnabled, devices });
           }}
         />
       )}
@@ -633,6 +636,7 @@ export function PromptLibraryClient({
           rows={selectedRows}
           enabled={pendingCollection.enabled}
           serpApiEnabled={pendingCollection.serpApiEnabled}
+          devices={pendingCollection.devices}
           aioDeviceCount={aioDeviceCount}
           onBack={() => {
             setChooseOpen(true);

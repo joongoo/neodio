@@ -37,6 +37,14 @@ interface NavGroup {
   children?: NavLeaf[];
 }
 
+function YouTubeIcon({ size = 16, className }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden="true" focusable="false">
+      <path fill="currentColor" fillRule="evenodd" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814ZM9.545 15.568l6.273-3.568-6.273-3.568v7.136Z" />
+    </svg>
+  );
+}
+
 const NAV: NavGroup[] = [
   { label: "개요", href: "/", icon: Home },
   {
@@ -48,9 +56,16 @@ const NAV: NavGroup[] = [
       { label: "프롬프트 리서치", href: "/prompt-research" },
       { label: "검색어 트렌드", href: "/search-trend" },
       { label: "검색 성과 (GSC)", href: "/search-performance" },
-      { label: "YouTube AIO 인용", href: "/youtube-aio" },
-      { label: "YouTube 관리", href: "/youtube-manage" },
       { label: "수집 로그", href: "/collection-runs" },
+    ],
+  },
+  {
+    label: "YouTube",
+    href: "#",
+    icon: YouTubeIcon,
+    children: [
+      { label: "인용", href: "/citations" },
+      { label: "영상 관리", href: "/youtube-manage" },
     ],
   },
   {

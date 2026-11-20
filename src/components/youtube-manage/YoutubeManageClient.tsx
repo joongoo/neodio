@@ -191,7 +191,7 @@ export function YoutubeManageClient({ data }: { data: VideoManageListData }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium tracking-wide text-neutral-500">YOUTUBE 관리</p>
-          <h1 className="mt-1 text-2xl font-semibold text-neutral-900">{brandName} YouTube 영상 관리</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-neutral-900">{brandName} 영상 관리</h1>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">
             채널의 영상을 가져와 두고, 관리할 영상을 체크하면 그 영상이 답이 될 예상 프롬프트를 만들어 추적합니다. 영상을 열면 어떤 프롬프트에서 인용됐는지 볼 수 있습니다.
           </p>

@@ -74,7 +74,7 @@ export function AioSettingsCard({ brandId, initialSettings }: { brandId: string;
         {!settings.saved && <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">기본값 사용 중</span>}
       </div>
       <p className="text-sm text-neutral-500">
-        YouTube AIO 인용 수집 조건입니다. 조건이 매일 같아야 일자별 비교가 의미 있으므로, 변경하면 변경일부터의 추이는 이전과 직접 비교하기 어렵습니다.
+        Google AIO 인용 수집 조건입니다. 조건이 매일 같아야 일자별 비교가 의미 있으므로, 변경하면 변경일부터의 추이는 이전과 직접 비교하기 어렵습니다.
       </p>
 
       <form onSubmit={handleSave} className="flex flex-col gap-4">

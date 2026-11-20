@@ -23,7 +23,7 @@ const SERP_RESERVE_BATCH_SIZE = 200;
 const IMPORT_CHUNK = 20;
 const ENGINE_LABEL: Record<CollectorEngine, string> = { naver: "네이버AI", "naver-overview": "네이버AIO", google: "구글AI" };
 
-type PanelState = { label: string; done: number; total: number; current: string | null; waitUntil: number | null; phase: "waiting" | "running" | "done" | "stopped" | "error"; note: string | null };
+type PanelState = { label: string; done: number; total: number; current: string | null; waitUntil: number | null; phase: "waiting" | "running" | "done" | "stopped" | "error"; note: string | null; requestHref?: string };
 
 function stepLabel(step: CollectStep): string {
   if (step.kind === "aio") return "구글AIO";
@@ -57,7 +57,6 @@ export function ParallelCollectModal({
   serverCollector?: boolean;
   collectionLogHref?: string;
 }) {
-  const tenantBase = useTenantBase();
   const needsAgent = !serverCollector && steps.some((s) => s.kind === "ai" || s.kind === "aio");
   const [gate, setGate] = useState<"checking" | "ready" | { problem: Problem; status: CollectorAgentStatus | null }>(needsAgent ? "checking" : "ready");
   const [states, setStates] = useState<PanelState[]>(() =>
@@ -73,7 +72,7 @@ export function ParallelCollectModal({
   const patch = useCallback((index: number, next: Partial<PanelState>) => {
     setStates((prev) => prev.map((s, i) => (i === index ? { ...s, ...next } : s)));
     const step = steps[index];
-    if (step.kind !== "serp-api" && step.requestId) {
+    if (step.kind !== "serp-api" && step.kind !== "gemini" && step.requestId) {
       const terminal = next.phase && next.phase !== "running";
       if (terminal || !legacyStarted.current.has(index)) {
         legacyStarted.current.add(index);
@@ -101,7 +100,7 @@ export function ParallelCollectModal({
           : null;
     setGate(problem ? { problem, status } : "ready");
     if (problem) steps.forEach((step, index) => {
-      if (step.kind !== "serp-api") patch(index, { phase: "waiting", note: "수집기를 확인하지 못해 대기 중입니다. 수집기 연결 후 다시 시작해 주세요." });
+      if (step.kind !== "serp-api" && step.kind !== "gemini") patch(index, { phase: "waiting", note: "수집기를 확인하지 못해 대기 중입니다. 수집기 연결 후 다시 시작해 주세요." });
     });
     else setStates(previous => previous.map(state => state.phase === "waiting" ? { ...state, phase: "running", note: null } : state));
   }, [steps, patch]);
@@ -115,8 +114,8 @@ export function ParallelCollectModal({
     if (needsAgent) void run();
   }, [needsAgent, run]);
 
-  const serpIndexes = steps.flatMap((step, index) => step.kind === "serp-api" ? [index] : []);
-  const legacyIndexes = steps.flatMap((step, index) => step.kind === "serp-api" ? [] : [index]);
+  const serpIndexes = steps.flatMap((step, index) => step.kind === "serp-api" || step.kind === "gemini" ? [index] : []);
+  const legacyIndexes = steps.flatMap((step, index) => step.kind === "serp-api" || step.kind === "gemini" ? [] : [index]);
   const serpRegistering = serpIndexes.some((index) => states[index].phase === "running");
   const serpFailed = serpIndexes.some((index) => states[index].phase === "error" || states[index].phase === "stopped");
   const serpFailureNotes = [...new Set(serpIndexes.flatMap((index) =>
@@ -125,13 +124,14 @@ export function ParallelCollectModal({
       : []
   ))];
   const serpRegistered = serpIndexes.length > 0 && !serpRegistering && !serpFailed;
+  const requestHref = states.find(state => state.requestHref)?.requestHref ?? collectionLogHref;
   const legacyRunning = legacyIndexes.some((index) => states[index].phase === "running");
   const allFinished = states.every((s) => s.phase !== "running");
   useEffect(() => {
     if (delayedLeave.current) clearTimeout(delayedLeave.current);
-    const requestIds = [...new Set(steps.filter(s => s.kind !== "serp-api").map(s => s.requestId).filter((id): id is string => !!id))];
+    const requestIds = [...new Set(steps.filter(s => s.kind !== "serp-api" && s.kind !== "gemini").map(s => s.requestId).filter((id): id is string => !!id))];
     if (!requestIds.length) return;
-    const running = () => steps.some((s, index) => s.kind !== "serp-api" && latestStates.current[index]?.phase === "running");
+    const running = () => steps.some((s, index) => s.kind !== "serp-api" && s.kind !== "gemini" && latestStates.current[index]?.phase === "running");
     const report = (action: "heartbeat" | "leave") => {
       for (const requestId of requestIds) void fetch("/api/collection-requests/legacy/session", {
         method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, action }),
@@ -139,14 +139,14 @@ export function ParallelCollectModal({
         if (!response.ok || action !== "heartbeat") return;
         const data = await response.json() as { cancelRequested?: boolean };
         if (data.cancelRequested) {
-          steps.forEach((step, index) => { if (step.kind !== "serp-api" && step.requestId === requestId && latestStates.current[index]?.phase === "running") cancels.current[index](); });
+          steps.forEach((step, index) => { if (step.kind !== "serp-api" && step.kind !== "gemini" && step.requestId === requestId && latestStates.current[index]?.phase === "running") cancels.current[index](); });
           void fetch("/api/collection-requests/legacy/session", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, action: "leave" }) }).catch(() => undefined);
         }
       }).catch(() => undefined);
     };
     const leave = () => {
       if (!running()) return;
-      steps.forEach((s, index) => { if (s.kind !== "serp-api" && latestStates.current[index]?.phase === "running") cancels.current[index](); });
+      steps.forEach((s, index) => { if (s.kind !== "serp-api" && s.kind !== "gemini" && latestStates.current[index]?.phase === "running") cancels.current[index](); });
       report("leave");
     };
     report("heartbeat");
@@ -167,8 +167,8 @@ export function ParallelCollectModal({
   }, [gate, allFinished, states, onDone]);
 
   const close = () => {
-    if (serpRegistering && !window.confirm("SERP API 작업을 등록 중입니다. 지금 닫으면 일부 작업이 등록되지 않을 수 있습니다. 닫을까요?")) return false;
-    if (legacyRunning && !window.confirm("진행 중인 로컬 수집을 중단하고 닫을까요? SERP API 작업은 계속 진행됩니다. 중단한 로컬 항목은 요청 상세에서 다시 시도할 수 있습니다.")) return false;
+    if (serpRegistering && !window.confirm("서버 수집 작업을 등록 중입니다. 지금 닫으면 일부 작업이 등록되지 않을 수 있습니다. 닫을까요?")) return false;
+    if (legacyRunning && !window.confirm("진행 중인 로컬 수집을 중단하고 닫을까요? 서버 수집 작업은 계속 진행됩니다. 중단한 로컬 항목은 요청 상세에서 다시 시도할 수 있습니다.")) return false;
     onClose();
     return true;
   };
@@ -181,32 +181,34 @@ export function ParallelCollectModal({
       </div>
 
       {serpIndexes.map((index) => (
-        <SerpApiRunner key={`serp-register-${index}`} step={steps[index] as Extract<CollectStep, { kind: "serp-api" }>} brandId={brandId} index={index} patch={patch} setCancel={setCancel} />
+        steps[index].kind === "gemini"
+          ? <GeminiRunner key={`gemini-register-${index}`} keywords={steps[index].keywords} requestId={steps[index].requestId} index={index} patch={patch} setCancel={setCancel} />
+          : <SerpApiRunner key={`serp-register-${index}`} step={steps[index] as Extract<CollectStep, { kind: "serp-api" }>} brandId={brandId} index={index} patch={patch} setCancel={setCancel} />
       ))}
 
       {serpIndexes.length > 0 && (
         <div className={`mt-3 rounded-lg border px-3 py-3 text-sm ${serpFailed ? "border-amber-200 bg-amber-50 text-amber-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
           <div className="flex items-center gap-2 font-medium">
             {serpRegistering ? <Loader2 size={15} className="animate-spin" /> : serpFailed ? <TriangleAlert size={15} /> : <CircleCheck size={15} />}
-            {serpRegistering ? "SERP API 작업 큐 등록 중" : serpRegistered ? "SERP API 작업 큐 등록 완료" : "일부 작업을 등록하지 못했습니다"}
+            {serpRegistering ? "수집 작업 등록 중" : serpRegistered ? "수집 작업이 등록되었습니다" : "일부 작업을 등록하지 못했습니다"}
           </div>
           <p className="mt-1 text-xs opacity-80">
             {serpRegistering
               ? "등록이 끝나면 이 화면을 닫아도 서버에서 수집을 이어갑니다."
               : serpRegistered
-                ? "로컬 완료와 관계없이 SERP API 작업이 등록되었습니다. 이후 진행 상황과 결과는 수집 로그에서 확인할 수 있습니다."
+                ? "진행 상황과 결과는 수집 요청 상세에서 확인하세요."
                 : "등록하지 못한 작업을 확인한 뒤 다시 시도해 주세요."}
           </p>
           {serpFailureNotes.map((note) => <p key={note} className="mt-1 text-xs font-medium">{note}</p>)}
-          {serpRegistered && (
+          {requestHref && (
             <a
-              href={collectionLogHref ?? `${tenantBase}/collection-runs`}
+              href={requestHref}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="수집 로그 보기 (새 탭에서 열기)"
+              aria-label="수집 요청 상세 보기 (새 탭에서 열기)"
               className="mt-2 inline-flex items-center gap-1 text-xs font-semibold underline underline-offset-2"
             >
-              수집 로그 보기
+              수집 요청 상세 보기
               <ExternalLink size={12} aria-hidden="true" />
             </a>
           )}
@@ -223,23 +225,21 @@ export function ParallelCollectModal({
         <CollectorProblem problem={gate.problem} status={gate.status} downloadPlatforms={downloadPlatforms} busy={false} onRetry={check} onBack={onClose} />
       )}
 
-      {gate === "ready" && (
+      {gate === "ready" && legacyIndexes.length > 0 && (
         <div className="mt-2 flex flex-col gap-3">
           <p className="text-sm text-neutral-500">
             {legacyIndexes.length === 0
-              ? serpRegistering ? "SERP API 수집 작업을 등록하고 있습니다." : "SERP API 수집 작업을 등록했습니다."
-              : allFinished ? "모든 수집이 끝났습니다." : `${serpIndexes.length ? "SERP API는 로컬 완료를 기다리지 않고 바로 등록됩니다. " : ""}로컬 수집 결과 반영을 마치려면 이 화면을 유지하세요. 이탈하면 미완료 로컬 항목은 요청 상세에서 다시 시도할 수 있습니다.`}
+              ? serpRegistering ? "서버 수집 작업을 등록하고 있습니다." : serpRegistered ? "서버 수집 작업을 등록했습니다." : "일부 작업 등록에 실패했습니다. 요청 로그에서 확인해 주세요."
+              : allFinished ? "모든 수집이 끝났습니다." : `${serpIndexes.length ? "서버 수집은 로컬 완료를 기다리지 않고 바로 등록됩니다. " : ""}로컬 수집 결과 반영을 마치려면 이 화면을 유지하세요. 이탈하면 미완료 로컬 항목은 요청 상세에서 다시 시도할 수 있습니다.`}
           </p>
-          {steps.map((step, index) => step.kind === "serp-api" ? null : (
+          {steps.map((step, index) => step.kind === "serp-api" || step.kind === "gemini" ? null : (
             <PanelShell key={index} state={states[index]} onCancel={() => cancels.current[index]()}>
               {step.kind === "ai" && serverCollector ? (
                 <ServerAiRunner step={step} index={index} patch={patch} setCancel={setCancel} />
               ) : step.kind === "ai" ? (
                 <AgentAiRunner step={step} orgName={orgName} index={index} patch={patch} setCancel={setCancel} />
-              ) : step.kind === "aio" ? (
-                <AioRunner brandId={brandId} promptIds={step.promptIds} devices={step.devices} targets={step.targets} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
               ) : (
-                <GeminiRunner keywords={step.keywords} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
+                <AioRunner brandId={brandId} promptIds={step.promptIds} devices={step.devices} targets={step.targets} requestId={step.requestId} index={index} patch={patch} setCancel={setCancel} />
               )}
             </PanelShell>
           ))}
@@ -333,11 +333,12 @@ async function reserveSerpTaskBatches(
   let created = 0;
   let estimatedCostUsd = 0;
   let processedPrompts = 0;
+  let collectionRequestId: string | undefined;
   for (const promptBatch of chunks(step.prompts, SERP_RESERVE_BATCH_SIZE)) {
     const response = await fetch("/api/dataforseo/tasks/reserve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandId, surface: step.surface, prompts: promptBatch, requestId: step.requestId, force: step.force === true }),
+      body: JSON.stringify({ brandId, surface: step.surface, prompts: promptBatch, devices: step.devices, requestId: step.requestId, force: step.force === true }),
       signal,
     });
     const data = await response.json().catch(() => ({})) as {
@@ -345,8 +346,10 @@ async function reserveSerpTaskBatches(
       created?: number;
       estimatedCostUsd?: number;
       tasks?: SerpProviderTask[];
+      collectionRequestId?: string;
     };
     if (!response.ok) return Response.json({ error: data.error }, { status: response.status });
+    collectionRequestId ??= data.collectionRequestId;
     tasks.push(...(data.tasks ?? []));
     created += data.created ?? 0;
     estimatedCostUsd += data.estimatedCostUsd ?? 0;
@@ -358,7 +361,7 @@ async function reserveSerpTaskBatches(
   const notice = activeQueries.length > 0
     ? `${created}건 신규 예약 · ${activeQueries.length}개 프롬프트는 ${SURFACE_LABEL[step.surface]}에서 이미 수집 중이라 기존 진행을 이어갑니다.${examples ? ` (${examples}${activeQueries.length > 3 ? " 외" : ""})` : ""}`
     : `${created}건을 신규 예약했습니다.`;
-  return Response.json({ reserved: tasks.length, created, alreadyActive: tasks.length - created, estimatedCostUsd, notice, tasks });
+  return Response.json({ collectionRequestId, reserved: tasks.length, created, alreadyActive: tasks.length - created, estimatedCostUsd, notice, tasks });
 }
 
 function chunks<T>(values: T[], size: number): T[][] {
@@ -371,6 +374,7 @@ function chunks<T>(values: T[], size: number): T[][] {
 // Provider 제출과 결과 회수는 서버 worker가 이어가며, 진행 상태는 수집 로그에서 확인한다.
 function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps & { step: Extract<CollectStep, { kind: "serp-api" }>; brandId: string }) {
   const router = useRouter();
+  const tenantBase = useTenantBase();
 
   useEffect(() => {
     let stopped = false;
@@ -387,16 +391,17 @@ function SerpApiRunner({ step, brandId, index, patch, setCancel }: RunnerProps &
           const res = await reserveSerpTaskBatches(step, brandId, controller.signal, (done, total) => {
             patch(index, { current: `${done}/${total}건 예약 확인` });
           });
-          const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; notice?: string; tasks?: SerpProviderTask[] };
-          if (!res.ok) throw new Error(data.error ?? "SERP API 작업을 예약하지 못했습니다.");
+          const data = await res.json().catch(() => ({})) as { error?: string; reserved?: number; created?: number; notice?: string; tasks?: SerpProviderTask[]; collectionRequestId?: string };
+          if (!res.ok) throw new Error(data.error ?? "서버 수집 작업을 예약하지 못했습니다.");
           if (stopped) return;
           const taskIds = (data.tasks ?? []).map((task) => task.id);
-          if (taskIds.length === 0) throw new Error("예약된 SERP API 작업이 없습니다.");
+          if (taskIds.length === 0) throw new Error("예약된 서버 수집 작업이 없습니다.");
           patch(index, {
             done: taskIds.length,
             total: taskIds.length,
             current: null,
             phase: "done",
+            requestHref: data.collectionRequestId ? `${tenantBase}/collection-runs/${encodeURIComponent(data.collectionRequestId)}` : undefined,
             note: `${data.notice ?? `${data.created ?? taskIds.length}건을 예약했습니다.`} 진행 상황은 수집 로그에서 확인하세요.`,
           });
         } else {
@@ -585,53 +590,24 @@ function AioRunner({ brandId, promptIds, devices, targets, requestId, index, pat
   return null;
 }
 
-// Gemini — 서버가 API로 한 건씩 묻는다(수집기 불필요).
-function GeminiRunner({ keywords, requestId, index, patch, setCancel }: RunnerProps & { keywords: string[]; requestId?: string }) {
+// Gemini registers persisted server work; progress belongs to request logs.
+function GeminiRunner({ keywords, requestId, index, patch }: RunnerProps & { keywords: string[]; requestId?: string }) {
   const started = useRef(false);
-
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    let stopped = false;
-    setCancel(index, () => {
-      stopped = true;
-      patch(index, { phase: "stopped", note: "중단했습니다." });
-    });
-
     (async () => {
-      let ok = 0;
-      let failed = 0;
-      let lastError: string | null = null;
-      for (let i = 0; i < keywords.length && !stopped; i++) {
-        patch(index, { current: keywords[i] });
-        try {
-          const res = await fetch("/api/gemini-collect", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: keywords[i], requestId }),
-          });
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          if (res.ok) ok++;
-          else {
-            failed++;
-            lastError = data.error ?? `오류 ${res.status}`;
-          }
-          patch(index, { done: ok + failed });
-          if (res.status === 503) break;
-        } catch {
-          failed++;
-          lastError = "네트워크 오류";
-          patch(index, { done: ok + failed });
-        }
+      try {
+        const response = await fetch('/api/gemini-collect/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keywords, requestId }) });
+        const data = await response.json() as { error?: string; href?: string; count?: number };
+        if (data.href) patch(index, { requestHref: data.href });
+        if (!response.ok) throw new Error(data.error ?? 'Gemini 작업을 등록하지 못했습니다.');
+        patch(index, { phase: 'done', done: data.count ?? keywords.length, requestHref: data.href, note: 'Gemini 수집 작업이 등록되었습니다. 최대 3건씩 동시 처리하며, 진행 상황은 요청 로그에서 확인할 수 있습니다.' });
+      } catch (error) {
+        patch(index, { phase: 'error', note: error instanceof Error ? error.message : 'Gemini 작업 등록에 실패했습니다.' });
       }
-      if (stopped) return;
-      patch(index, {
-        phase: failed > 0 && ok === 0 ? "error" : "done",
-        current: null,
-        note: `성공 ${ok}개${failed > 0 ? `, 실패 ${failed}개${lastError ? ` (${lastError})` : ""}` : ""}`,
-      });
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- register once for this collection step
   }, []);
   return null;
 }

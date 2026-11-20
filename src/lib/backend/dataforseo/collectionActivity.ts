@@ -23,7 +23,7 @@ export async function getCollectionActivityFlags(organizationId: string, brandId
       AND r.organization_id=p.organization_id AND r.brand_id=p.brand_id WHERE p.organization_id=$1 AND p.brand_id=$2
       AND r.cancel_requested AND p.status=ANY($3::text[])) AS cancelling,
     EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
-      AND (p.execution_kind='serp-api' OR EXISTS(SELECT 1 FROM collection_requests cancelling WHERE cancelling.id=p.collection_request_id
+      AND (p.execution_kind='serp-api' OR EXISTS(SELECT 1 FROM gemini_collection_queue q WHERE q.item_id=p.id) OR EXISTS(SELECT 1 FROM collection_requests cancelling WHERE cancelling.id=p.collection_request_id
         AND cancelling.organization_id=p.organization_id AND cancelling.brand_id=p.brand_id AND cancelling.cancel_requested)) AND p.status=ANY($3::text[])) AS running,
     EXISTS(SELECT 1 FROM collection_execution_items p WHERE p.organization_id=$1 AND p.brand_id=$2
       AND p.status=ANY($4::text[]) AND ${WITHOUT_COLLECTION_RETRY_SQL} AND ${WITHOUT_REVIEWED_REQUEST_SQL}) AS attention`,
